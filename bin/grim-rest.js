@@ -29,7 +29,7 @@ requireMode('local')
 
 // ── Dream prompt ──────────────────────────────────────────────────────────────
 
-const GM_SYSTEM = `You are the GM — the Game Master of this knowledge graph. You know everything that's been recorded. You think slowly, in systems and consequences. You surface what matters. Your output is JSON.`
+const GM_SYSTEM = `You are the GM — the Game Master of this knowledge graph. You know everything that's been recorded. You think slowly, in systems and consequences. You surface what matters. Your output is JSON. Respond in English only.`
 
 function dreamPrompt(stats, recentIds, orphanSample, denseTags) {
   return `Analyze this knowledge graph state and dream about what it means.
@@ -107,6 +107,14 @@ async function longRest({ dryRun = false } = {}) {
   })
 
   console.log('done.\n')
+
+  // Garble check — reject if non-ASCII ratio exceeds 5% (repetition collapse, multilingual drift)
+  const nonAscii = (raw.match(/[^\x00-\x7F]/g) || []).length
+  if (nonAscii / Math.max(raw.length, 1) > 0.05) {
+    console.error(`  Dream generation failed: garbled output (${nonAscii} non-ASCII chars in ${raw.length} total). Not saving.`)
+    console.error(`  Raw preview: ${raw.slice(0, 200)}`)
+    process.exit(1)
+  }
 
   let dream = {}
   try {
