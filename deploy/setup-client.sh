@@ -11,7 +11,9 @@
 #   4. Optionally adds aid to /etc/hosts (asks for IP if missing)
 #   5. Symlinks grim CLI into ~/bin (no sudo, no global install)
 #   6. Configures Claude Code: MCP server + plugin
-#   7. Smoke-tests the connection
+#   7. Creates ~/.grimoire dotlink
+#   8. Installs grim-boot-report userspace systemd service
+#   9. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -170,9 +172,40 @@ EOF
   fi
 fi
 
-# ── 7. Smoke test ─────────────────────────────────────────────────────────────
+# ── 7. ~/.grimoire dotlink ────────────────────────────────────────────────────
+step "Creating ~/.grimoire dotlink..."
+DOTLINK="$HOME/.grimoire"
+if [[ -L "$DOTLINK" && "$(readlink "$DOTLINK")" == "$ENGINE_ROOT" ]]; then
+  ok "~/.grimoire already linked"
+elif [[ -e "$DOTLINK" ]]; then
+  warn "~/.grimoire exists but points elsewhere ($(readlink "$DOTLINK" 2>/dev/null || echo 'not a symlink')) — skipping"
+else
+  ln -s "$ENGINE_ROOT" "$DOTLINK"
+  ok "linked: ~/.grimoire → $ENGINE_ROOT"
+fi
+
+# ── 8. grim-boot-report userspace service ─────────────────────────────────────
+step "Installing grim-boot-report systemd user service..."
+SERVICE_SRC="$ENGINE_ROOT/deploy/grim-boot-report.service"
+SERVICE_DIR="$HOME/.config/systemd/user"
+SERVICE_DST="$SERVICE_DIR/grim-boot-report.service"
+
+if [[ ! -f "$SERVICE_SRC" ]]; then
+  warn "grim-boot-report.service not found in deploy/ — skipping"
+elif systemctl --user is-enabled grim-boot-report &>/dev/null; then
+  ok "grim-boot-report service already enabled"
+else
+  mkdir -p "$SERVICE_DIR"
+  install -m644 "$SERVICE_SRC" "$SERVICE_DST"
+  systemctl --user daemon-reload
+  systemctl --user enable grim-boot-report 2>/dev/null \
+    && ok "grim-boot-report enabled (fires on next boot)" \
+    || warn "systemctl enable failed — run: systemctl --user enable grim-boot-report"
+fi
+
+# ── 9. Smoke test ─────────────────────────────────────────────────────────────
 step "Testing connection to aid:3663..."
-if curl -sf http://aid:3663/health -o /dev/null 2>/dev/null; then
+if curl -sf --max-time 5 http://aid:3663/health -o /dev/null 2>/dev/null; then
   HEALTH=$(curl -s http://aid:3663/health)
   ok "Grimoire server reachable — $HEALTH"
 else
