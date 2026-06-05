@@ -8,6 +8,8 @@
 #   systemctl --user daemon-reload && systemctl --user enable --now grim-boot-report
 
 GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://aid:3663}"
+LOG_DIR="/home/vgvm/.grimoire/logs"
+LOG_FILE="${LOG_DIR}/boot-report.log"
 
 _build_payload() {
   local host ts name desc
@@ -20,13 +22,18 @@ _build_payload() {
 }
 
 _report() {
-  local payload
+  local payload resp code
   payload="$(_build_payload)"
-  curl -sf --max-time 10 \
+  mkdir -p "$LOG_DIR"
+  resp=$(curl -sf --max-time 10 -w "%{http_code}" \
     -X POST "${GRIMOIRE_HOST}/api/tome/remember" \
     -H "Content-Type: application/json" \
-    -d "$payload" \
-    >/dev/null 2>&1
+    -d "$payload" 2>/dev/null) || code=0
+  if [ "${resp: -3}" = "200" ] || [ "$resp" = "true" ]; then
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") OK: $(hostname -s) reboot reported" >> "$LOG_FILE"
+  else
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ") FAIL: $(hostname -s) reboot report failed (http=$resp)" >> "$LOG_FILE"
+  fi
 }
 
 _main() {
