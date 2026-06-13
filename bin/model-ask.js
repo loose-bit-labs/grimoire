@@ -43,7 +43,14 @@ if (!process.env.OLLAMA_HOST) {
   }
 }
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || 'http://chonko:11434'
+function _lbl() {
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'lbl-config.json'), 'utf8')) }
+  catch { return {} }
+}
+function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
+function _lblModel(task)    { return _lbl().models?.[task] ?? null }
+
+const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || 'http://chonko:11434'
 
 // ── Capability profiles ───────────────────────────────────────────────────────
 // Matched in order — first pattern wins. Scores are per task type (0-10).
@@ -165,15 +172,15 @@ const EMBEDDING_MODEL = 'nomic-embed-text'
 
 // Fallback when Ollama is unreachable
 const STATIC_FALLBACK = {
-  extraction:  { model: 'gemma4:26b',        thinking: false },
-  linking:     { model: 'gemma4:26b',        thinking: false },
-  dreaming:    { model: 'qwen3.6:27b',       thinking: true  },
-  synthesis:   { model: 'qwen3.6:27b',       thinking: true  },
-  reflection:  { model: 'gemma4:26b',        thinking: false },
-  rumination:  { model: 'qwen3.5:9b',        thinking: true  },
-  vision:      { model: 'llava:latest',      thinking: false },
-  embedding:   { model: EMBEDDING_MODEL,     thinking: false },
-  default:     { model: 'gemma4:26b',        thinking: false },
+  extraction:  { model: _lblModel('fast')        || 'gemma4:26b',   thinking: false },
+  linking:     { model: _lblModel('fast')        || 'gemma4:26b',   thinking: false },
+  dreaming:    { model: _lblModel('slow')        || 'qwen3.6:27b',  thinking: true  },
+  synthesis:   { model: _lblModel('synthesis')   || 'qwen3.6:27b',  thinking: true  },
+  reflection:  { model: _lblModel('fast')        || 'gemma4:26b',   thinking: false },
+  rumination:  { model: _lblModel('rumination')  || 'qwen3.5:9b',   thinking: true  },
+  vision:      { model: _lblModel('vision')      || 'llava:latest',  thinking: false },
+  embedding:   { model: EMBEDDING_MODEL,                             thinking: false },
+  default:     { model: _lblModel('default')     || 'gemma4:26b',   thinking: false },
 }
 
 // ── Model list cache ──────────────────────────────────────────────────────────
