@@ -13,7 +13,8 @@
 #   6. Configures Claude Code: MCP server + plugin
 #   7. Creates ~/.grimoire dotlink
 #   8. Installs grim-boot-report userspace systemd service
-#   9. Smoke-tests the connection
+#   9. Registers hardware inventory in the KB (re-run anytime after upgrades)
+#  10. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -203,7 +204,17 @@ else
     || warn "systemctl enable failed — run: systemctl --user enable grim-boot-report"
 fi
 
-# ── 9. Smoke test ─────────────────────────────────────────────────────────────
+# ── 9. Register this machine in the KB ───────────────────────────────────────
+step "Registering hardware inventory in KB..."
+REGISTER_SCRIPT="$ENGINE_ROOT/deploy/grim-register-host.sh"
+if [[ -x "$REGISTER_SCRIPT" ]]; then
+  GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://aid:3663}" "$REGISTER_SCRIPT" \
+    || warn "registration failed — re-run manually: $REGISTER_SCRIPT"
+else
+  warn "grim-register-host.sh not found — skipping"
+fi
+
+# ── 10. Smoke test ────────────────────────────────────────────────────────────
 step "Testing connection to aid:3663..."
 if curl -sf --max-time 5 http://aid:3663/health -o /dev/null 2>/dev/null; then
   HEALTH=$(curl -s http://aid:3663/health)

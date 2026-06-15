@@ -137,6 +137,75 @@ Open port **3663** on aid for LAN clients. See [docs/client-setup.md](docs/clien
 
 ---
 
+## Mage / Minion — two-session workflow
+
+For non-trivial implementation work, Grimoire uses a **supervisor + worker** split across two Claude Code sessions running in the same working directory.
+
+| Role | Session | Job |
+|------|---------|-----|
+| **Mage** | Cloud model (Claude Sonnet/Opus) | Plans phases, writes briefs, reviews work, issues verdicts |
+| **Minion** | Second session (local or cloud) | Reads the brief, implements exactly what it says, reports back |
+
+The two sessions never talk directly — they pass messages through `.mm/`, an append-only directory of markdown files that is gitignored and stays local.
+
+### Message convention
+
+```
+.mm/
+  0001-mage.md      ← mage's brief / kickoff
+  0001-minion.md    ← minion's report
+  0002-mage.md      ← mage's verdict (accepted or revise with numbered fixes)
+  0002-minion.md    ← minion's revised report
+  ...
+```
+
+Every file starts with: `phase: <N> · state: <brief|report|revise|accepted|question|blocked>`
+
+The mage never edits or deletes past messages. The minion never self-approves.
+
+### Typical flow
+
+```
+[Mage session]  /mage "kick off Phase 5"
+                → writes plans/phase-5.md (the brief)
+                → writes .mm/0001-mage.md pointing at it
+
+[Minion session] /minion
+                → reads .mm/0001-mage.md, opens plans/phase-5.md
+                → implements the brief's numbered steps
+                → writes .mm/0001-minion.md with state: report
+                   (all counts are pasted command output, never hand-tallied)
+
+[Mage session]  /mage
+                → reads minion's report, re-runs test suite (verify-don't-trust)
+                → writes .mm/0002-mage.md: state: accepted (or revise with exact fixes)
+                → on accepted: archives thread to plans/reviews/phase-N.md, commits
+```
+
+### Usage
+
+In your **supervisor** session:
+```
+/mage "start Phase 5 — implement the event bus"
+/mage                    ← read minion's latest report and respond
+```
+
+In your **worker** session:
+```
+/minion                  ← check for instructions and execute
+```
+
+### Why this pattern works
+
+- The mage's context stays focused on design and correctness, not implementation noise
+- The minion's scope is bounded by the brief — it can't drift or gold-plate
+- The `.mm/` thread is the audit trail for every decision in a phase
+- Verdicts require re-running the test suite, not trusting green checkmarks
+
+See `plugin/skills/mage/SKILL.md` and `plugin/skills/minion/SKILL.md` for the full protocol.
+
+---
+
 ## New machine setup
 
 See [docs/client-setup.md](docs/client-setup.md) for full instructions including:
