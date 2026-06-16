@@ -2,8 +2,8 @@
 # deploy/grim-register-host.sh — hardware + OS inventory → Grimoire KB
 #
 # Collects: CPU, RAM, GPU/VRAM, motherboard, storage/mounts, OS, network IPs.
-# Creates or updates a ComputerSystem entity at @id: host_<hostname>.
-# Safe to re-run — use it whenever hardware changes.
+# Upserts a DefinedTerm entity at @id: host_<hostname> — always deletes then
+# recreates so hardware/network/os fields are always current. Safe to re-run.
 #
 # Usage:
 #   ./deploy/grim-register-host.sh
@@ -17,6 +17,7 @@ set -euo pipefail
 GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://aid:3663}"
 export HOSTNAME_S="$(hostname -s)"
 export TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+export PLATFORM="$(uname -s)"   # Linux | Darwin
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}✔${NC}  $*"; }
@@ -26,23 +27,39 @@ step() { echo -e "░ $*"; }
 # ── CPU ───────────────────────────────────────────────────────────────────────
 
 _gather_cpu() {
-  CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || echo 'unknown')"
-  CPU_THREADS="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 0)"
-  local raw_cores
-  raw_cores="$(grep 'cpu cores' /proc/cpuinfo 2>/dev/null | head -1 | awk -F: '{print $2}' | xargs || echo '')"
-  CPU_CORES="${raw_cores:-$CPU_THREADS}"
-  CPU_SOCKETS="$(grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l || echo 1)"
-  [[ "$CPU_SOCKETS" -eq 0 ]] && CPU_SOCKETS=1
-  CPU_MHZ="$(grep -m1 'cpu MHz' /proc/cpuinfo 2>/dev/null | awk -F: '{print $2}' | xargs | cut -d. -f1 || echo 0)"
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null | xargs || echo 'unknown')"
+    CPU_THREADS="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 0)"
+    CPU_CORES="$(sysctl -n hw.physicalcpu 2>/dev/null || echo "$CPU_THREADS")"
+    CPU_SOCKETS=1
+    local hz
+    hz="$(sysctl -n hw.cpufrequency_max 2>/dev/null || echo 0)"
+    CPU_MHZ=$(( ${hz:-0} / 1000000 ))
+  else
+    CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || echo 'unknown')"
+    CPU_THREADS="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 0)"
+    local raw_cores
+    raw_cores="$(grep 'cpu cores' /proc/cpuinfo 2>/dev/null | head -1 | awk -F: '{print $2}' | xargs || echo '')"
+    CPU_CORES="${raw_cores:-$CPU_THREADS}"
+    CPU_SOCKETS="$(grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l | xargs || echo 1)"
+    [[ "${CPU_SOCKETS:-0}" -eq 0 ]] && CPU_SOCKETS=1
+    CPU_MHZ="$(grep -m1 'cpu MHz' /proc/cpuinfo 2>/dev/null | awk -F: '{print $2}' | xargs | cut -d. -f1 || echo 0)"
+  fi
   export CPU_MODEL CPU_THREADS CPU_CORES CPU_SOCKETS CPU_MHZ
 }
 
 # ── Memory ────────────────────────────────────────────────────────────────────
 
 _gather_mem() {
-  local total_kb
-  total_kb="$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo 0)"
-  MEM_TOTAL_GB=$(( total_kb / 1024 / 1024 ))
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    local total_bytes
+    total_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
+    MEM_TOTAL_GB=$(( ${total_bytes:-0} / 1024 / 1024 / 1024 ))
+  else
+    local total_kb
+    total_kb="$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo 0)"
+    MEM_TOTAL_GB=$(( total_kb / 1024 / 1024 ))
+  fi
   export MEM_TOTAL_GB
 }
 
@@ -50,6 +67,21 @@ _gather_mem() {
 
 _gather_gpu() {
   local -a entries=()
+
+  # macOS — system_profiler (handles both Apple Silicon and discrete GPUs)
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    while IFS= read -r gname; do
+      entries+=("$(N="$gname" node -e "
+        process.stdout.write(JSON.stringify({vendor:'apple',name:process.env.N,vram_mb:null,driver:null}))")")
+    done < <(system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model:' | sed 's/.*Chipset Model: //' || true)
+    if [[ ${#entries[@]} -gt 0 ]]; then
+      GPU_JSON="[$(IFS=,; echo "${entries[*]}")]"
+    else
+      GPU_JSON="[]"
+    fi
+    export GPU_JSON
+    return
+  fi
 
   # NVIDIA — nvidia-smi gives exact VRAM and driver version
   if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
@@ -119,7 +151,13 @@ _gather_gpu() {
 # ── Motherboard ───────────────────────────────────────────────────────────────
 
 _gather_mobo() {
-  if [[ -r /sys/class/dmi/id/board_vendor ]]; then
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    local hw_info
+    hw_info="$(system_profiler SPHardwareDataType 2>/dev/null || true)"
+    MOBO_VENDOR="Apple"
+    MOBO_NAME="$(echo "$hw_info" | grep 'Model Identifier:' | awk -F': ' '{print $2}' | xargs || echo '')"
+    MOBO_PRODUCT="$(echo "$hw_info" | grep 'Model Name:' | awk -F': ' '{print $2}' | xargs || echo '')"
+  elif [[ -r /sys/class/dmi/id/board_vendor ]]; then
     MOBO_VENDOR="$(cat /sys/class/dmi/id/board_vendor 2>/dev/null | xargs || echo '')"
     MOBO_NAME="$(cat /sys/class/dmi/id/board_name 2>/dev/null | xargs || echo '')"
     MOBO_PRODUCT="$(cat /sys/class/dmi/id/product_name 2>/dev/null | xargs || echo '')"
@@ -136,48 +174,79 @@ _gather_mobo() {
 # ── Storage ───────────────────────────────────────────────────────────────────
 
 _gather_storage() {
-  # Physical disks — lsblk JSON; NVMe name prefix distinguishes from SATA SSD
-  DISKS_JSON="$(lsblk -J -b -o NAME,SIZE,TYPE,ROTA,MODEL 2>/dev/null | node -e "
-    let d=''; process.stdin.on('data',x=>d+=x);
-    process.stdin.on('end',()=>{
-      try {
-        const {blockdevices=[]} = JSON.parse(d);
-        const disks = blockdevices
-          .filter(b => b.type === 'disk')
-          .map(b => ({
-            name: b.name,
-            model: (b.model||'').trim() || null,
-            size_gb: Math.round(+b.size / 1e9),
-            type: b.name.startsWith('nvme') ? 'nvme'
-                : (b.rota==='0'||b.rota===false) ? 'ssd' : 'hdd',
-          }));
-        process.stdout.write(JSON.stringify(disks));
-      } catch { process.stdout.write('[]'); }
-    });
-  " 2>/dev/null || echo '[]')"
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    # No lsblk on macOS
+    DISKS_JSON="[]"
 
-  # Mount points — skip pseudo/system filesystems
-  # df -B1 columns: Filesystem  1B-blocks  Used  Available  Use%  Mounted
-  MOUNTS_JSON="$(df -B1 2>/dev/null | tail -n +2 | node -e "
-    let d=''; process.stdin.on('data',x=>d+=x);
-    process.stdin.on('end',()=>{
-      const skipFs    = /^(tmpfs|devtmpfs|squashfs|overlay|efivarfs|cgroup|bpf|pstore|hugetlbfs|mqueue|debugfs|tracefs|sysfs|proc|udev|fusectl)/i;
-      const skipMount = /^\/(dev|proc|sys|run\/lock|snap\/|boot\/efi)\b/;
-      const seen = new Set();
-      const out = d.trim().split('\n').filter(Boolean)
-        .map(l => {
-          const p = l.trim().split(/\s+/);
-          if (p.length < 6) return null;
-          const [fs, total, used, avail, , mount] = p;
-          if (skipFs.test(fs) || skipMount.test(mount)) return null;
-          if (seen.has(mount)) return null;
-          seen.add(mount);
-          return { mount, fs, size_gb: Math.round(+total/1e9), used_gb: Math.round(+used/1e9), avail_gb: Math.round(+avail/1e9) };
-        })
-        .filter(Boolean);
-      process.stdout.write(JSON.stringify(out));
-    });
-  " 2>/dev/null || echo '[]')"
+    # df -Pk: POSIX 6-column format, 1K-blocks — works on macOS and Linux
+    # Columns: Filesystem  1K-blocks  Used  Available  Capacity  Mounted
+    MOUNTS_JSON="$(df -Pk 2>/dev/null | tail -n +2 | node -e "
+      let d=''; process.stdin.on('data',x=>d+=x);
+      process.stdin.on('end',()=>{
+        const skipFs    = /^(devfs|map |driverkit|com\.apple\.os_storage)/i;
+        const skipMount = /^\/(dev|private\/var\/folders|System\/Volumes\/(Preboot|Recovery|VM|Update))\b/;
+        const seen = new Set();
+        const out = d.trim().split('\n').filter(Boolean)
+          .map(l => {
+            const p = l.trim().split(/\s+/);
+            if (p.length < 6) return null;
+            const [fs, total_kb, used_kb, avail_kb, , mount] = p;
+            if (skipFs.test(fs) || skipMount.test(mount)) return null;
+            if (seen.has(mount)) return null;
+            seen.add(mount);
+            const g = n => Math.round(+n * 1024 / 1e9);
+            return { mount, fs, size_gb: g(total_kb), used_gb: g(used_kb), avail_gb: g(avail_kb) };
+          })
+          .filter(Boolean);
+        process.stdout.write(JSON.stringify(out));
+      });
+    " 2>/dev/null || echo '[]')"
+
+  else
+    # Linux — wrap lsblk in (|| true) so pipefail doesn't fire || echo '[]'
+    # when lsblk is absent, causing node's [] and echo's [] to concatenate as [][]
+    DISKS_JSON="$( (lsblk -J -b -o NAME,SIZE,TYPE,ROTA,MODEL 2>/dev/null || true) | node -e "
+      let d=''; process.stdin.on('data',x=>d+=x);
+      process.stdin.on('end',()=>{
+        try {
+          const {blockdevices=[]} = JSON.parse(d);
+          const disks = blockdevices
+            .filter(b => b.type === 'disk')
+            .map(b => ({
+              name: b.name,
+              model: (b.model||'').trim() || null,
+              size_gb: Math.round(+b.size / 1e9),
+              type: b.name.startsWith('nvme') ? 'nvme'
+                  : (b.rota==='0'||b.rota===false) ? 'ssd' : 'hdd',
+            }));
+          process.stdout.write(JSON.stringify(disks));
+        } catch { process.stdout.write('[]'); }
+      });
+    " 2>/dev/null)"
+    [[ -z "$DISKS_JSON" ]] && DISKS_JSON="[]"
+
+    # df -B1 columns: Filesystem  1B-blocks  Used  Available  Use%  Mounted
+    MOUNTS_JSON="$(df -B1 2>/dev/null | tail -n +2 | node -e "
+      let d=''; process.stdin.on('data',x=>d+=x);
+      process.stdin.on('end',()=>{
+        const skipFs    = /^(tmpfs|devtmpfs|squashfs|overlay|efivarfs|cgroup|bpf|pstore|hugetlbfs|mqueue|debugfs|tracefs|sysfs|proc|udev|fusectl)/i;
+        const skipMount = /^\/(dev|proc|sys|run\/lock|snap\/|boot\/efi)\b/;
+        const seen = new Set();
+        const out = d.trim().split('\n').filter(Boolean)
+          .map(l => {
+            const p = l.trim().split(/\s+/);
+            if (p.length < 6) return null;
+            const [fs, total, used, avail, , mount] = p;
+            if (skipFs.test(fs) || skipMount.test(mount)) return null;
+            if (seen.has(mount)) return null;
+            seen.add(mount);
+            return { mount, fs, size_gb: Math.round(+total/1e9), used_gb: Math.round(+used/1e9), avail_gb: Math.round(+avail/1e9) };
+          })
+          .filter(Boolean);
+        process.stdout.write(JSON.stringify(out));
+      });
+    " 2>/dev/null || echo '[]')"
+  fi
 
   export DISKS_JSON MOUNTS_JSON
 }
@@ -185,7 +254,10 @@ _gather_storage() {
 # ── OS ────────────────────────────────────────────────────────────────────────
 
 _gather_os() {
-  if [[ -f /etc/os-release ]]; then
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    OS_PRETTY="macOS $(sw_vers -productVersion 2>/dev/null || echo '')"
+    OS_VERSION="$(sw_vers -productVersion 2>/dev/null || echo '')"
+  elif [[ -f /etc/os-release ]]; then
     OS_PRETTY="$(. /etc/os-release && echo "${PRETTY_NAME:-${NAME:-unknown}}")"
     OS_VERSION="$(. /etc/os-release && echo "${VERSION_ID:-}")"
   else
@@ -201,20 +273,41 @@ _gather_os() {
 _gather_network() {
   # Capture all UP non-loopback IPv4 addresses.
   # Stored so the KB can later derive /etc/hosts for the whole homelab.
-  IPS_JSON="$(ip -j addr 2>/dev/null | node -e "
-    let d=''; process.stdin.on('data',x=>d+=x);
-    process.stdin.on('end',()=>{
-      try {
-        const addrs = JSON.parse(d)
-          .filter(i => i.ifname !== 'lo' && i.operstate === 'UP')
-          .flatMap(i => (i.addr_info||[])
-            .filter(a => a.family === 'inet')
-            .map(a => ({ iface: i.ifname, ip: a.local, prefix: a.prefixlen }))
-          );
-        process.stdout.write(JSON.stringify(addrs));
-      } catch { process.stdout.write('[]'); }
-    });
-  " 2>/dev/null || echo '[]')"
+  if [[ "$PLATFORM" == "Darwin" ]]; then
+    # ifconfig — parse text output (ip not available by default on macOS)
+    IPS_JSON="$(ifconfig 2>/dev/null | node -e "
+      let d=''; process.stdin.on('data',x=>d+=x);
+      process.stdin.on('end',()=>{
+        try {
+          const addrs = [];
+          let iface = null;
+          for (const line of d.split('\n')) {
+            const im = line.match(/^(\S+):/);
+            if (im) { iface = im[1]; continue; }
+            if (!iface || iface === 'lo0') continue;
+            const am = line.match(/\s+inet (\d+\.\d+\.\d+\.\d+)/);
+            if (am) addrs.push({ iface, ip: am[1], prefix: null });
+          }
+          process.stdout.write(JSON.stringify(addrs));
+        } catch { process.stdout.write('[]'); }
+      });
+    " 2>/dev/null || echo '[]')"
+  else
+    IPS_JSON="$(ip -j addr 2>/dev/null | node -e "
+      let d=''; process.stdin.on('data',x=>d+=x);
+      process.stdin.on('end',()=>{
+        try {
+          const addrs = JSON.parse(d)
+            .filter(i => i.ifname !== 'lo' && i.operstate === 'UP')
+            .flatMap(i => (i.addr_info||[])
+              .filter(a => a.family === 'inet')
+              .map(a => ({ iface: i.ifname, ip: a.local, prefix: a.prefixlen }))
+            );
+          process.stdout.write(JSON.stringify(addrs));
+        } catch { process.stdout.write('[]'); }
+      });
+    " 2>/dev/null || echo '[]')"
+  fi
   export IPS_JSON
 }
 
@@ -266,20 +359,6 @@ _build_remember_payload() {
   "
 }
 
-# Minimal payload for updates — only patches description/tags (server limitation)
-_build_update_payload() {
-  local desc="$1"
-  DESC="$desc" node -e "
-    const e = process.env;
-    process.stdout.write(JSON.stringify({
-      id: 'host_' + e.HOSTNAME_S,
-      description: e.DESC,
-      tags: ['host/' + e.HOSTNAME_S, 'hardware/inventory'],
-      metadata: { dateModified: e.TS, source: 'grim-register-host' },
-    }));
-  "
-}
-
 # ── POST helper ───────────────────────────────────────────────────────────────
 
 _post() {
@@ -292,34 +371,28 @@ _post() {
 }
 
 # ── Register ──────────────────────────────────────────────────────────────────
+# Always delete-then-create so all fields (hardware/network/os) are current.
 
 _register() {
-  local desc body resp code
+  local desc body resp
+
   desc="$(_build_description)"
 
-  # Try to create (remember). Returns ok:false+reason:duplicate if entity exists.
+  # Delete existing entity if present (not_found is fine — idempotent)
+  _post '/api/tome/forget' "{\"id\":\"host_${HOSTNAME_S}\"}" > /dev/null
+
+  # Create fresh with full payload
   body="$(_build_remember_payload "$desc")"
   resp="$(curl -s --max-time 15 \
     -X POST "${GRIMOIRE_HOST}/api/tome/remember" \
     -H 'Content-Type: application/json' \
     -d "$body" 2>/dev/null)"
-  code="$(echo "$resp" | node -e "let d='';process.stdin.on('data',x=>d+=x);process.stdin.on('end',()=>{ try{const r=JSON.parse(d); process.stdout.write(r.ok===false&&r.reason==='duplicate'?'duplicate':r.ok?'created':'error');} catch{process.stdout.write('error');} })")"
 
-  if [[ "$code" == "created" ]]; then
-    ok "Created  host_${HOSTNAME_S} in KB"
-    return
-  fi
+  local ok_flag
+  ok_flag="$(echo "$resp" | node -e "let d='';process.stdin.on('data',x=>d+=x);process.stdin.on('end',()=>{ try{process.stdout.write(JSON.parse(d).ok?'ok':'fail');}catch{process.stdout.write('fail');} })")"
 
-  if [[ "$code" == "duplicate" ]]; then
-    # Entity exists — patch description + tags via update
-    body="$(_build_update_payload "$desc")"
-    local ucode
-    ucode="$(_post '/api/tome/update' "$body")"
-    if [[ "$ucode" == "200" ]]; then
-      ok "Updated  host_${HOSTNAME_S} in KB  (hardware fields preserved from original — re-register to refresh)"
-    else
-      warn "Update failed (http=$ucode) — entity exists but description not refreshed"
-    fi
+  if [[ "$ok_flag" == "ok" ]]; then
+    ok "Registered  host_${HOSTNAME_S} in KB"
     return
   fi
 

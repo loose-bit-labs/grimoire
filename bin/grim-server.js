@@ -18,6 +18,7 @@
  *   POST /api/tome/remember      → create entity
  *   POST /api/tome/relate        → add relationship
  *   POST /api/tome/annotate      → annotate entity
+ *   POST /api/tome/forget        → delete entity by id
  *   POST /api/scribe             → rebuild graph index + bust cache
  *   POST /api/crawl                      → extract entities from text/code, write to KB
  *   POST /noise-floor/think             → add thought to stream
@@ -40,7 +41,7 @@ const { loadGraph }      = require('../lib/graph')
 const { runChecks, computeScore } = require('./grim-divine')
 const { search, enrichWithContext } = require('./grim-oracle')
 const { loadBriefing, saveSession } = require('./grim-session')
-const { recall, remember, update, relate, annotate } = require('./grim-tome')
+const { recall, remember, update, relate, annotate, forget } = require('./grim-tome')
 const { crawlText } = require('./grim-crawl')
 const { config, requireMode } = require('../lib/env')
 const { semanticSearch, indexReady } = require('../lib/vectors')
@@ -223,6 +224,19 @@ app.post('/api/tome/annotate', async (req, res) => {
     _graphCache = null
     res.json(result)
   } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/tome/forget', async (req, res) => {
+  try {
+    const { id } = req.body
+    if (!id) return res.status(400).json({ error: 'id required' })
+    const result = await forget(id)
+    _graphCache = null
+    res.json(result)
+  } catch (e) {
+    if (e.message.includes('not found')) return res.json({ ok: false, reason: 'not_found' })
     res.status(500).json({ error: e.message })
   }
 })
