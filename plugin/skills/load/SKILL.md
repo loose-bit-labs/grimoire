@@ -2,7 +2,6 @@
 name: load
 description: Load the Grimoire session briefing — who you are, how you feel, where you were, what matters. Run at the start of any work session.
 argument-hint: [topic]
-allowed-tools: [mcp__grimoire__session_load, mcp__grimoire__oracle_search, mcp__grimoire__tome_recall]
 ---
 
 # /load — Load Save
@@ -16,7 +15,7 @@ Topic hint (optional): $ARGUMENTS
 
 ## Instructions
 
-1. Call `mcp__grimoire__session_load` to retrieve the full briefing
+1. Call the MCP tool `mcp__grimoire__load` to retrieve the full briefing
 2. If an interrupted session exists, surface it prominently — topic, when it started, last heartbeat state
 3. Present the briefing in this order:
    - **Identity**: agent model name, role, and current affect (valence/label from cognitiveState)

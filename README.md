@@ -57,6 +57,17 @@ grim serve             Start HTTP + MCP server                                  
 
 ---
 
+## Cluster & Harness Integration
+
+Grimoire is designed to run on a central host (currently `aid`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
+
+- **Skills Hub**: Add or modify skills in `plugin/skills/` on any host. These are version-controlled and shared across the cluster.
+- **Harness Slots**: AI harnesses (Claude Code, Copilot, etc.) consume skills via symbolic links or configuration files. Create a slot in your harness config that points to `plugin/skills/<skill-name>/SKILL.md`.
+- **Per-Harness Config**: Keep harness-specific files (e.g., `.claude/settings.json`) in a dedicated directory in your home folder. Link or symlink these into your harness's expected locations as needed — keeps harness configs separate from the repo and portable.
+- **Remote Ontology**: Regardless of the client box, AI assistants connect to the central KB on `aid` via `GRIMOIRE_HOST` to search, track, and update the shared ontology. This ensures consistent context across all projects and tools.
+
+---
+
 ## Quick start (on aid)
 
 ```bash

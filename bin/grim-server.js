@@ -424,7 +424,7 @@ const MCP_TOOLS = [
     },
   },
   {
-    name: 'session_load',
+    name: 'load',
     description: 'Load the Grimoire session briefing: identity, interrupted sessions, recent dreams, cheat codes, active goals.',
     inputSchema: { type: 'object', properties: {} },
   },
@@ -525,7 +525,7 @@ async function executeMCPTool(name, args) {
       return result
     }
 
-    case 'session_load': {
+    case 'load': {
       return await loadBriefing()
     }
 
