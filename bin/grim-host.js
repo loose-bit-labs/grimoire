@@ -26,7 +26,6 @@ const { exec, spawnSync } = require('node:child_process')
 const minimist = require('minimist')
 const { config } = require('../lib/env')
 
-const CONFIGS_DIR = path.join(os.homedir(), '.config', 'lbl-configs')
 
 class GrimHost {
 
@@ -110,65 +109,51 @@ class GrimHost {
   }
 
   // ── sync-config ───────────────────────────────────────────────────────────────
+  // lbl-config.json is identical across all hosts — same topology, same endpoint
+  // names (resolved via /etc/hosts). Source is always the local copy; push to
+  // every non-local, non-skip host in rig.json.
 
   async syncConfig({ hostname } = {}) {
-    if (!fs.existsSync(CONFIGS_DIR)) {
-      console.error(`Config dir not found: ${CONFIGS_DIR}`)
-      console.error(`Create it and add one JSON file per host:`)
-      console.error(`  mkdir -p ${CONFIGS_DIR}`)
-      console.error(`  cp ~/.config/lbl-config.json ${CONFIGS_DIR}/aid.json`)
-      console.error(`  # Edit each file with host-appropriate endpoint routing`)
+    const srcPath = path.join(os.homedir(), '.config', 'lbl-config.json')
+    if (!fs.existsSync(srcPath)) {
+      console.error(`Source not found: ${srcPath}`)
       process.exit(1)
     }
 
     const rig = this._loadRig()
     if (!rig.length) {
-      console.error(`No hosts in rig.json — register hosts or add them to $GRIMOIRE_ROOT/rig.json`)
-      process.exit(1)
-    }
-
-    const targets = rig.filter(b =>
-      !b.skip && (!hostname || b.host === hostname || b.label === hostname)
-    )
-    if (!targets.length) {
-      console.error(hostname ? `Host '${hostname}' not found in rig.json` : 'No hosts to sync')
+      console.error(`No hosts in rig.json ($GRIMOIRE_ROOT/rig.json)`)
       process.exit(1)
     }
 
     const localHost = os.hostname().toLowerCase()
-    let ok = 0, skipped = 0, failed = 0
+    const targets = rig.filter(b => {
+      if (b.skip) return false
+      if ((b.aliases || []).some(a => a === localHost)) return false  // skip self
+      if (hostname && b.host !== hostname && b.label !== hostname) return false
+      return true
+    })
 
-    for (const box of targets) {
-      const configFile = path.join(CONFIGS_DIR, `${box.host}.json`)
-      if (!fs.existsSync(configFile)) {
-        console.warn(`  ⚠  ${box.host}  no config at ${path.basename(CONFIGS_DIR)}/${box.host}.json — skipped`)
-        skipped++
-        continue
-      }
-
-      const isLocal = (box.aliases || []).some(a => a === localHost)
-      const destPath = path.join(os.homedir(), '.config', 'lbl-config.json')
-
-      if (isLocal) {
-        fs.copyFileSync(configFile, destPath)
-        console.log(`  ✔  ${box.host}  (local) → ${destPath}`)
-        ok++
-      } else {
-        const success = await this._sshCopy(box.host, configFile)
-        if (success) { console.log(`  ✔  ${box.host}  synced`); ok++ }
-        else         { console.warn(`  ✗  ${box.host}  SSH failed`); failed++ }
-      }
+    if (!targets.length) {
+      console.error(hostname ? `Host '${hostname}' not found in rig.json (or is local)` : 'No remote hosts to sync')
+      process.exit(1)
     }
 
-    console.log(`\n  ${ok} synced · ${skipped} skipped · ${failed} failed`)
+    const content = fs.readFileSync(srcPath, 'utf8')
+    let ok = 0, failed = 0
+
+    for (const box of targets) {
+      const success = await this._sshWrite(box.host, content)
+      if (success) { console.log(`  ✔  ${box.host}`); ok++ }
+      else         { console.warn(`  ✗  ${box.host}  SSH failed`); failed++ }
+    }
+
+    console.log(`\n  ${ok} synced · ${failed} failed`)
     if (failed) process.exit(1)
   }
 
-  _sshCopy(host, configFile) {
+  _sshWrite(host, content) {
     return new Promise(resolve => {
-      const content = fs.readFileSync(configFile, 'utf8')
-      // execFile: args passed directly — SSH receives the remote command as one arg,
-      // so && is interpreted by the remote shell, not the local one.
       const { execFile } = require('node:child_process')
       const proc = execFile('ssh', [
         '-o', 'BatchMode=yes',
@@ -226,15 +211,10 @@ class GrimHost {
   Options for gen-hosts:
     --out <file>    Write to file instead of stdout
 
-  Config sync layout:
-    Source:  ~/.config/lbl-configs/<hostname>.json  (one per target host)
-    Dest:    <host>:~/.config/lbl-config.json       (via SSH, key-based auth)
-
-  First-time config sync setup:
-    mkdir -p ~/.config/lbl-configs
-    cp ~/.config/lbl-config.json ~/.config/lbl-configs/aid.json
-    # copy + edit for each other host (adjust 'use' routing per-machine)
-    cp ~/.config/lbl-config.json ~/.config/lbl-configs/chonko.json
+  Config sync:
+    Source:  ~/.config/lbl-config.json  (local machine — source of truth)
+    Dest:    <host>:~/.config/lbl-config.json via SSH (same file, all hosts)
+    Skips:   local machine, skip:true hosts in rig.json
 
   Examples:
     grim host list
