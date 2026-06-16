@@ -261,7 +261,7 @@ async function buildRouteTable() {
 
 // ── ask() ─────────────────────────────────────────────────────────────────────
 
-async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images }) {
+async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images, maxTokens }) {
   let resolved
   if (model) {
     const profile = profileFor(model)
@@ -272,9 +272,12 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
 
   const { model: resolvedModel, thinking: isThinking } = resolved
 
-  const body = { prompt, model: resolvedModel, stream: false }
+  const body = { prompt, model: resolvedModel, stream: false, keep_alive: -1 }
   if (system)  body.system = system
   if (images?.length) body.images = images
+  const modelCanThink = profileFor(resolvedModel)?.thinking === true
+  if (!isThinking && modelCanThink) body.options = { think: false }
+  if (maxTokens) body.options = { ...body.options, num_predict: maxTokens }
 
   if (json && isThinking) {
     body.prompt = prompt + '\n\nRespond with valid JSON only. No markdown, no prose.'
@@ -282,13 +285,25 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
     body.format = 'json'
   }
 
+  const promptTokenEst = Math.ceil((body.prompt || '').length / 4)
+  try {
+    const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
+    const loaded = (ps.data.models || []).map(m => m.name)
+    const isLoaded = loaded.some(n => n === resolvedModel || n.startsWith(resolvedModel.split(':')[0]))
+    if (!isLoaded) process.stderr.write(`  [ask] COLD LOAD — ${resolvedModel} not in VRAM (loaded: ${loaded.join(', ') || 'none'})\n`)
+  } catch {}
+  process.stderr.write(`  [ask] ${resolvedModel} task=${task} think=${isThinking} promptTokens≈${promptTokenEst} timeout=${timeout}ms\n`)
+  const t0 = Date.now()
+
   const response = await axios.post(
     `${OLLAMA_BASE}/api/generate`,
     body,
     { headers: { 'Content-Type': 'application/json' }, timeout }
   )
 
+  const elapsed = Date.now() - t0
   const raw = response.data.response || ''
+  process.stderr.write(`  [ask] done in ${elapsed}ms — ${raw.length} chars\n`)
   return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 }
 
