@@ -30,8 +30,10 @@ If empty: read the minion's latest unread message and respond appropriately.
 1. `mkdir -p .mm` if missing (first use). If the repo has a `.gitignore` without `.mm/`, add it.
    Stamp this session's role for the status-line HUD:
    `echo mage > ".mm/.role-$CLAUDE_CODE_SESSION_ID"` (no-op if the var is unset; lives in gitignored `.mm/`).
-2. List `.mm/` sorted. Identify every minion message numbered higher than your last mage message —
-   that's your unread inbox. Read it.
+2. List `.mm/` sorted. Identify every minion **or hierophant** message numbered higher than your
+   last mage message — that's your unread inbox. Read it. A hierophant `decree` hands you the grand
+   plan to decompose into phase briefs; a hierophant `ruling` is binding — apply it and adjust the
+   minion's brief accordingly.
 3. If the unread message is a **report** (`state: report`): review it **verify-don't-trust** —
    re-run the test suite yourself, read the diff since the last reviewed commit, probe the actual
    artifact on disk. Follow `plans/PROTOCOL.md` if the repo has one. Verdict is `accepted` or
@@ -52,6 +54,9 @@ If empty: read the minion's latest unread message and respond appropriately.
 - Any minion edit outside its declared scope must be called out in your reply.
 - Don't send a new directive while your own message is already the latest unanswered one, unless
   the user explicitly overrides.
+- If you and the minion are genuinely stalled — repeated revise↔report cycles on the same point, or
+  a `blocked`/`question` you can't resolve — escalate upward: write a `state: escalate` message and
+  tell the user to summon the `/hierophant`. Don't grind a stuck loop.
 
 ## Tone
 

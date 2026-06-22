@@ -16,9 +16,9 @@
  * under a cycling moon by flickering torchlight. Frames advance off the
  * wall clock.
  *
- * Role comes from GRIM_ROLE (mage|minion|hierophant) — set it at launch,
- * the only path for the skill-less hierophant — or a session-keyed marker
- * the /mage and /minion skills drop at .mm/.role-$CLAUDE_CODE_SESSION_ID.
+ * Role comes from GRIM_ROLE (mage|minion|hierophant) — set it at launch — or
+ * a session-keyed marker the /mage, /minion and /hierophant skills drop at
+ * .mm/.role-$CLAUDE_CODE_SESSION_ID.
  *
  * INSTALL (any box with this repo checked out):
  *   ln -s "$PWD/deploy/claude-statusline.js" ~/.claude/statusline.js
@@ -170,9 +170,8 @@ function git(args, cwd) {
 // ---- session role (minion / mage / hierophant) ----------------------------
 // The three-layer pact: minion (local, the hands) → mage (builds & reviews) →
 // hierophant (the authority that descends to mediate a stalled loop or hand
-// down the grand plan). Detected from GRIM_ROLE — explicit, and the only path
-// for the skill-less hierophant — or a session-keyed marker the /mage and
-// /minion skills drop in .mm/.
+// down the grand plan). Detected from GRIM_ROLE — explicit — or a session-keyed
+// marker the /mage, /minion and /hierophant skills drop in .mm/.
 const ROLE_ICONS = {
   minion: '🧎‍♂️',
   mage: '🧙‍♂️',
