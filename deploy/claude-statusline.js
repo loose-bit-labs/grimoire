@@ -247,7 +247,9 @@ function main(input) {
     );
   }
 
-  const modelIcon = process.env.GRIM_MODEL_ICON || `🤖`
+  const modelIcons = '✱ Ⓐ ☮︎ ⩜ 𖤐 ✪ ✱ ✌︎  ㋡ ☢︎ 🤖 👾 𖠌 🧠 🚀 🌟 👽 𓁿 🌈⃤☄️💫 🌠 🛸';
+  const randIcon = () => modelIcons.split(' ').sort(()=>Math.random()-.5).pop();
+  const modelIcon = process.env.GRIM_MODEL_ICON || randIcon();
 
   parts.push(paint(c256.magenta, `${modelIcon} ${model}`));
 
