@@ -247,7 +247,9 @@ function main(input) {
     );
   }
 
-  parts.push(paint(c256.magenta, `🤖 ${model}`));
+  const modelIcon = process.env.GRIM_MODEL_ICON || `🤖`
+
+  parts.push(paint(c256.magenta, `${modelIcon} ${model}`));
 
   process.stdout.write(parts.join(sep) + sep + dungeonScene());
 }
