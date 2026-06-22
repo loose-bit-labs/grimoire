@@ -67,6 +67,10 @@ function contextEmoji(pct) {
   return '☠️'; // death — the compaction reaper approaches
 }
 
+function shuffles(s) {
+  return s.split(' ').sort(()=>Math.random()-.5).pop();
+}
+
 // ---- animated dungeon corridor (right side) -------------------------------
 // Frames advance off the wall clock; Claude Code re-renders the line
 // periodically, so the scene comes alive on its own.
@@ -173,11 +177,15 @@ function git(args, cwd) {
 // down the grand plan). Detected from GRIM_ROLE — explicit — or a session-keyed
 // marker the /mage, /minion and /hierophant skills drop in .mm/.
 const ROLE_ICONS = {
-  minion: '🧎‍♂️',
-  mage: '🧙‍♂️',
+  minion: '🧎',
+  mage: '🧙',
+  //minion: '🧎‍♂️',
+  //mage: '🧙‍♂️',
   hierophant: '🔮',
 };
-const LONE_ADVENTURER = '🗡️'; // no pact / role unknown
+//const LONE_ADVENTURER = '🗡️'; // no pact / role unknown
+const LONE_ADVENTURER = shuffles('🗡️ 🗺️  👤 🎮 🥷 🤺 🏹 🪓 🛡️ ⚚ 🪄'); // no pact / role unknown
+//const LONE_ADVENTURER = shuffles('𓀀  𓀁  𓀂  𓀃  𓀄  𓀅  𓀆  𓀇  𓀈  𓀉  𓀊  𓀋  𓀌  𓀍  𓀎  𓀏  𓀐  𓀑  𓀒  𓀓  𓀔  𓀕  𓀖  𓀗  𓀘  𓀙  𓀚  𓀛  𓀜  𓀝  𓀞  𓀟  𓀠  𓀡  𓀢  𓀣  𓀤  𓀥  𓀦  𓀧  𓀨  𓀩  𓀪  𓀫 ');
 
 function detectRole(cwd, sessionId) {
   let role = (process.env.GRIM_ROLE || '').trim().toLowerCase();
@@ -247,9 +255,8 @@ function main(input) {
     );
   }
 
-  const modelIcons = '✱ Ⓐ ☮︎ ⩜ 𖤐 ✪ ✱ ✌︎  ㋡ ☢︎ 🤖 👾 𖠌 🧠 🚀 🌟 👽 𓁿 🌈⃤☄️💫 🌠 🛸';
-  const randIcon = () => modelIcons.split(' ').sort(()=>Math.random()-.5).pop();
-  const modelIcon = process.env.GRIM_MODEL_ICON || randIcon();
+  const defaultModelIcons = '✱ Ⓐ ☮︎ ⩜ 𖤐 ✪ ✱ ✌︎ ㋡ ☢︎ 🤖 👾 𖠌 🧠 🚀 🌟 👽 𓁿 🌈⃤☄️💫 🌠 🛸';
+  const modelIcon = shuffles(process.env.GRIM_MODEL_ICONS || defaultModelIcons);
 
   parts.push(paint(c256.magenta, `${modelIcon} ${model}`));
 
