@@ -31,9 +31,10 @@ If empty: read the minion's latest unread message and respond appropriately.
    Stamp this session's role for the status-line HUD:
    `echo mage > ".mm/.role-$CLAUDE_CODE_SESSION_ID"` (no-op if the var is unset; lives in gitignored `.mm/`).
 2. List `.mm/` sorted. Identify every minion **or hierophant** message numbered higher than your
-   last mage message — that's your unread inbox. Read it. A hierophant `decree` hands you the grand
-   plan to decompose into phase briefs; a hierophant `ruling` is binding — apply it and adjust the
-   minion's brief accordingly.
+   last mage message — that's your unread inbox. Read it. A hierophant message (`state: direction`)
+   sets the roadmap, drafts/revises a phase brief, answers an architecture question, or settles a
+   stall — it is binding. Brief the minion from it; raise architecture questions back up, don't
+   decide them yourself.
 3. If the unread message is a **report** (`state: report`): review it **verify-don't-trust** —
    re-run the test suite yourself, read the diff since the last reviewed commit, probe the actual
    artifact on disk. Follow `plans/PROTOCOL.md` if the repo has one. Verdict is `accepted` or
