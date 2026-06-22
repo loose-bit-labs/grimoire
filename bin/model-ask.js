@@ -191,6 +191,11 @@ const CACHE_FILE = path.join(os.tmpdir(), 'grimoire-models-cache.json')
 let _memCache     = null
 let _memCacheTime = 0
 
+// ── Loaded-models cache (from /api/ps) ────────────────────────────────────────
+// Cached for 30s so repeated ask() calls don't hammer /api/ps.
+let _loadedCache  = null
+let _loadedTime   = 0
+
 async function getInstalledModels() {
   // In-memory (server / repeated calls)
   if (_memCache && Date.now() - _memCacheTime < CACHE_TTL) return _memCache
@@ -261,7 +266,7 @@ async function buildRouteTable() {
 
 // ── ask() ─────────────────────────────────────────────────────────────────────
 
-async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images, maxTokens }) {
+async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images, maxTokens, keepAlive }) {
   let resolved
   if (model) {
     const profile = profileFor(model)
@@ -272,7 +277,11 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
 
   const { model: resolvedModel, thinking: isThinking } = resolved
 
-  const body = { prompt, model: resolvedModel, stream: false, keep_alive: -1 }
+  // Time-based keep_alive (default 30m) instead of -1 (never unload).
+  // Prevents VRAM clog during long batches (archaeology digs, council runs).
+  const ka = keepAlive ?? '30m'
+
+  const body = { prompt, model: resolvedModel, stream: false, keep_alive: ka }
   if (system)  body.system = system
   if (images?.length) body.images = images
   const modelCanThink = profileFor(resolvedModel)?.thinking === true
@@ -286,12 +295,20 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
   }
 
   const promptTokenEst = Math.ceil((body.prompt || '').length / 4)
-  try {
-    const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
-    const loaded = (ps.data.models || []).map(m => m.name)
-    const isLoaded = loaded.some(n => n === resolvedModel || n.startsWith(resolvedModel.split(':')[0]))
-    if (!isLoaded) process.stderr.write(`  [ask] COLD LOAD — ${resolvedModel} not in VRAM (loaded: ${loaded.join(', ') || 'none'})\n`)
-  } catch {}
+
+  // Cached /api/ps check — avoid hammering the Ollama API on every call.
+  const now = Date.now()
+  let isLoaded = false
+  if (!_loadedCache || now - _loadedTime > 30_000) {
+    try {
+      const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
+      _loadedCache  = (ps.data.models || []).map(m => m.name)
+      _loadedTime   = now
+    } catch { _loadedCache = []; _loadedTime = now }
+  }
+  isLoaded = _loadedCache.some(n => n === resolvedModel || n.startsWith(resolvedModel.split(':')[0]))
+  if (!isLoaded) process.stderr.write(`  [ask] COLD LOAD — ${resolvedModel} not in VRAM (loaded: ${_loadedCache.join(', ') || 'none'})\n`)
+
   process.stderr.write(`  [ask] ${resolvedModel} task=${task} think=${isThinking} promptTokens≈${promptTokenEst} timeout=${timeout}ms\n`)
   const t0 = Date.now()
 
@@ -307,6 +324,23 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
   return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 }
 
+/**
+ * Compact loaded models — evict all models from Ollama's VRAM.
+ * Call after long batch runs (archaeology, council) to free VRAM.
+ */
+async function compact() {
+  try {
+    const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
+    const names = (ps.data.models || []).map(m => m.name)
+    if (names.length === 0) return
+    // Evict each loaded model. Ollama 0.5+ supports /api/evict with model list.
+    await axios.post(`${OLLAMA_BASE}/api/evict`, { models: names })
+    process.stderr.write(`  [ask] compact — evicted ${names.length} model(s)\n`)
+  } catch {
+    // Ollama may not have /api/evict (older versions). Best-effort.
+  }
+}
+
 async function askJSON(opts) {
   const raw = await ask({ ...opts, json: true })
   try {
@@ -317,7 +351,7 @@ async function askJSON(opts) {
   }
 }
 
-module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, OLLAMA_BASE, ALL_TASKS }
+module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, OLLAMA_BASE, ALL_TASKS }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

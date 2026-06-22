@@ -25,7 +25,7 @@ const path     = require('node:path')
 const os       = require('node:os')
 const { execSync } = require('node:child_process')
 const minimist = require('minimist')
-const { ask }          = require('./model-ask')
+const { ask, compact } = require('./model-ask')
 const { loadGraph }    = require('../lib/graph')
 const { runCouncil }   = require('../lib/council')
 
@@ -529,6 +529,10 @@ async function runMultiFileDig(files, opts = {}) {
 
   const result = await runSynthesis(parentDir, opts)
   await runCouncilReview(name, result.outDir)
+
+  // Free VRAM after batch.
+  try { compact() } catch {}
+
   await pushArtifacts(result.outDir, slug(name))
 
   const host = process.env.GRIMOIRE_HOST
@@ -553,6 +557,10 @@ async function runDig(projectDir, opts = {}) {
   await runFilePass(projectDir, opts)
   const result = await runSynthesis(projectDir, opts)
   await runCouncilReview(name, result.outDir)
+
+  // Free VRAM after a long batch — models stay loaded with keep_alive: -1.
+  // compact() evicts them all. Runs fire-and-forget (Ollama may be busy).
+  try { compact() } catch {}
 
   await pushArtifacts(result.outDir, slugName)
 

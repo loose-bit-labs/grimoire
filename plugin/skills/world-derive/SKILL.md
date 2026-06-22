@@ -1,7 +1,7 @@
 ---
 name: world-derive
 description: KB→world materialization pipeline for grim-world Plan B — reads Grimoire KB, classifies entities, materializes filesystem world tree (directories, symlinks, README, state)
-version: 1.0.0
+version: 1.1.0
 allowed-tools: [Bash, Read, Edit, Write, Agent]
 ---
 
@@ -19,40 +19,54 @@ Target: the grim-world-fs repo path (default: `~/src/me/grim-world-fs`)
 
 2. **Dry run first.** From the repo root:
    ```
-   node bin/world-derive.js --once --dry-run --verbose
+   node bin/world-derive.js --dry-run
    ```
-   This reports planned changes without writing.
+   This reports planned counts without writing anything.
 
 3. **Run the derive pipeline.** When the dry run looks correct:
    ```
-   node bin/world-derive.js --once --verbose
+   node bin/world-derive.js --once
    ```
+   Enrichment runs by default (LLM descriptions + portraits). Pass `--no-enrich` to skip.
 
 4. **Inspect results.** After a successful derive:
    ```
-   node bin/world-inspect.js --tree
-   node bin/world-inspect.js --index
+   node bin/world-inspect.js --tally
    ```
-   Review the printed tree and index maps. Check that:
-   - Type-pools (`regions/`, `places/`, `beings/`, `things/`, `factions/`, `lore/`, `history/`) are populated
-   - Symlinks resolve correctly (no broken links)
-   - The in-memory index maps (occupants, location, containment) are consistent
+   Check that:
+   - The live pools under `<worldRoot>/pool/` are populated. As of Phase 29+ the pools are
+     exactly: `places/`, `beings/`, `things/`, `history/`, `idea-orphanage/`. There is **no**
+     `regions/`, `factions/`, or `lore/` pool (the design doc §11 still lists those — it is stale).
+   - Enrichment counts (`described`, `personality`, `portrait`) are non-zero for the enrichable pools
 
-5. **Handle low-confidence classifications.** Entities below the confidence threshold (default 0.7) are routed to the Idea Orphanage. Review them:
+5. **VERIFY DISK — do not skip.** A derive snapshots the world to `backups/world.vN`. Snapshots
+   have historically bloated badly (a graveyard-copy bug once drove the tree to 37 GB). Always
+   confirm the tree is not exploding:
    ```
-   node bin/world-inspect.js --node <slug>
+   du -sh ~/data/grim-world/world
+   du -sh ~/data/grim-world/world/backups
+   ls -1 ~/data/grim-world/world/backups | grep -c '^world\.v'   # backup count
    ```
+   Expect the whole tree to be **single-digit GB at most**. If it is tens of GB, or there are
+   stray `world.vN` dirs at the *root* (not under `backups/`), or `backups/` keeps growing
+   unbounded — stop and run the **world-disk** skill before continuing. This `du` + `--tally`
+   pair is the acceptance gate for any change touching the deriver, snapshot, or pool layout.
 
-6. **Iterate.** If the result needs adjustment, modify the classifier prompts or type-mapping rules, then re-derive. The pipeline is idempotent — re-running on unchanged KB produces identical output.
+6. **Handle low-confidence classifications.** Entities below the confidence threshold (default 0.7)
+   are routed to the Idea Orphanage. (`--node <slug>` inspection is scaffolded but not yet
+   implemented — read the entity dir directly under `<worldRoot>/pool/idea-orphanage/<slug>/`.)
+
+7. **Iterate.** If the result needs adjustment, modify the classifier prompts or type-mapping rules,
+   then re-derive. The pipeline is idempotent — re-running on unchanged KB produces identical output.
 
 ## Rules
 
 - **Never edit the legacy SQLite code** (`lib/world.js`, `lib/db.js`, `lib/sync.js`, etc.). The Plan B code lives entirely in `lib/fsworld/` + `bin/world-*.js`.
 - **Config is external.** Never hardcode paths — always read from `lib/fsworld/config.js` which handles override → env → file → defaults resolution.
-- **Model routing defaults to gemma4:26b@chonko:11434** (durable, low-cost). Use `--model Qwen3.6_35B_A3B@aid:11311` for heavy/experimental passes.
-- **Atomic versioned publish.** The deriver builds into `world.vN/` then flips `current -> world.vN` with one rename. Never leave a half-built world in the `current` symlink.
-- **Idempotent.** Two consecutive derives on the same KB produce identical output. Use `world-inspect --tree` to diff.
-- **Env overrides.** `WORLD_*` env vars override config file values: `WORLD_WORLD_ROOT`, `WORLD_GRIMOIRE_ROOT`, `WORLD_SD_HOST`, `WORLD_SYNC_INTERVAL_MS`, `WORLD_CONFIDENCE_THRESHOLD`, `WORLD_MODEL_ROUTING_DEFAULT`.
+- **Model routing** is resolved from `~/.config/lbl-config.json` via the ModelClient. Override per-task via `WORLD_MODEL_OVERRIDES` env var (format: `task=model@host`).
+- **Versioned snapshots, NOT a `current` symlink.** The `current` symlink was dropped in Phase 28 — older docs that describe a `current -> world.vN` flip are stale. The live world IS `<worldRoot>/pool/`; each derive copies it to a snapshot under `<worldRoot>/backups/world.vN`. A snapshot must contain **only `pool/`** — never `graveyard/`, stray files, or root `world.vN`. If you see the snapshot copying anything else, that is the bloat bug (see world-disk skill).
+- **Idempotent.** Two consecutive derives on the same KB produce identical output. Compare two `--tally` runs to confirm.
+- **Env overrides.** `WORLD_*` env vars override config file values: `WORLD_WORLD_ROOT`, `WORLD_GRIMOIRE_ROOT`, `WORLD_SD_HOST`, `WORLD_SYNC_INTERVAL_MS`, `WORLD_CONFIDENCE_THRESHOLD`, `WORLD_MODELROUTING_DEFAULT` (note: joined `MODELROUTING`, not `MODEL_ROUTING`).
 
 ## Tone
 

@@ -23,7 +23,9 @@ and you never self-approve.
 
 ## Process
 
-1. List `.mm/` sorted; read the latest mage message. Read `plans/PROTOCOL.md` if it exists — its
+1. Stamp your role for the status-line HUD:
+   `mkdir -p .mm && echo minion > ".mm/.role-$CLAUDE_CODE_SESSION_ID"` (no-op if the var is unset; lives in gitignored `.mm/`).
+   Then list `.mm/` sorted; read the latest mage message. Read `plans/PROTOCOL.md` if it exists — its
    rules (worktree, commits, scope, report format) are binding.
 2. If the message is a **brief/kickoff**: open the `plans/phase-*.md` file it points at. That file
    is your entire job. Read the source files it tells you to read, then do its numbered steps,

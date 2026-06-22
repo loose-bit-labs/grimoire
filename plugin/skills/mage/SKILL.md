@@ -28,6 +28,8 @@ If empty: read the minion's latest unread message and respond appropriately.
 ## Process
 
 1. `mkdir -p .mm` if missing (first use). If the repo has a `.gitignore` without `.mm/`, add it.
+   Stamp this session's role for the status-line HUD:
+   `echo mage > ".mm/.role-$CLAUDE_CODE_SESSION_ID"` (no-op if the var is unset; lives in gitignored `.mm/`).
 2. List `.mm/` sorted. Identify every minion message numbered higher than your last mage message —
    that's your unread inbox. Read it.
 3. If the unread message is a **report** (`state: report`): review it **verify-don't-trust** —

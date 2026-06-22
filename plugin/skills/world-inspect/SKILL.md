@@ -1,7 +1,7 @@
 ---
 name: world-inspect
-description: Debug and inspect the grim-world filesystem world — print the tree, a node, or the in-memory index
-version: 1.0.0
+description: Debug and inspect the grim-world filesystem world — tally pool counts, print the tree, inspect nodes, or view the in-memory index
+version: 1.2.0
 allowed-tools: [Bash, Read]
 ---
 
@@ -15,35 +15,51 @@ Target: the grim-world-fs repo path (default: `~/src/me/grim-world-fs`)
 
 ## Steps
 
-1. **Print the full tree.** From the repo root:
+1. **Check pool counts and enrichment (implemented).** From the repo root:
+   ```bash
+   node bin/world-inspect.js --tally
    ```
+   Shows entity counts, described/personality/portrait counts per pool. Run this first after any derive or enrich pass.
+
+2. **Print the full tree (planned — not yet implemented).**
+   ```bash
    node bin/world-inspect.js --tree
    ```
-   This renders the complete world tree with type-pools, directories, symlinks, and media.
 
-2. **Inspect a specific node.**
-   ```
+3. **Inspect a specific node (planned — not yet implemented).**
+   ```bash
    node bin/world-inspect.js --node <slug>
    ```
-   Shows the node's directory contents, symlinks, README, and state.json.
 
-3. **Print the in-memory index.**
-   ```
+4. **Print the in-memory index (planned — not yet implemented).**
+   ```bash
    node bin/world-inspect.js --index
    ```
-   Shows the index maps: occupants, location, containment, exits.
 
-4. **Inspect a specific version.**
+5. **Check disk size (the missing companion to --tally).** `--tally` counts entities but not
+   bytes — and grim-world's snapshots have a history of silent bloat. Always pair it with `du`:
+   ```bash
+   du -sh ~/data/grim-world/world
+   du -sh ~/data/grim-world/world/backups ~/data/grim-world/world/graveyard 2>/dev/null
+   ls -1d ~/data/grim-world/world/world.v* 2>/dev/null   # stray root snapshots = a bug
    ```
-   node bin/world-inspect.js --version <N> --tree
+   Healthy tree is single-digit GB. Tens of GB, root-level `world.vN` dirs, or an unbounded
+   `backups/` count means the snapshot subsystem is leaking — escalate to the **world-disk** skill.
+
+6. **Inspect a specific version (currently broken — note before use).**
+   ```bash
+   node bin/world-inspect.js --version <N> --tally
    ```
-   Inspects `world.vN/` instead of the `current` symlink target. Useful for comparing versions or debugging a failed derive.
+   This reads `<worldRoot>/world.vN` (root), but snapshots now live under
+   `<worldRoot>/backups/world.vN`. Until that's fixed, inspect a snapshot by pointing at it
+   directly, e.g. `WORLD_WORLD_ROOT=~/data/grim-world/world/backups/world.v123 node bin/world-inspect.js --tally`.
 
 ## Rules
 
 - Config is read from `~/.config/grim-world/config.json` (or env `WORLD_WORLD_ROOT`).
 - Never modify world state through this tool — it is read-only.
-- The `--tree` output is suitable for git diff to check idempotence between derives.
+- Only `--tally` is fully implemented; `--tree`, `--node`, `--index` are scaffolded and print a
+  stub. To inspect a node, read its dir directly: `<worldRoot>/pool/<type>/<slug>/`.
 
 ## Tone
 
