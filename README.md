@@ -1,10 +1,31 @@
-# Grimoire Ex Machina
+<div align="center">
 
-A personal knowledge graph that runs on local models, knows everything, costs nothing, and is slightly unhinged.
+# 📖✨ Grimoire Ex Machina ✨📖
+
+### *where machines remember*
+
+**A personal knowledge graph that runs on local models —<br>knows everything, costs nothing, and is slightly unhinged.**
+
+<br>
+
+![Local-First](https://img.shields.io/badge/local--first-2ea44f?style=for-the-badge&logo=homeassistant&logoColor=white)
+![Cloud Cost](https://img.shields.io/badge/cloud%20cost-%240-blue?style=for-the-badge&logo=cashapp&logoColor=white)
+![Powered by Ollama](https://img.shields.io/badge/runs%20on-Ollama-black?style=for-the-badge&logo=ollama&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-Claude%20Code-8A2BE2?style=for-the-badge&logo=anthropic&logoColor=white)
+![No Database](https://img.shields.io/badge/storage-JSON%20on%20disk-orange?style=for-the-badge&logo=files&logoColor=white)
+
+<br>
+
+<!-- HERO: regenerate with `grim vision cast mascot-banner` when aid:7860 is up → docs/img/hero.png -->
+<img src="docs/img/statusline-mage.png" alt="Grimoire status-line HUD — a torchlit dungeon corridor in your terminal" width="860">
+
+<sub>⚔️ the live status-line HUD — repo · role · pact state · context depth · model · a torchlit dungeon corridor that comes alive on the wall clock</sub>
+
+</div>
 
 ---
 
-## What it does
+## ✨ What it does
 
 - Extracts structured entities from your unstructured notes (diary, meetings, docs)
 - Links them with typed relationships (works_on, depends_on, collaborates_with)
@@ -16,7 +37,7 @@ All data is **JSON files on disk** — no database, no external services. AI run
 
 ---
 
-## Architecture
+## 🏛️ Architecture
 
 ```
 grimoire/          Engine (this repo — public)
@@ -34,7 +55,7 @@ The engine and KB are separate repos. The engine points at the KB via `GRIMOIRE_
 
 ---
 
-## Commands
+## 📜 Commands — the spellbook
 
 ```
 grim scribe            Rebuild graph index + vector embeddings   (The Scribe)        [local]
@@ -58,7 +79,7 @@ grim serve             Start HTTP + MCP server                                  
 
 ---
 
-## Cluster & Harness Integration
+## 🕸️ Cluster & Harness Integration
 
 Grimoire is designed to run on a central host (currently `aid`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
 
@@ -69,7 +90,7 @@ Grimoire is designed to run on a central host (currently `aid`) while clients on
 
 ---
 
-## Quick start (on aid)
+## 🚀 Quick start (on aid)
 
 ```bash
 git clone <this-repo> grimoire
@@ -92,7 +113,7 @@ grim serve
 
 ---
 
-## Environment
+## ⚙️ Environment
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -106,7 +127,7 @@ grim serve
 
 ---
 
-## AI model routing
+## 🧠 AI model routing
 
 All AI operations use local Ollama models — no cloud required.
 
@@ -122,7 +143,7 @@ Models are resolved dynamically via `grim models` — routing uses installed mod
 
 ---
 
-## Personas
+## 🎭 Personas
 
 Grimoire ships with five personas — specialized AI behavior modes:
 
@@ -136,7 +157,7 @@ Grimoire ships with five personas — specialized AI behavior modes:
 
 ---
 
-## Service ports
+## 🔌 Service ports
 
 | Port | Service |
 |------|---------|
@@ -149,7 +170,7 @@ Open port **3663** on aid for LAN clients. See [docs/client-setup.md](docs/clien
 
 ---
 
-## The Pact — minion / mage / hierophant
+## ⚔️ The Pact — minion / mage / hierophant
 
 For non-trivial implementation work, Grimoire splits the job across separate Claude Code sessions running in the **same working directory**. It's a three-layer pact — use as many layers as the work needs (most work only needs the bottom two):
 
@@ -202,9 +223,27 @@ Every file starts with: `phase: <N> · state: <state>`, where `state` is one of
 
 When unresolved (repeated revise↔report on one point, or a `blocked` the mage can't settle), the mage `escalate`s and you summon the `/hierophant`.
 
-### Status line
+### The HUD
 
-The bundled status line (`deploy/claude-statusline.js`) shows each session's role glyph and a live pact state read from `.mm/`: **⏳** waiting on a reply vs **🛠️** your move / work to do — with terminal states inverted so an `accepted` reads correctly on both sides (mage 🛠️ owes the next brief, minion ⏳ idle).
+The bundled status line (`deploy/claude-statusline.js`) turns each Claude Code window into a dungeon HUD: a bold-yellow repo name, a session-role glyph, a live pact-state glyph read from `.mm/`, an RGB green→yellow→red context-depth bar (🕯️→⚔️→💀→☠️ as the compaction reaper nears), code velocity, the model, and an animated torchlit corridor where a critter scuttles under a cycling moon.
+
+The pact glyph is the tell: **⏳** waiting on a reply vs **🛠️** your move / work to do — with terminal states inverted so an `accepted` reads correctly on both sides (mage 🛠️ owes the next brief, minion ⏳ idle).
+
+| | |
+|---|---|
+| ![Lone adventurer](docs/img/statusline-lone.png) | **🗡️ Lone adventurer** — no pact; a solo session. Wandering glyph cycles each render. |
+| ![Mage, your move](docs/img/statusline-mage.png) | **🧙 Mage** on `trader-mo` — running the per-phase loop. |
+| ![Minion, waiting](docs/img/statusline-waiting.png) | **⏳ Waiting** — own message is latest; the ball is in the other session's court. |
+
+Install it on any box with this repo checked out:
+
+```bash
+ln -s "$PWD/deploy/claude-statusline.js" ~/.claude/statusline.js
+# then in ~/.claude/settings.json:
+#   "statusLine": { "type": "command", "command": "node ~/.claude/statusline.js" }
+```
+
+Zero dependencies; needs a truecolor terminal for the gradient. Set `GRIM_ROLE=mage|minion|hierophant` to pin a role, or let the `/mage` `/minion` `/hierophant` skills drop the marker.
 
 ### Why this pattern works
 
@@ -217,10 +256,21 @@ See `plugin/skills/{minion,mage,hierophant}/SKILL.md` for the full protocol and 
 
 ---
 
-## New machine setup
+## 🧭 New machine setup
 
 See [docs/client-setup.md](docs/client-setup.md) for full instructions including:
 - Hosts file configuration (`aid` resolution)
 - `.env` setup for remote mode
 - Claude Code MCP configuration
 - Firewall setup on aid
+
+---
+
+<div align="center">
+
+### 🕯️ *Grimoire Ex Machina* 🕯️
+**where machines remember**
+
+<sub>local-first · zero-cloud · slightly unhinged</sub>
+
+</div>
