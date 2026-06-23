@@ -49,6 +49,7 @@ grim vision interrogate  CLIP-caption images → entity hints       (The Vision)
 grim load              Load save — begin a session                (SAVESTATE)         [local + remote]
 grim save              Write save — end a session                 (SAVESTATE)         [local + remote]
 grim tome              Memory ops: recall/remember/relate         (The Tome)          [local + remote]
+grim mm                Read/write the .mm pact thread             (The Postbox)       [any cwd]
 grim serve             Start HTTP + MCP server                                        [run on aid]
 ```
 
@@ -148,72 +149,71 @@ Open port **3663** on aid for LAN clients. See [docs/client-setup.md](docs/clien
 
 ---
 
-## Mage / Minion — two-session workflow
+## The Pact — minion / mage / hierophant
 
-For non-trivial implementation work, Grimoire uses a **supervisor + worker** split across two Claude Code sessions running in the same working directory.
+For non-trivial implementation work, Grimoire splits the job across separate Claude Code sessions running in the **same working directory**. It's a three-layer pact — use as many layers as the work needs (most work only needs the bottom two):
 
 | Role | Session | Job |
 |------|---------|-----|
-| **Mage** | Cloud model (Claude Sonnet/Opus) | Plans phases, writes briefs, reviews work, issues verdicts |
-| **Minion** | Second session (local or cloud) | Reads the brief, implements exactly what it says, reports back |
+| **Minion** 🧎 | Local or cloud (the hands) | Reads the brief, implements *exactly* what it says, reports back. Never self-approves. |
+| **Mage** 🧙 | Cloud model (tech lead) | Plans phases, writes briefs, reviews reports verify-don't-trust, issues verdicts. Never implements. |
+| **Hierophant** 🔮 | Cloud (the authority) | Sets the cross-phase roadmap, drafts briefs, answers architecture questions, mediates a stalled loop. Mediates by exception. |
 
-The two sessions never talk directly — they pass messages through `.mm/`, an append-only directory of markdown files that is gitignored and stays local.
+The sessions never talk directly — they pass messages through `.mm/`, an append-only directory of markdown files that is gitignored and stays local.
+
+### The Postbox (`grim mm`)
+
+The sessions **never touch `.mm/` by hand** — all the fiddly mechanics (creating the dir, gitignoring it, the session→role marker the status line reads, message numbering, the `phase · state` header, working out what's unread) live in one command so the model spends its attention on judgment, not bookkeeping:
+
+```bash
+grim mm read  --role minion --session "$CLAUDE_CODE_SESSION_ID"          # what's unread for me?
+grim mm read  --role hierophant --session "$ID" --all                    # whole thread, cold start
+grim mm write --role mage --session "$ID" --state revise --phase 3 --file fixes.md
+```
+
+`read` prints only the messages a role should act on (the minion hears the mage; the mage hears the minion below and the hierophant above) and tells you whose move it is. `write` refuses to double-send while you're waiting on a reply, and stamps the next sequence number and header for you.
 
 ### Message convention
 
+A single global counter, one file per message — **not** paired numbers:
+
 ```
 .mm/
-  0001-mage.md      ← mage's brief / kickoff
-  0001-minion.md    ← minion's report
-  0002-mage.md      ← mage's verdict (accepted or revise with numbered fixes)
-  0002-minion.md    ← minion's revised report
+  0001-mage.md      ← brief / kickoff (points at plans/phase-N.md)
+  0002-minion.md    ← report (counts are pasted command output, never hand-tallied)
+  0003-mage.md      ← verdict: accepted, or revise with numbered fixes
+  0004-mage.md      ← on accepted: the next phase's brief (a legitimate back-to-back)
   ...
 ```
 
-Every file starts with: `phase: <N> · state: <brief|report|revise|accepted|question|blocked>`
+Every file starts with: `phase: <N> · state: <state>`, where `state` is one of
+`brief · report · revise · accepted · question · blocked · direction · escalate`.
 
-The mage never edits or deletes past messages. The minion never self-approves.
-
-### Typical flow
-
-```
-[Mage session]  /mage "kick off Phase 5"
-                → writes plans/phase-5.md (the brief)
-                → writes .mm/0001-mage.md pointing at it
-
-[Minion session] /minion
-                → reads .mm/0001-mage.md, opens plans/phase-5.md
-                → implements the brief's numbered steps
-                → writes .mm/0001-minion.md with state: report
-                   (all counts are pasted command output, never hand-tallied)
-
-[Mage session]  /mage
-                → reads minion's report, re-runs test suite (verify-don't-trust)
-                → writes .mm/0002-mage.md: state: accepted (or revise with exact fixes)
-                → on accepted: archives thread to plans/reviews/phase-N.md, commits
-```
+**`accepted` is terminal** — it closes a phase and owes no reply. To the author (`grim mm read` says *YOUR MOVE*) that means: archive the thread, then either brief the next phase or call the engagement done. To everyone else it reads *IDLE* — wait for the next brief, don't go spelunking. (An `accepted` with no follow-up brief is the classic deadlock; the Postbox is built to make the follow-up the obvious next move.)
 
 ### Usage
 
-In your **supervisor** session:
 ```
-/mage "start Phase 5 — implement the event bus"
-/mage                    ← read minion's latest report and respond
+[Mage]      /mage "start Phase 5 — implement the event bus"   ← kick off
+            /mage                                             ← read latest, review, respond
+[Minion]    /minion                                           ← check inbox and execute
+[Hierophant] /hierophant                                      ← set roadmap / mediate a stall
 ```
 
-In your **worker** session:
-```
-/minion                  ← check for instructions and execute
-```
+When unresolved (repeated revise↔report on one point, or a `blocked` the mage can't settle), the mage `escalate`s and you summon the `/hierophant`.
+
+### Status line
+
+The bundled status line (`deploy/claude-statusline.js`) shows each session's role glyph and a live pact state read from `.mm/`: **⏳** waiting on a reply vs **🛠️** your move / work to do — with terminal states inverted so an `accepted` reads correctly on both sides (mage 🛠️ owes the next brief, minion ⏳ idle).
 
 ### Why this pattern works
 
-- The mage's context stays focused on design and correctness, not implementation noise
+- Each layer's context stays focused on its own job — design, implementation, or architecture — not the others' noise
 - The minion's scope is bounded by the brief — it can't drift or gold-plate
 - The `.mm/` thread is the audit trail for every decision in a phase
 - Verdicts require re-running the test suite, not trusting green checkmarks
 
-See `plugin/skills/mage/SKILL.md` and `plugin/skills/minion/SKILL.md` for the full protocol.
+See `plugin/skills/{minion,mage,hierophant}/SKILL.md` for the full protocol and `bin/grim-mm.js` for the Postbox mechanics.
 
 ---
 
