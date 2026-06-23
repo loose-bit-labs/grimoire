@@ -5,7 +5,11 @@
  * Grimoire status line for Claude Code — a grim dungeon HUD.
  *
  * Reads the session JSON on stdin and prints a single styled line:
- *   <repo> <role> │ 🌿 (branch) │ <depth> <gradient bar> NN% │ +adds -dels │ 🤖 model │ <dungeon>
+ *   <repo> <role> <pact> │ 🌿 (branch) │ <depth> <gradient bar> NN% │ +adds -dels │ 🤖 model │ <dungeon>
+ *
+ * <pact> appears only inside a mage/minion/hierophant pact: ⏳ when your own
+ * message is the latest (waiting on a reply) or 🛠️ when a message addressed to
+ * you is unread (work to do), read live from the .mm/ thread.
  *
  * Left → right: bold-yellow repo + a session-role glyph (🧎‍♂️ minion /
  * 🧙‍♂️ mage / 🔮 hierophant / 🗡️ lone adventurer when unaligned), cyan
@@ -187,6 +191,16 @@ const ROLE_ICONS = {
 const LONE_ADVENTURER = shuffles('🗡️ 🗺️  👤 🎮 🥷 🤺 🏹 🪓 🛡️ ⚚ 🪄'); // no pact / role unknown
 //const LONE_ADVENTURER = shuffles('𓀀  𓀁  𓀂  𓀃  𓀄  𓀅  𓀆  𓀇  𓀈  𓀉  𓀊  𓀋  𓀌  𓀍  𓀎  𓀏  𓀐  𓀑  𓀒  𓀓  𓀔  𓀕  𓀖  𓀗  𓀘  𓀙  𓀚  𓀛  𓀜  𓀝  𓀞  𓀟  𓀠  𓀡  𓀢  𓀣  𓀤  𓀥  𓀦  𓀧  𓀨  𓀩  𓀪  𓀫 ');
 
+// Pact state, read from the same .mm/ thread the /mage,/minion,/hierophant
+// skills append to: if the highest-numbered message is yours you're WAITING on a
+// reply; if it's from another role there's an unread message to act on — WORKING.
+const PACT_WAITING = '⏳';
+const PACT_WORKING = '🛠️';
+// Terminal states (mirrors grim-mm.js): they close a phase and owe NO reply, so
+// the normal "latest is mine ⇒ waiting" reading inverts. After the mage's
+// `accepted`, the mage owes the next move (🛠️) and the minion sits idle (⏳).
+const PACT_TERMINAL = ['accepted'];
+
 function detectRole(cwd, sessionId) {
   let role = (process.env.GRIM_ROLE || '').trim().toLowerCase();
   if (!role && sessionId) {
@@ -199,7 +213,47 @@ function detectRole(cwd, sessionId) {
       /* no marker — a lone adventurer */
     }
   }
-  return ROLE_ICONS[role] || LONE_ADVENTURER;
+  return ROLE_ICONS[role] ? role : null;
+}
+
+// '⏳' waiting on a reply, '🛠️' a message addressed to you is unread, '' no thread.
+// Terminal latest message inverts this: its author owes the next move (🛠️) and
+// everyone else is idle (⏳) — so an `accepted` reads correctly on both sides.
+function pactState(cwd, role) {
+  let names;
+  try {
+    names = fs.readdirSync(`${cwd}/.mm`);
+  } catch {
+    return '';
+  }
+  let topNum = -1;
+  let topRole = null;
+  let topFile = null;
+  for (const n of names) {
+    const m = /^(\d+)-([a-z]+)\.md$/.exec(n);
+    if (!m) continue;
+    const num = parseInt(m[1], 10);
+    if (num > topNum) {
+      topNum = num;
+      topRole = m[2] === 'overseer' ? 'hierophant' : m[2]; // legacy alias
+      topFile = n;
+    }
+  }
+  if (!topRole) return '';
+
+  // read the latest message's state from its `phase: N · state: S` header
+  let state = null;
+  try {
+    const first = fs.readFileSync(`${cwd}/.mm/${topFile}`, 'utf8').split('\n', 1)[0] || '';
+    state = (/state:\s*([a-z]+)/i.exec(first) || [])[1] || null;
+  } catch {
+    /* unreadable — fall back to role-only reading */
+  }
+
+  const mine = topRole === role;
+  // Terminal closes the phase and owes no reply, so the mapping inverts.
+  if (state && PACT_TERMINAL.includes(state)) return mine ? PACT_WORKING : PACT_WAITING;
+  return mine ? PACT_WAITING : PACT_WORKING;
 }
 
 // ---- main ------------------------------------------------------------------
@@ -218,8 +272,11 @@ function main(input) {
   const top = git('rev-parse --show-toplevel', cwd);
   const repo = (top || cwd).split('/').filter(Boolean).pop() || '~';
 
-  // session role icon (🧎‍♂️ minion / 🧙‍♂️ mage / 🔮 hierophant), beside the repo
-  const roleIcon = detectRole(cwd, data.session_id);
+  // session role icon (🧎 minion / 🧙 mage / 🔮 hierophant), beside the repo,
+  // plus a pact-state glyph (⏳ waiting on reply / 🛠️ unread message to act on)
+  const role = detectRole(cwd, data.session_id);
+  const roleIcon = role ? ROLE_ICONS[role] : LONE_ADVENTURER;
+  const pactIcon = role ? pactState(cwd, role) : '';
 
   // branch (or short sha if detached)
   let branch = git('rev-parse --abbrev-ref HEAD', cwd);
@@ -241,7 +298,7 @@ function main(input) {
   const sep = dim(' │ ');
   const parts = [];
 
-  parts.push(`${paint(c256.yellow, bold(repo))} ${roleIcon}`);
+  parts.push(`${paint(c256.yellow, bold(repo))} ${roleIcon}${pactIcon ? ' ' + pactIcon : ''}`);
 
   if (branch) parts.push(paint(c256.cyan, bold(`🌿 (${branch})`)));
 

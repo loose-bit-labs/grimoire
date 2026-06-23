@@ -15,13 +15,13 @@ Topic hint (optional): $ARGUMENTS
 
 ## Instructions
 
-1. Call the MCP tool `mcp__grimoire__load` to retrieve the full briefing
+1. Call the MCP tool `mcp__grimoire__load` to retrieve the briefing (a compact projection — present it as-is, don't fetch more)
 2. If an interrupted session exists, surface it prominently — topic, when it started, last heartbeat state
 3. Present the briefing in this order:
-   - **Identity**: agent model name, role, and current affect (valence/label from cognitiveState)
+   - **Identity**: agent model name, role, and current affect (valence/label from cognitiveState.affect)
    - **Chapter & arc**: current chapter name + trajectory + themes (from cognitiveState.narrative)
    - **Interrupted session** (if any): topic, started at, last known state
-   - **Recent episodes**: top 2-3 high-salience episodes with emotional context (from cognitiveState.episodes)
+   - **Recent episodes**: the `recentEpisodes` entries with emotional context
    - **Recent dreams**: top 2-3 insights from Long Rest analyses
    - **Active goals**: what's in flight
    - **Cheat codes**: the 3-5 most relevant techniques for today's likely work

@@ -31,6 +31,7 @@ const COMMANDS = {
   'ingest':        { script: 'grim-ingest.js',        desc: 'Digest transcripts/notes into KB         (The Archivist)'     },
   'rig':           { script: 'grim-rig.js',           desc: 'Homelab AI service monitor                (The Rig)'            },
   'host':          { script: 'grim-host.js',          desc: 'Host inventory, /etc/hosts gen, config sync'                    },
+  'mm':            { script: 'grim-mm.js',            desc: 'Read/write the .mm pact thread        (The Postbox)'       },
   'serve':     { script: 'grim-server.js',   desc: 'Start the Grimoire HTTP+MCP server'                },
 }
 

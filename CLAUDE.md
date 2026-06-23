@@ -138,6 +138,8 @@ These apply to every task unless explicitly overridden. Bias: caution over speed
 
 **Rule 12 — Fail loud.** "Completed" is wrong if anything was skipped silently. "Tests pass" is wrong if any were skipped. Default to surfacing uncertainty, not hiding it.
 
+**Rule 13 — Prefer code over prompting (the standing SOP).** Deterministic mechanics — file sequencing, path math, parsing, chunking, multi-step shell flows, state machines — belong in a script the skill *calls*, not in SKILL.md prose the model re-derives every invocation. A skill carries judgment and tone; a script carries procedure. The test: if a skill walks the model through numbered shell steps, or the bots keep getting the same mechanics wrong, that's a script waiting to be written (see `grim mm` — the `.mm/` pact mechanics, incl. who-owes-the-next-message, moved out of three skills into one command). Every step encoded in code is cognitive load the model doesn't re-pay each run. Reach for the model only at the judgment seams; let code answer everything code can.
+
 ---
 
 ## Environment

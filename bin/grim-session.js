@@ -206,17 +206,54 @@ async function loadBriefing() {
     .filter(e => e.salience === 'high')
     .slice(-3)
 
+  // Compact projection. The full agentModel/userModel/cognitiveState carry the
+  // entire benchmark table, every episode, and all turning points — tens of KB
+  // that the briefing never uses and that the SessionStart hook injects into
+  // context on every launch. Keep only what `formatBriefing` and the /load skill
+  // read; the rest already lives in CLAUDE.md and is one `grim oracle` away.
   return {
-    agentModel,
-    userModel,
-    cognitiveState,
+    agentModel: agentModel && {
+      name:     agentModel.name,
+      identity: agentModel.identity,
+    },
+    userModel: userModel && {
+      identity:          userModel.identity,
+      customPreferences: userModel.customPreferences,
+    },
+    cognitiveState: cognitiveState && {
+      affect:     cognitiveState.affect,
+      userAffect: cognitiveState.userAffect,
+      narrative:  cognitiveState.narrative && {
+        chapter:            cognitiveState.narrative.chapter,
+        chapterDescription: cognitiveState.narrative.chapterDescription,
+        trajectory:         cognitiveState.narrative.trajectory,
+        themes:             cognitiveState.narrative.themes,
+        turningPoints:      (cognitiveState.narrative.turningPoints || []).slice(-3),
+      },
+    },
     recentEpisodes,
-    interruptedSession: interrupted[0] || null,
-    recentSessions,
+    interruptedSession: slimSession(interrupted[0]),
+    recentSessions:     recentSessions.map(slimSession),
     recentDreams,
-    activeGoals,
-    techniques: techniques.map(t => ({ name: t.name, solution: t.solution })),
+    activeGoals: activeGoals.map(g => ({ '@id': g['@id'], name: g.name, description: g.description })),
+    techniques: techniques.map(t => ({ name: t.name })),
     personas,
+  }
+}
+
+// Keep only the session fields the briefing surfaces — drops decisions/learned/
+// entitiesCreated/backlinks/etc. that bloat the payload with no briefing value.
+function slimSession(s) {
+  if (!s) return null
+  return {
+    '@id':      s['@id'],
+    name:       s.name,
+    topic:      s.topic,
+    summary:    s.summary,
+    startedAt:  s.startedAt,
+    endedAt:    s.endedAt,
+    heartbeat:  s.heartbeat,
+    nextSteps:  s.nextSteps,
   }
 }
 
