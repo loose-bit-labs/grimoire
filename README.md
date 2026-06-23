@@ -16,16 +16,18 @@
 
 <br>
 
-<!-- HERO: regenerate with `grim vision cast mascot-banner` when aid:7860 is up → docs/img/hero.png -->
-<img src="docs/img/statusline-mage.png" alt="Grimoire status-line HUD — a torchlit dungeon corridor in your terminal" width="860">
+<!-- generated locally: `grim vision cast mascot-banner` (A1111 on superack:7860) -->
+<img src="docs/img/hero.png" alt="Grimoire Ex Machina — brass automaton wizards channelling glowing spellbooks" width="860">
 
-<sub>⚔️ the live status-line HUD — repo · role · pact state · context depth · model · a torchlit dungeon corridor that comes alive on the wall clock</sub>
+<sub>🤖📖 the Grimoire Roboticus — brass automaton wizards channelling living spellbooks</sub>
 
 </div>
 
 ---
 
 ## ✨ What it does
+
+<img src="docs/img/logo.png" alt="Grimoire — the mechanical spellbook" align="right" width="240">
 
 - Extracts structured entities from your unstructured notes (diary, meetings, docs)
 - Links them with typed relationships (works_on, depends_on, collaborates_with)
@@ -267,6 +269,8 @@ See [docs/client-setup.md](docs/client-setup.md) for full instructions including
 ---
 
 <div align="center">
+
+<img src="docs/img/mascot.png" alt="The Grimoire Roboticus mascot" width="200">
 
 ### 🕯️ *Grimoire Ex Machina* 🕯️
 **where machines remember**
