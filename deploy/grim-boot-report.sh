@@ -3,11 +3,11 @@
 # Best-effort, no retry. If the server isn't up, the event is lost.
 #
 # Deploy (userspace, no sudo):
-#   ln -s ~/src/me/grimoire ~/.grimoire          # or /mnt/eighty/... on aid
+#   ln -s ~/src/me/grimoire ~/.grimoire          # or /mnt/eighty/... on grimoire.local
 #   install -m644 ~/.grimoire/deploy/grim-boot-report.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now grim-boot-report
 
-GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://aid:3663}"
+GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://grimoire.local:3663}"
 LOG_DIR="/home/vgvm/.grimoire/logs"
 LOG_FILE="${LOG_DIR}/boot-report.log"
 

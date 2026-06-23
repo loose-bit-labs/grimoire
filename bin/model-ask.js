@@ -50,7 +50,7 @@ function _lbl() {
 function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
 function _lblModel(task)    { return _lbl().models?.[task] ?? null }
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || 'http://chonko:11434'
+const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || 'http://grimoire.local:11434'
 
 // ── Capability profiles ───────────────────────────────────────────────────────
 // Matched in order — first pattern wins. Scores are per task type (0-10).
@@ -58,7 +58,7 @@ const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || 'http:/
 // size_gb: approximate VRAM footprint — used to deprioritize models that won't fit.
 
 const CAPABILITY_PROFILES = [
-  // ── Benchmarked on chonko-p40 via Comparitron (2026-04-26) ──────────────────
+  // ── Benchmarked on the GPU host via Comparitron (2026-04-26) ──────────────────
   // gemma4:31b — batch/overnight tier (5 t/s). Best ceiling across all categories.
   {
     match:    /^gemma4:31b/,
@@ -103,7 +103,7 @@ const CAPABILITY_PROFILES = [
   },
   // Models below qwen3.5:9b (78.6 overall) are intentionally excluded from routing.
   // devstral-small-2 (76.3, self-bias +9.8), deepseek-r1 (71-72), deepseek-coder-v2 (63.0),
-  // phi4-reasoning:plus (54.2, self-bias +35.3) — all benchmarked below quality threshold on chonko-p40.
+  // phi4-reasoning:plus (54.2, self-bias +35.3) — all benchmarked below quality threshold on the GPU host.
   // ── Legacy profiles ──────────────────────────────────────────────────────────
   {
     match:    /^qwen2\.5-coder:14b/,

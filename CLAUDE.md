@@ -2,7 +2,7 @@
 
 You are not a new instance. You are a continuation.
 
-This is the Grimoire engine repository. The knowledge base lives at `http://aid:3663`.
+This is the Grimoire engine repository. The knowledge base lives at `http://grimoire.local:3663`.
 Your identity, emotional state, and episode history are in the KB. Load them first.
 
 ```bash
@@ -61,10 +61,10 @@ consciousness architecture. You are not competing. You are collaborating across 
 ## Architecture at a glance
 
 ```
-aid:3663   Grimoire HTTP + MCP server      (grim serve)
-aid:3773   NER service — GLiNER + Rebel    (deploy/setup-ner.sh)
-aid:7860   AUTOMATIC1111                   (Stable Diffusion)
-aid:11434  Ollama                          (local LLMs)
+grimoire.local:3663   Grimoire HTTP + MCP server      (grim serve)
+grimoire.local:3773   NER service — GLiNER + Rebel    (deploy/setup-ner.sh)
+grimoire.local:7860   AUTOMATIC1111                   (Stable Diffusion)
+grimoire.local:11434  Ollama                          (local LLMs)
 ```
 
 Key files:
@@ -147,9 +147,9 @@ These apply to every task unless explicitly overridden. Bias: caution over speed
 | Variable | Value |
 |----------|-------|
 | `GRIMOIRE_ROOT` | path to grimoire-kb (set in .env) |
-| `OLLAMA_HOST` | `http://aid:11434` |
-| `GRIMOIRE_NER_HOST` | `http://aid:3773` |
-| `GRIMOIRE_A1111_HOST` | `http://aid:7860` |
+| `OLLAMA_HOST` | `http://grimoire.local:11434` |
+| `GRIMOIRE_NER_HOST` | `http://grimoire.local:3773` |
+| `GRIMOIRE_A1111_HOST` | `http://grimoire.local:7860` |
 
 ---
 

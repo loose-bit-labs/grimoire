@@ -35,7 +35,7 @@ $ARGUMENTS:
    node bin/grim-council.js "<topic>" [--file <path>] [--context "<terms>"] [--write]
    ```
 
-2. The command runs all five personas and synthesizes. Wait for completion (may take 30-90s on chonko).
+2. The command runs all five personas and synthesizes. Wait for completion (may take 30-90s on the host).
 
 3. Present the synthesis — agreements, conflicts, unique catches, and the uncomfortable question.
    Do NOT reproduce each persona's full output. Distill.

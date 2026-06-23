@@ -53,7 +53,7 @@ node /home/vgvm/src/me/grim-world/bin/gen-images.js --force --limit 50
 
 ## Routing
 
-- **SD_HOST**: defaults to `http://aid:7860` (A1111), or `http://meinherz:17071` (zimage-api → ComfyUI with Z-Image Turbo)
+- **SD_HOST**: defaults to `http://grimoire.local:7860` (A1111), or `http://grimoire.local:17071` (zimage-api → ComfyUI with Z-Image Turbo)
 - **OLLAMA_HOST**: prompt generation model: `gemma4:26b`
 - **Images saved to**: filesystem world store state dir (WORLD_ROOT/state/img_{cache_key})
 - **Image files**: WORLD_ROOT/images/

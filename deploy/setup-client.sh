@@ -7,8 +7,8 @@
 # What it does:
 #   1. Checks Node.js 18+
 #   2. npm install
-#   3. Writes .env (remote mode — points at aid:3663)
-#   4. Optionally adds aid to /etc/hosts (asks for IP if missing)
+#   3. Writes .env (remote mode — points at grimoire.local:3663)
+#   4. Optionally adds grimoire.local to /etc/hosts (asks for IP if missing)
 #   5. Symlinks grim CLI into ~/bin (no sudo, no global install)
 #   6. Configures Claude Code: MCP server + plugin
 #   7. Creates ~/.grimoire dotlink
@@ -54,32 +54,32 @@ else
 # Grimoire client — remote mode
 # GRIMOIRE_ROOT is intentionally unset; all KB access goes via the server.
 
-GRIMOIRE_HOST=http://aid:3663
-OLLAMA_HOST=http://aid:11434
+GRIMOIRE_HOST=http://grimoire.local:3663
+OLLAMA_HOST=http://grimoire.local:11434
 EOF
   ok "wrote .env (remote mode)"
 fi
 
-# ── 4. /etc/hosts — add aid if missing ────────────────────────────────────────
-step "Checking /etc/hosts for 'aid'..."
+# ── 4. /etc/hosts — add grimoire.local if missing ────────────────────────────────────────
+step "Checking /etc/hosts for 'grimoire.local'..."
 if grep -qE '^\s*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\baid\b' /etc/hosts; then
-  ok "aid already in /etc/hosts"
+  ok "grimoire.local already in /etc/hosts"
 else
-  warn "aid not found in /etc/hosts"
-  echo    "  The Grimoire server runs on a host named 'aid'."
-  echo    "  Enter the IP address of aid (leave blank to skip):"
-  read -r -p "  aid IP: " AID_IP
+  warn "grimoire.local not found in /etc/hosts"
+  echo    "  The Grimoire server runs on a host named 'grimoire.local'."
+  echo    "  Enter the IP address of grimoire.local (leave blank to skip):"
+  read -r -p "  grimoire.local IP: " AID_IP
 
   if [[ -n "$AID_IP" ]]; then
     if [[ "$EUID" -ne 0 ]]; then
       echo "  Adding to /etc/hosts (requires sudo)..."
-      echo "$AID_IP  aid" | sudo tee -a /etc/hosts > /dev/null
+      echo "$AID_IP  grimoire.local" | sudo tee -a /etc/hosts > /dev/null
     else
-      echo "$AID_IP  aid" >> /etc/hosts
+      echo "$AID_IP  grimoire.local" >> /etc/hosts
     fi
-    ok "added: $AID_IP  aid"
+    ok "added: $AID_IP  grimoire.local"
   else
-    warn "skipped — add 'aid' to /etc/hosts manually if DNS doesn't resolve it"
+    warn "skipped — add 'grimoire.local' to /etc/hosts manually if DNS doesn't resolve it"
   fi
 fi
 
@@ -122,15 +122,15 @@ step "Configuring Claude Code..."
 CLAUDE_BIN=$(which claude 2>/dev/null || true)
 if [[ -z "$CLAUDE_BIN" ]]; then
   warn "claude CLI not found — skipping Claude Code setup"
-  warn "Install Claude Code then run: claude mcp add --transport http grimoire http://aid:3663/mcp --scope user"
+  warn "Install Claude Code then run: claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user"
 else
   # MCP server
   if claude mcp list 2>/dev/null | grep -q 'grimoire'; then
     ok "grimoire MCP server already configured"
   else
-    claude mcp add --transport http grimoire http://aid:3663/mcp --scope user 2>/dev/null \
-      && ok "grimoire MCP server registered (http://aid:3663/mcp)" \
-      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire http://aid:3663/mcp --scope user"
+    claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user 2>/dev/null \
+      && ok "grimoire MCP server registered (http://grimoire.local:3663/mcp)" \
+      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user"
   fi
 
   # Plugin marketplace + install
@@ -208,20 +208,20 @@ fi
 step "Registering hardware inventory in KB..."
 REGISTER_SCRIPT="$ENGINE_ROOT/deploy/grim-register-host.sh"
 if [[ -x "$REGISTER_SCRIPT" ]]; then
-  GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://aid:3663}" "$REGISTER_SCRIPT" \
+  GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://grimoire.local:3663}" "$REGISTER_SCRIPT" \
     || warn "registration failed — re-run manually: $REGISTER_SCRIPT"
 else
   warn "grim-register-host.sh not found — skipping"
 fi
 
 # ── 10. Smoke test ────────────────────────────────────────────────────────────
-step "Testing connection to aid:3663..."
-if curl -sf --max-time 5 http://aid:3663/health -o /dev/null 2>/dev/null; then
-  HEALTH=$(curl -s http://aid:3663/health)
+step "Testing connection to grimoire.local:3663..."
+if curl -sf --max-time 5 http://grimoire.local:3663/health -o /dev/null 2>/dev/null; then
+  HEALTH=$(curl -s http://grimoire.local:3663/health)
   ok "Grimoire server reachable — $HEALTH"
 else
-  warn "Cannot reach http://aid:3663/health"
-  warn "Make sure the server is running on aid: grim serve  (or systemctl start grimoire)"
+  warn "Cannot reach http://grimoire.local:3663/health"
+  warn "Make sure the server is running on grimoire.local: grim serve  (or systemctl start grimoire)"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@ node bin/re-describe.js
 ## Environment
 
 - **GRIMOIRE_ROOT**: path to grimoire-kb directory (default: `~/.local/share/grimoire-kb`)
-- **VLLM**: llama.cpp endpoint (default: `http://aid:11311/v1/chat/completions`)
+- **VLLM**: llama.cpp endpoint (default: `http://grimoire.local:11311/v1/chat/completions`)
 - **MODEL**: Qwen3.6_35B_A3B
 
 ## Rules

@@ -16,7 +16,7 @@
 
 <br>
 
-<!-- generated locally: `grim vision cast mascot-banner` (A1111 on superack:7860) -->
+<!-- generated locally: `grim vision cast mascot-banner` (A1111) -->
 <img src="docs/img/hero.png" alt="Grimoire Ex Machina — brass automaton wizards channelling glowing spellbooks" width="860">
 
 <sub>🤖📖 the Grimoire Roboticus — brass automaton wizards channelling living spellbooks</sub>
@@ -73,7 +73,7 @@ grim load              Load save — begin a session                (SAVESTATE) 
 grim save              Write save — end a session                 (SAVESTATE)         [local + remote]
 grim tome              Memory ops: recall/remember/relate         (The Tome)          [local + remote]
 grim mm                Read/write the .mm pact thread             (The Postbox)       [any cwd]
-grim serve             Start HTTP + MCP server                                        [run on aid]
+grim serve             Start HTTP + MCP server                                        [run on grimoire.local]
 ```
 
 **Local** commands require `GRIMOIRE_ROOT` set and the KB directory accessible.
@@ -83,16 +83,16 @@ grim serve             Start HTTP + MCP server                                  
 
 ## 🕸️ Cluster & Harness Integration
 
-Grimoire is designed to run on a central host (currently `aid`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
+Grimoire is designed to run on a central host (currently `grimoire.local`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
 
 - **Skills Hub**: Add or modify skills in `plugin/skills/` on any host. These are version-controlled and shared across the cluster.
 - **Harness Slots**: AI harnesses (Claude Code, Copilot, etc.) consume skills via symbolic links or configuration files. Create a slot in your harness config that points to `plugin/skills/<skill-name>/SKILL.md`.
 - **Per-Harness Config**: Keep harness-specific files (e.g., `.claude/settings.json`) in a dedicated directory in your home folder. Link or symlink these into your harness's expected locations as needed — keeps harness configs separate from the repo and portable.
-- **Remote Ontology**: Regardless of the client box, AI assistants connect to the central KB on `aid` via `GRIMOIRE_HOST` to search, track, and update the shared ontology. This ensures consistent context across all projects and tools.
+- **Remote Ontology**: Regardless of the client box, AI assistants connect to the central KB on `grimoire.local` via `GRIMOIRE_HOST` to search, track, and update the shared ontology. This ensures consistent context across all projects and tools.
 
 ---
 
-## 🚀 Quick start (on aid)
+## 🚀 Quick start (on grimoire.local)
 
 ```bash
 git clone <this-repo> grimoire
@@ -120,11 +120,11 @@ grim serve
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GRIMOIRE_ROOT` | — | Path to grimoire-kb directory (local mode) |
-| `GRIMOIRE_HOST` | — | Grimoire server URL, e.g. `http://aid:3663` (remote mode) |
-| `OLLAMA_HOST` | `http://aid:11434` | Ollama base URL |
+| `GRIMOIRE_HOST` | — | Grimoire server URL, e.g. `http://grimoire.local:3663` (remote mode) |
+| `OLLAMA_HOST` | `http://grimoire.local:11434` | Ollama base URL |
 | `GRIMOIRE_PORT` | `3663` | Port for `grim serve` |
-| `GRIMOIRE_NER_HOST` | `http://aid:3773` | NER service (GLiNER + Rebel) |
-| `GRIMOIRE_A1111_HOST` | `http://aid:7860` | AUTOMATIC1111 Stable Diffusion |
+| `GRIMOIRE_NER_HOST` | `http://grimoire.local:3773` | NER service (GLiNER + Rebel) |
+| `GRIMOIRE_A1111_HOST` | `http://grimoire.local:7860` | AUTOMATIC1111 Stable Diffusion |
 | `GRIMOIRE_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 
 ---
@@ -135,13 +135,11 @@ All AI operations use local Ollama models — no cloud required.
 
 | Task | Model |
 |------|-------|
-| Entity extraction / overview | gemma4:26b |
-| Per-file linking (bulk) | gemma4:26b |
-| Dream analysis / synthesis | gemma4:31b |
-| Rumination / noise floor | qwen3.5:9b |
-| Interactive reflection | gemma4:26b |
+| Entity extraction, linking, analysis | Qwen3 (~35B A3B) |
+| Rumination / noise floor | Qwen3 (~35B A3B) |
+| Interactive reflection | Qwen3 (~35B A3B) |
 
-Models are resolved dynamically via `grim models` — routing uses installed models scored against capability profiles. Run `grim models` to see the current routing table for your hardware.
+The default is **Qwen3 35B A3B** (`qwen3` family) for essentially everything — dense reasoning at sparse-MoE cost. Models are resolved dynamically via `grim models` — routing uses installed models scored against capability profiles. Run `grim models` to see the current routing table for your hardware.
 
 ---
 
@@ -168,7 +166,7 @@ Grimoire ships with five personas — specialized AI behavior modes:
 | 7860 | AUTOMATIC1111 |
 | 11434 | Ollama |
 
-Open port **3663** on aid for LAN clients. See [docs/client-setup.md](docs/client-setup.md).
+Open port **3663** on grimoire.local for LAN clients. See [docs/client-setup.md](docs/client-setup.md).
 
 ---
 
@@ -261,10 +259,10 @@ See `plugin/skills/{minion,mage,hierophant}/SKILL.md` for the full protocol and 
 ## 🧭 New machine setup
 
 See [docs/client-setup.md](docs/client-setup.md) for full instructions including:
-- Hosts file configuration (`aid` resolution)
+- Hosts file configuration (`grimoire.local` resolution)
 - `.env` setup for remote mode
 - Claude Code MCP configuration
-- Firewall setup on aid
+- Firewall setup on grimoire.local
 
 ---
 

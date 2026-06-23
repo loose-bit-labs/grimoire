@@ -60,7 +60,7 @@ Commands:
 Environment:
   GRIMOIRE_ROOT        Path to grimoire data dir (default: repo root)
   OLLAMA_HOST          Ollama base URL           (default: http://localhost:11434)
-  GRIMOIRE_A1111_HOST  AUTOMATIC1111 URL         (default: http://aid:7860)
+  GRIMOIRE_A1111_HOST  AUTOMATIC1111 URL         (default: http://grimoire.local:7860)
   GRIMOIRE_VISION_OUT  Output dir for cast spells (default: /tmp)
 `)
   process.exit(0)

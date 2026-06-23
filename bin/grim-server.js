@@ -5,7 +5,7 @@
  * grim-server.js — The Grimoire Server
  *
  * Exposes the KB to the LAN via HTTP REST API + MCP endpoint.
- * Binds to 0.0.0.0 so clients on other hosts can reach it via http://aid:3663
+ * Binds to 0.0.0.0 so clients on other hosts can reach it via http://grimoire.local:3663
  *
  * Routes:
  *   GET  /health                 → status + graph stats
@@ -29,7 +29,7 @@
  *   GET  /api/archaeology/:slug/:file   → fetch artifact content
  *   POST /mcp                           → MCP Streamable HTTP transport
  *
- * Run on aid: node bin/grim-server.js
+ * Run on grimoire.local: node bin/grim-server.js
  */
 
 const fs      = require('node:fs')
@@ -651,8 +651,8 @@ app.listen(PORT, '0.0.0.0', async () => {
     const graph = await getGraph()
     const m     = graph._meta || {}
     console.log(`\n  ░ Grimoire online.`)
-    console.log(`    http://0.0.0.0:${PORT}  (LAN: http://aid:${PORT})`)
-    console.log(`    MCP endpoint: http://aid:${PORT}/mcp`)
+    console.log(`    http://0.0.0.0:${PORT}  (LAN: http://grimoire.local:${PORT})`)
+    console.log(`    MCP endpoint: http://grimoire.local:${PORT}/mcp`)
     console.log(`    Entities: ${m.entityCount || '?'}  Edges: ${m.edgeCount || '?'}`)
     console.log(`    Noise Floor: ${path.relative(process.cwd(), NOISE_FILE)}\n`)
   } catch (e) {

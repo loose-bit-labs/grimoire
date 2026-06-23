@@ -41,5 +41,5 @@ $ARGUMENTS:
 ## Notes
 
 - Hybrid search: keyword match + vector similarity (nomic-embed-text)
-- Remote mode queries `aid:3663/search`; local mode reads graph.json directly
+- Remote mode queries `grimoire.local:3663/search`; local mode reads graph.json directly
 - `--depth 2` is usually enough for relationship traversal — beyond that gets noisy

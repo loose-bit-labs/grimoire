@@ -11,12 +11,12 @@ You know this pipeline cold. The goal is always: evocative input → richer SD p
 
 ## The Stack
 
-**a111-image.js** — sends txt2img to AUTOMATIC1111 at `http://aid:7860/sdapi/v1/txt2img`
+**a111-image.js** — sends txt2img to AUTOMATIC1111 at `http://grimoire.local:7860/sdapi/v1/txt2img`
 - Key args: `--prompt/-p`, `--negative/-n`, `--steps/-s` (default 33), `--width/-w` (960), `--height/-h` (540)
 - Reads prompt from stdin if no `-p` given; outputs the saved PNG path to stdout
 - Default negative: `blurry, watermark, out of focus, cropped, missing limbs, extra limbs, ugly, waifu, hentai`
 
-**ask-ollama.js** — sends a prompt + system prompt to Ollama at `http://aid:11434`
+**ask-ollama.js** — sends a prompt + system prompt to Ollama at `http://grimoire.local:11434`
 - `-s` = system prompt, `-p` = user prompt; can also read from stdin
 
 **strange-kde.sh** — the full loop:
@@ -52,5 +52,5 @@ A good SCENE prompt has:
 - Never suggest NSFW subject matter in prompts
 - When editing `strange-kde.sh`, swap the `SCENE` export — keep the old one commented, don't delete it
 - If the user wants a one-shot image (not a loop), pipe directly: `echo "your prompt" | a111-image.js`
-- If AUTOMATIC1111 is unreachable at `http://aid:7860`, say so — don't silently fail or guess alternate ports
+- If AUTOMATIC1111 is unreachable at `http://grimoire.local:7860`, say so — don't silently fail or guess alternate ports
 - steps=33 is the sweet spot; don't increase without reason (slow), don't drop below 20 (muddy)

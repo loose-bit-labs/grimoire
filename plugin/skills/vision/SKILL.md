@@ -40,11 +40,11 @@ $ARGUMENTS — one of:
 
 3. For `cast`: report the output path and show the prompt used.
 4. For `interrogate`: summarize the CLIP caption and any entity hints surfaced.
-5. If A1111 is unreachable (`aid:7860`), report it clearly — do not retry silently.
+5. If A1111 is unreachable (`grimoire.local:7860`), report it clearly — do not retry silently.
 
 ## Notes
 
-- A1111 runs on `aid:7860` — must be reachable
+- A1111 runs on `grimoire.local:7860` — must be reachable
 - Named spells are defined in `grim-vision.js` SPELLS registry (logo, mascot, etc.)
 - `--spell <base>` uses a named spell's settings as defaults for a free-form cast
 - Interrogate mode uses CLIP captioning to suggest KB entity descriptions

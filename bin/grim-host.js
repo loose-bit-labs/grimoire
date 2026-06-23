@@ -220,7 +220,7 @@ class GrimHost {
     grim host list
     grim host gen-hosts
     grim host gen-hosts --out /tmp/grim-hosts && sudo cp /tmp/grim-hosts /etc/hosts
-    grim host sync-config chonko
+    grim host sync-config <host>
     grim host sync-config
 `)
       return

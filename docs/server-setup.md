@@ -1,8 +1,8 @@
-# Server Setup (aid)
+# Server Setup (grimoire.local)
 
-How to set up Grimoire on `aid` — the machine that owns the KB.
+How to set up Grimoire on `grimoire.local` — the machine that owns the KB.
 
-`aid` is the hostname of your local AI device. Add it to `/etc/hosts` on every machine that needs to reach it.
+`grimoire.local` is the hostname of your local AI device. Add it to `/etc/hosts` on every machine that needs to reach it.
 
 ---
 
@@ -29,30 +29,30 @@ npm install
 cp .env.example .env
 ```
 
-`.env` on `aid` (local mode — direct KB access):
+`.env` on `grimoire.local` (local mode — direct KB access):
 ```bash
 GRIMOIRE_ROOT=~/data/grimoire-kb
-OLLAMA_HOST=http://aid:11434
+OLLAMA_HOST=http://grimoire.local:11434
 GRIMOIRE_PORT=3663
 ```
 
-## 4. Hosts file — add `aid` to this machine
+## 4. Hosts file — add `grimoire.local` to this machine
 
-`aid` should resolve on this machine itself:
+`grimoire.local` should resolve on this machine itself:
 ```bash
-grep aid /etc/hosts
-# Should show: 127.0.0.1  aid
+grep grimoire.local /etc/hosts
+# Should show: 127.0.0.1  grimoire.local
 ```
 
 If missing:
 ```bash
-echo "127.0.0.1  aid" | sudo tee -a /etc/hosts
+echo "127.0.0.1  grimoire.local" | sudo tee -a /etc/hosts
 ```
 
 ## 5. Verify Ollama is running
 
 ```bash
-curl http://aid:11434/api/tags
+curl http://grimoire.local:11434/api/tags
 # Should list your models
 ```
 
@@ -120,10 +120,10 @@ Schedule during work hours when Ollama is warm. Avoid 2 AM.
 ## Verify everything
 
 ```bash
-# Health check (on aid)
-curl http://aid:3663/health
+# Health check (on grimoire.local)
+curl http://grimoire.local:3663/health
 
 # From another LAN machine
-curl http://aid:3663/health
+curl http://grimoire.local:3663/health
 # → {"status":"ok","entities":7,"edges":5}
 ```
