@@ -139,7 +139,7 @@ if (require.main === module) {
       if (args.write) {
         const axios  = require('axios')
         const { config } = require('../lib/env')
-        const host = process.env.GRIMOIRE_HOST || `http://${config.host || 'grimoire.local:3663'}`
+        const host = config.host
         try {
           await axios.post(`${host}/noise-floor/think`, {
             type: 'reflection',

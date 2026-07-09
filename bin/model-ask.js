@@ -50,7 +50,7 @@ function _lbl() {
 function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
 function _lblModel(task)    { return _lbl().models?.[task] ?? null }
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || 'http://grimoire.local:11434'
+const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || _lblEndpoint('ollama') || 'http://aid:11434'
 
 // ── Capability profiles ───────────────────────────────────────────────────────
 // Matched in order — first pattern wins. Scores are per task type (0-10).

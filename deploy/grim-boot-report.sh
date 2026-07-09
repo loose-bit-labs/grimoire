@@ -7,7 +7,13 @@
 #   install -m644 ~/.grimoire/deploy/grim-boot-report.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now grim-boot-report
 
-GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://grimoire.local:3663}"
+GRIMOIRE_HOST="${GRIMOIRE_HOST:-$(node -e "
+  const fs=require('fs'),os=require('os'),p=require('path');
+  try {
+    const c=JSON.parse(fs.readFileSync(p.join(os.homedir(),'.config','lbl-config.json'),'utf8'));
+    process.stdout.write(c.endpoints?.grimoire||'http://aid:3663');
+  } catch { process.stdout.write('http://aid:3663'); }
+" 2>/dev/null || echo 'http://aid:3663')}"
 LOG_DIR="/home/vgvm/.grimoire/logs"
 LOG_FILE="${LOG_DIR}/boot-report.log"
 
