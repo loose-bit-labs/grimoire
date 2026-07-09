@@ -14,7 +14,14 @@
 
 set -euo pipefail
 
-GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://grimoire.local:3663}"
+# Resolve GRIMOIRE_HOST: env var → lbl-config.json endpoints.grimoire → fallback
+GRIMOIRE_HOST="${GRIMOIRE_HOST:-$(node -e "
+  const fs=require('fs'),os=require('os'),p=require('path');
+  try {
+    const c=JSON.parse(fs.readFileSync(p.join(os.homedir(),'.config','lbl-config.json'),'utf8'));
+    process.stdout.write(c.endpoints?.grimoire||'http://aid:3663');
+  } catch { process.stdout.write('http://aid:3663'); }
+" 2>/dev/null || echo 'http://aid:3663')}"
 export HOSTNAME_S="$(hostname -s)"
 export TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 export PLATFORM="$(uname -s)"   # Linux | Darwin

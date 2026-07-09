@@ -7,8 +7,8 @@
 # What it does:
 #   1. Checks Node.js 18+
 #   2. npm install
-#   3. Writes .env (remote mode — points at grimoire.local:3663)
-#   4. Optionally adds grimoire.local to /etc/hosts (asks for IP if missing)
+#   3. Writes minimal .env (GRIMOIRE_ROOT unset; host resolved via lbl-config.json)
+#   4. Ensures the grimoire host is in /etc/hosts (reads aid from lbl-config if present)
 #   5. Symlinks grim CLI into ~/bin (no sudo, no global install)
 #   6. Configures Claude Code: MCP server + plugin
 #   7. Creates ~/.grimoire dotlink
@@ -20,6 +20,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Resolve grimoire server URL from lbl-config.json → fallback to aid:3663
+_grimoire_url() {
+  node -e "
+    const fs=require('fs'),os=require('os'),p=require('path');
+    try {
+      const c=JSON.parse(fs.readFileSync(p.join(os.homedir(),'.config','lbl-config.json'),'utf8'));
+      process.stdout.write(c.endpoints?.grimoire||'http://aid:3663');
+    } catch { process.stdout.write('http://aid:3663'); }
+  " 2>/dev/null || echo 'http://aid:3663'
+}
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -43,7 +54,7 @@ cd "$ENGINE_ROOT"
 npm install --silent
 ok "npm install done"
 
-# ── 3. Write .env (remote mode) ───────────────────────────────────────────────
+# ── 3. Write .env (minimal — host resolution uses lbl-config.json) ───────────
 step "Configuring .env..."
 ENV_FILE="$ENGINE_ROOT/.env"
 
@@ -53,33 +64,33 @@ else
   cat > "$ENV_FILE" <<'EOF'
 # Grimoire client — remote mode
 # GRIMOIRE_ROOT is intentionally unset; all KB access goes via the server.
-
-GRIMOIRE_HOST=http://grimoire.local:3663
-OLLAMA_HOST=http://grimoire.local:11434
+# Host/model resolution uses ~/.config/lbl-config.json (endpoints.grimoire).
+# Override here only if you need to point at a non-default server:
+# GRIMOIRE_HOST=http://aid:3663
 EOF
-  ok "wrote .env (remote mode)"
+  ok "wrote .env (minimal)"
 fi
 
-# ── 4. /etc/hosts — add grimoire.local if missing ────────────────────────────────────────
-step "Checking /etc/hosts for 'grimoire.local'..."
+# ── 4. /etc/hosts — ensure 'aid' resolves ────────────────────────────────────
+step "Checking /etc/hosts for 'aid'..."
 if grep -qE '^\s*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\baid\b' /etc/hosts; then
-  ok "grimoire.local already in /etc/hosts"
+  ok "aid already in /etc/hosts"
 else
-  warn "grimoire.local not found in /etc/hosts"
-  echo    "  The Grimoire server runs on a host named 'grimoire.local'."
-  echo    "  Enter the IP address of grimoire.local (leave blank to skip):"
-  read -r -p "  grimoire.local IP: " AID_IP
+  warn "aid not found in /etc/hosts"
+  echo    "  The Grimoire server runs on a host named 'aid'."
+  echo    "  Enter the IP address of aid (leave blank to skip — use grim host gen-hosts later):"
+  read -r -p "  aid IP: " AID_IP
 
   if [[ -n "$AID_IP" ]]; then
     if [[ "$EUID" -ne 0 ]]; then
       echo "  Adding to /etc/hosts (requires sudo)..."
-      echo "$AID_IP  grimoire.local" | sudo tee -a /etc/hosts > /dev/null
+      echo "$AID_IP  aid" | sudo tee -a /etc/hosts > /dev/null
     else
-      echo "$AID_IP  grimoire.local" >> /etc/hosts
+      echo "$AID_IP  aid" >> /etc/hosts
     fi
-    ok "added: $AID_IP  grimoire.local"
+    ok "added: $AID_IP  aid"
   else
-    warn "skipped — add 'grimoire.local' to /etc/hosts manually if DNS doesn't resolve it"
+    warn "skipped — run 'grim host gen-hosts' once KB is populated, then apply to /etc/hosts"
   fi
 fi
 
@@ -120,17 +131,20 @@ install_grim_link
 step "Configuring Claude Code..."
 
 CLAUDE_BIN=$(which claude 2>/dev/null || true)
+GRIMOIRE_URL="$(_grimoire_url)"
+MCP_URL="${GRIMOIRE_URL}/mcp"
+
 if [[ -z "$CLAUDE_BIN" ]]; then
   warn "claude CLI not found — skipping Claude Code setup"
-  warn "Install Claude Code then run: claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user"
+  warn "Install Claude Code then run: claude mcp add --transport http grimoire ${MCP_URL} --scope user"
 else
   # MCP server
   if claude mcp list 2>/dev/null | grep -q 'grimoire'; then
     ok "grimoire MCP server already configured"
   else
-    claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user 2>/dev/null \
-      && ok "grimoire MCP server registered (http://grimoire.local:3663/mcp)" \
-      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire http://grimoire.local:3663/mcp --scope user"
+    claude mcp add --transport http grimoire "${MCP_URL}" --scope user 2>/dev/null \
+      && ok "grimoire MCP server registered (${MCP_URL})" \
+      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire ${MCP_URL} --scope user"
   fi
 
   # Plugin marketplace + install
@@ -208,20 +222,22 @@ fi
 step "Registering hardware inventory in KB..."
 REGISTER_SCRIPT="$ENGINE_ROOT/deploy/grim-register-host.sh"
 if [[ -x "$REGISTER_SCRIPT" ]]; then
-  GRIMOIRE_HOST="${GRIMOIRE_HOST:-http://grimoire.local:3663}" "$REGISTER_SCRIPT" \
+  # Script resolves its own GRIMOIRE_HOST via lbl-config.json if not set
+  "$REGISTER_SCRIPT" \
     || warn "registration failed — re-run manually: $REGISTER_SCRIPT"
 else
   warn "grim-register-host.sh not found — skipping"
 fi
 
 # ── 10. Smoke test ────────────────────────────────────────────────────────────
-step "Testing connection to grimoire.local:3663..."
-if curl -sf --max-time 5 http://grimoire.local:3663/health -o /dev/null 2>/dev/null; then
-  HEALTH=$(curl -s http://grimoire.local:3663/health)
+GRIMOIRE_URL="${GRIMOIRE_URL:-$(_grimoire_url)}"
+step "Testing connection to ${GRIMOIRE_URL}..."
+if curl -sf --max-time 5 "${GRIMOIRE_URL}/health" -o /dev/null 2>/dev/null; then
+  HEALTH=$(curl -s "${GRIMOIRE_URL}/health")
   ok "Grimoire server reachable — $HEALTH"
 else
-  warn "Cannot reach http://grimoire.local:3663/health"
-  warn "Make sure the server is running on grimoire.local: grim serve  (or systemctl start grimoire)"
+  warn "Cannot reach ${GRIMOIRE_URL}/health"
+  warn "Make sure grim serve is running on aid (or set endpoints.grimoire in ~/.config/lbl-config.json)"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
