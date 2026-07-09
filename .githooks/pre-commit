@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — block hardcoded bare-hostname URLs in source files
+#
+# A "bare hostname" is a single-label name with a port (e.g. http://aid:3663).
+# These must live in ~/.config/lbl-config.json and be resolved via lblEndpoint()
+# or the equivalent bash snippet — never hardcoded in source.
+#
+# Skips: comment-only lines, lbl-config.json, .md files, this hooks dir
+# Allows: localhost, 127.x.x.x
+#
+# Activate (once per clone):
+#   git config core.hooksPath .githooks
+
+set -euo pipefail
+
+EXTS='\.(js|ts|sh|bash)$'
+SKIP='^(.*lbl-config\.json|\.githooks/.*|.*\.md|.*\.env\.example|deploy/.*)$'
+
+# bare hostname URL: starts with a letter, no dots before the colon, has port
+PATTERN='https?://[a-zA-Z][a-zA-Z0-9-]+:[0-9]'
+ALLOWED_RE='(localhost|127[.][0-9])'
+
+errors=0
+
+while IFS= read -r file; do
+  [[ "$file" =~ $EXTS ]] || continue
+  [[ "$file" =~ $SKIP ]] && continue
+
+  # Use awk on staged content:
+  #   skip blank lines and comment-only lines (# // * style)
+  #   flag lines matching bare-hostname URL pattern that aren't localhost/127.x
+  hits=$(git show ":$file" 2>/dev/null | awk -v pat="$PATTERN" -v allow="$ALLOWED_RE" '
+    /^[[:space:]]*(\/\/|#|\*|\/\*)/ { next }
+    /nohost/ { next }
+    $0 ~ pat {
+      if ($0 !~ allow) { print NR": "$0 }
+    }
+  ' || true)
+
+  if [[ -n "$hits" ]]; then
+    echo ""
+    echo "  BLOCKED  $file — hardcoded hostname URL(s):"
+    echo "$hits" | while IFS= read -r hit; do
+      echo "    $hit"
+    done
+    errors=$((errors + 1))
+  fi
+done < <(git diff --cached --name-only)
+
+if [[ $errors -gt 0 ]]; then
+  echo ""
+  echo "  No bare hostnames in source. Use lblEndpoint() / lbl-config.json instead."
+  echo "  Bypass (docs/infra only): git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+exit 0

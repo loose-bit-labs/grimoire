@@ -9,12 +9,13 @@
 #   2. npm install
 #   3. Writes minimal .env (GRIMOIRE_ROOT unset; host resolved via lbl-config.json)
 #   4. Ensures the grimoire host is in /etc/hosts (reads aid from lbl-config if present)
-#   5. Symlinks grim CLI into ~/bin (no sudo, no global install)
-#   6. Configures Claude Code: MCP server + plugin
-#   7. Creates ~/.grimoire dotlink
-#   8. Installs grim-boot-report userspace systemd service
-#   9. Registers hardware inventory in the KB (re-run anytime after upgrades)
-#  10. Smoke-tests the connection
+#   5. Activates git hooks (.githooks/pre-commit)
+#   6. Symlinks grim CLI into ~/bin (no sudo, no global install)
+#   7. Configures Claude Code: MCP server + plugin
+#   8. Creates ~/.grimoire dotlink
+#   9. Installs grim-boot-report userspace systemd service
+#  10. Registers hardware inventory in the KB (re-run anytime after upgrades)
+#  11. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -94,7 +95,14 @@ else
   fi
 fi
 
-# ── 5. Symlink grim CLI into ~/bin ────────────────────────────────────────────
+# ── 5. Git hooks ─────────────────────────────────────────────────────────────
+step "Activating git hooks (.githooks/)..."
+cd "$ENGINE_ROOT"
+git config core.hooksPath .githooks \
+  && ok "git hooks active (.githooks/pre-commit)" \
+  || warn "git config failed — run manually: git config core.hooksPath .githooks"
+
+# ── 7. Symlink grim CLI into ~/bin ───────────────────────────────────────────
 step "Linking grim CLI into ~/bin..."
 
 install_grim_link() {
