@@ -119,6 +119,50 @@ function printSpells() {
   console.log()
 }
 
+function printHelp() {
+  console.log(`
+  Usage: grim vision [spells|cast|interrogate] [--help]
+
+  Subcommands:
+
+    spells                    List available spells (this output)
+    cast <name>               Cast a named spell
+    cast --prompt "..."       Free-form generation (optionally --spell <name> for base params)
+
+  Global flags:
+
+    --help                    Show this help text
+    --json (-j)               Output results as JSON
+    --verbose (-v)            Verbose output
+
+  Cast flags (override spell defaults):
+
+    --prompt (-p) <text>      Override the spell's positive prompt
+    --out (-o) <path>         Output file path (default: /tmp/grimoire-<spell>-<timestamp>.png)
+    --steps <n>               Sampling steps (spell default: 25–35)
+    --width <n>               Image width in pixels (spell default: 512–1280)
+    --height <n>              Image height in pixels (spell default: 400–768)
+
+  Interrogate flags:
+
+    interrogate <image|dir>   Run CLIP captioning on an image or all images in a directory
+    --model <name>            Interrogate model (default: clip)
+    --verbose (-v)            Print caption for each file
+
+  Spell parameters:
+
+    Each spell has a fixed prompt, negative prompt, dimensions, steps, and cfg_scale.
+    Override any parameter with the corresponding --flag.
+`)
+
+  console.log('  Spells:\n')
+  for (const [name, spell] of Object.entries(SPELLS)) {
+    console.log(`    ${name.padEnd(20)}  ${spell.description}`)
+    console.log(`      size: ${spell.width}×${spell.height}  steps: ${spell.steps}  cfg_scale: ${spell.cfg_scale}`)
+    console.log()
+  }
+}
+
 // ── Cast ──────────────────────────────────────────────────────────────────────
 
 async function cast(spellName, overrides = {}) {
@@ -180,6 +224,14 @@ async function interrogateDir(dir, opts = {}) {
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Check process.argv[2] directly — node consumes --help/-h before minimist sees them.
+  // This matches the pattern in grim.js.
+  const rawArg = process.argv[2]
+  if (rawArg === '--help' || rawArg === '-h') {
+    printHelp()
+    return
+  }
+
   const args = minimist(process.argv.slice(3), {
     boolean: ['json', 'verbose'],
     alias:   { j: 'json', v: 'verbose', p: 'prompt', o: 'out' },
@@ -187,6 +239,13 @@ async function main() {
   })
 
   const [subcmd, ...rest] = args._
+
+  // --help/-h can appear after the subcommand (grim vision --help)
+  // minimist auto-converts --flag to flag: true even without boolean config
+  if (args.help || args.h || args._.includes('--help') || args._.includes('-h')) {
+    printHelp()
+    return
+  }
 
   if (!subcmd || subcmd === 'spells' || subcmd === 'list') {
     printSpells()
