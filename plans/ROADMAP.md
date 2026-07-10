@@ -23,6 +23,7 @@ Hard rules:
 
 | Phase | Brief | What moves |
 |-------|-------|-----------|
+| 0 (optional warm-up) | KB: `meta_technique_grimoire_known_bugs_list` | Fix `grim tome <sub>` argv off-by-one (`bin/grim.js:87` injects cmd; `grim-tome.js:201` expects the subcommand) + regression test |
 | 1 | plans/phase-1.md | ComfyUI client → `lib/comfy-client.js` + `lib/comfy-watch.js` |
 | 2 | plans/phase-2.md | cull UI → `bin/grim-cull.js` + `grim cull` subcommand |
 | 3 | plans/phase-3.md | civitai downloader → `bin/grim-civitai.sh` |

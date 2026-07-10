@@ -165,6 +165,30 @@ function printHelp() {
 
 // ── Cast ──────────────────────────────────────────────────────────────────────
 
+const FREE_DEFAULTS = { width: 512, height: 512, steps: 25, cfg_scale: 7 }
+
+async function castFree(overrides = {}) {
+  const params = { ...FREE_DEFAULTS, negative_prompt: DEFAULT_NEGATIVE, ...overrides }
+  params.outFile = overrides.out || defaultOutFile('free')
+
+  console.log(`\n  ✦ Free-form generation`)
+  console.log(`  Output: ${params.outFile}`)
+  console.log(`  Size: ${params.width}×${params.height}  Steps: ${params.steps}\n`)
+  process.stdout.write('  Generating')
+
+  const ticker = setInterval(() => process.stdout.write('.'), 2000)
+  try {
+    const outPath = await txt2img(params)
+    clearInterval(ticker)
+    console.log(` done.\n  ✔ Saved: ${outPath}\n`)
+    return outPath
+  } catch (e) {
+    clearInterval(ticker)
+    console.error(`\n  ✗ Generation failed: ${e.message}`)
+    throw e
+  }
+}
+
 async function cast(spellName, overrides = {}) {
   const base = SPELLS[spellName]
   if (!base) {
@@ -260,7 +284,9 @@ async function main() {
   }
 
   if (subcmd === 'cast') {
-    const spellName = rest[0] || args.spell || 'mascot'
+    // Named spell from positional arg or --spell flag.
+    // If only --prompt is given (no spell name), generate free-form — no spell preset applied.
+    const spellName = rest[0] || args.spell || null
     const overrides = {}
     if (args.prompt) overrides.prompt = args.prompt
     if (args.out)    overrides.out    = args.out
@@ -268,7 +294,15 @@ async function main() {
     if (args.width)  overrides.width  = Number(args.width)
     if (args.height) overrides.height = Number(args.height)
 
-    const outPath = await cast(spellName, overrides)
+    if (!spellName && !args.prompt) {
+      console.error('  Specify a spell name or --prompt "..."')
+      console.error('  Run: grim vision spells')
+      process.exit(1)
+    }
+
+    const outPath = spellName
+      ? await cast(spellName, overrides)
+      : await castFree(overrides)
     if (args.json) console.log(JSON.stringify({ spell: spellName, path: outPath }))
     return
   }
