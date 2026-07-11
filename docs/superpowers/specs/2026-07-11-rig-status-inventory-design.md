@@ -53,14 +53,35 @@ A reading of a box produces three record types.
 | loadavg | `/proc/loadavg` (1/5/15), shown against `cores` |
 | gpus[] used+util | `nvidia-smi --query-gpu=memory.used,utilization.gpu` per GPU / `amd-smi`/`rocm-smi` |
 | disks[] used/free | `df -m` on configured mounts |
-| services[] | existing per-box `check` probes (unchanged) |
+| services[] | **auto-enumerated** systemd user units (see below) + optional rig.json HTTP probes |
 | loadedModel | `ollama ps` on ollama hosts — which model is warm in VRAM |
+
+### Service enumeration (primary signal)
+
+Running services are auto-discovered, not hardcoded — following the pattern in
+`~/bin/all-my-user-services.sh`. The probe walks the unit files and reports each unit's
+active state:
+
+```sh
+for u in ~/.config/systemd/user/*.service; do
+  s=$(basename "$u")
+  echo "SVC:${s}:$(systemctl --user is-active "$s" 2>/dev/null)"
+done
+```
+
+`is-active` yields `active` / `inactive` / `failed` / `activating` per unit (cleaner than
+parsing `systemctl status | grep Active`). This is the **same enumeration** the inventory
+uses for its systemd source, so #1 and #2 share one probe.
+
+rig.json `services[]` becomes **optional** — retained only for daemons that are *not*
+systemd `--user` units and need an HTTP/pgrep probe (e.g. a1111 launched via
+screen/nohup). Auto-enumerated units and explicit probes merge, deduped by name.
 
 ### `inventory` (`grim rig models` only)
 
 | source | probe |
 |---|---|
-| systemd user units | `systemctl --user list-units --type=service --all --no-legend` (running + loaded) |
+| systemd user units | walk `~/.config/systemd/user/*.service`, `systemctl --user is-active` each (running + installed-but-stopped) — same enumeration as the status probe |
 | ollama tags | `curl -sf http://localhost:11434/api/tags` |
 | HF cache | `hf cache scan` if `hf` locatable, else direct cache-dir walk |
 | model dirs (opt) | per-box `modelDirs`: `find -L <dir> \( -name '*.safetensors' -o -name '*.gguf' -o -name '*.ckpt' -o -name '*.pt' \)`, realpath-deduped |
@@ -103,8 +124,8 @@ first hit wins:
 
 ## rig.json additions (backward-compatible)
 
-- Un-skip **meinherz**; seed `services: [{ name: "comfyui", scope: "user",
-  check: "systemctl --user is-active comfyui ..." }]`. Inventory auto-discovers the rest.
+- Un-skip **meinherz**. No service seeding needed — the systemd-user enumeration
+  auto-discovers its units. `services[]` stays empty unless it runs a non-systemd daemon.
 - Optional per-box **`modelDirs: [paths]`** — extra dirs scanned for model files,
   realpath-deduped by real inode so symlink sprawl never double-counts.
 - Optional per-box **`disks: [mounts]`** — mounts to report (default `["/"]`), so `df`
