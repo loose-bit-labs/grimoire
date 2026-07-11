@@ -73,9 +73,21 @@ done
 parsing `systemctl status | grep Active`). This is the **same enumeration** the inventory
 uses for its systemd source, so #1 and #2 share one probe.
 
-rig.json `services[]` becomes **optional** — retained only for daemons that are *not*
-systemd `--user` units and need an HTTP/pgrep probe (e.g. a1111 launched via
-screen/nohup). Auto-enumerated units and explicit probes merge, deduped by name.
+**Systemd `--user` is the canonical source of truth for services.** Any daemon running
+outside it is a *migration target*, not a permanent config entry — the goal is that every
+service is a `~/.config/systemd/user/*.service` unit and thus auto-discovered. rig.json
+`services[]` is therefore **transitional**: it exists only so non-systemd daemons stay
+visible *until they are migrated*. Auto-enumerated units and any transitional probes merge,
+deduped by name.
+
+To make migration targets findable, the status probe optionally flags **orphans** — a
+short allow-list of known-service process patterns (e.g. `launch.py`/a1111, `trellis`,
+`ollama`, comfy `main.py`) found via `pgrep` whose command is *not* backed by any active
+user unit. Rendered as `⚠ orphan: <name> (not under systemd)`. This is a nudge to migrate,
+kept minimal (YAGNI): a fixed pattern list, no process-tree accounting.
+
+Known current targets to migrate: **a1111** (`:7860`) and **trellis** (`:7777`) on aid —
+today curl-probed, not `systemctl`-backed.
 
 ### `inventory` (`grim rig models` only)
 
