@@ -50,7 +50,12 @@ function _lbl() {
 function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
 function _lblModel(task)    { return _lbl().models?.[task] ?? null }
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('openai') || _lblEndpoint('ollama') || 'http://aid:11434'
+const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('ollama') || null
+
+// OpenAI-compatible llama-server for text/chat tasks (lbl use.coding → endpoint).
+// Ollama keeps vision + embedding (llava, nomic-embed live there).
+const CODING_BASE  = process.env.LLM_CODING_HOST || _lblEndpoint('coding') || null
+const OPENAI_TASKS = new Set(['extraction', 'linking', 'synthesis', 'dreaming', 'reflection', 'rumination', 'default'])
 
 // ── Capability profiles ───────────────────────────────────────────────────────
 // Matched in order — first pattern wins. Scores are per task type (0-10).
@@ -264,9 +269,61 @@ async function buildRouteTable() {
   return table
 }
 
+// ── OpenAI-compat backend (llama-server) ─────────────────────────────────────
+
+let _oaiModel = null
+
+async function getCodingModel() {
+  if (_oaiModel) return _oaiModel
+  const res  = await axios.get(`${CODING_BASE}/v1/models`, { timeout: 5000 })
+  _oaiModel  = res.data?.data?.[0]?.id || null
+  if (!_oaiModel) throw new Error(`no model listed at ${CODING_BASE}/v1/models`)
+  return _oaiModel
+}
+
+async function askOpenAI({ prompt, task, system, json, timeout, maxTokens }) {
+  const model = await getCodingModel()
+  // Thinking only for tasks that benefit from it (mirrors STATIC_FALLBACK intent);
+  // enable_thinking is honored by Qwen3.x chat templates, ignored by others.
+  const thinking = STATIC_FALLBACK[task]?.thinking === true
+
+  const messages = []
+  if (system) messages.push({ role: 'system', content: system })
+  let user = prompt
+  if (json) user += '\n\nRespond with valid JSON only. No markdown, no prose.'
+  messages.push({ role: 'user', content: user })
+
+  const body = {
+    model,
+    messages,
+    stream:      false,
+    max_tokens:  maxTokens ?? 4096,
+    chat_template_kwargs: { enable_thinking: thinking },
+  }
+
+  process.stderr.write(`  [ask] ${model} @ ${CODING_BASE} (openai) task=${task} think=${thinking} promptTokens≈${Math.ceil(user.length / 4)} timeout=${timeout}ms\n`)
+  const t0 = Date.now()
+
+  const response = await axios.post(
+    `${CODING_BASE}/v1/chat/completions`,
+    body,
+    { headers: { 'Content-Type': 'application/json' }, timeout }
+  )
+
+  const raw = response.data?.choices?.[0]?.message?.content || ''
+  process.stderr.write(`  [ask] done in ${Date.now() - t0}ms — ${raw.length} chars\n`)
+  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+}
+
 // ── ask() ─────────────────────────────────────────────────────────────────────
 
 async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images, maxTokens, keepAlive }) {
+  // Text/chat tasks go to the coding llama-server when configured (lbl use.coding).
+  // Explicit --model requests and vision/embedding stay on Ollama.
+  if (CODING_BASE && !model && !images?.length && OPENAI_TASKS.has(task)) {
+    return askOpenAI({ prompt, task, system, json, timeout, maxTokens })
+  }
+
   let resolved
   if (model) {
     const profile = profileFor(model)
@@ -286,7 +343,8 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
   if (images?.length) body.images = images
   const modelCanThink = profileFor(resolvedModel)?.thinking === true
   if (!isThinking && modelCanThink) body.options = { think: false }
-  if (maxTokens) body.options = { ...body.options, num_predict: maxTokens }
+  // Always cap generation — uncapped concurrent runs (council) have OOM'd before.
+  body.options = { ...body.options, num_predict: maxTokens ?? 4096 }
 
   if (json && isThinking) {
     body.prompt = prompt + '\n\nRespond with valid JSON only. No markdown, no prose.'
@@ -351,7 +409,7 @@ async function askJSON(opts) {
   }
 }
 
-module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, OLLAMA_BASE, ALL_TASKS }
+module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, OLLAMA_BASE, CODING_BASE, ALL_TASKS }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
