@@ -13,8 +13,9 @@
  *
  * Left → right: bold-yellow repo + a session-role glyph (🧎‍♂️ minion /
  * 🧙‍♂️ mage / 🔮 hierophant / 🗡️ lone adventurer when unaligned), cyan
- * branch, an RGB green→yellow→red context bar (% of the 200K window,
- * derived from the transcript since Claude Code does not pass it on stdin)
+ * branch, an RGB green→yellow→red context bar (% of the real context
+ * window — Claude Code now passes `context_window` on stdin; transcript
+ * math ÷ $CLAUDE_CODE_MODEL_CONTEXT_LIMIT, default 200K, is the fallback)
  * with a dungeon-depth emoji (🕯️→⚔️→💀→☠️), green/red code velocity,
  * magenta model, and a live animated dungeon corridor: a critter scuttling
  * under a cycling moon by flickering torchlight. Frames advance off the
@@ -50,7 +51,9 @@ const c256 = {
 const paint = (color, s) => `${color}${s}${RESET}`;
 
 // ---- context window --------------------------------------------------------
-const CONTEXT_WINDOW = 200000;
+// Fallback only — sessions can run 200K or 1M windows; trust stdin when present.
+// Inherited from the parent Claude Code process, so it matches the harness's own limit.
+const CONTEXT_WINDOW = parseInt(process.env.CLAUDE_CODE_MODEL_CONTEXT_LIMIT, 10) || 200000;
 const BAR_WIDTH = 20;
 
 // green (low) -> yellow (mid) -> red (high), interpolated by position t in [0,1]
@@ -282,9 +285,17 @@ function main(input) {
   let branch = git('rev-parse --abbrev-ref HEAD', cwd);
   if (branch === 'HEAD') branch = git('rev-parse --short HEAD', cwd) || 'detached';
 
-  // context
-  const tokens = usedTokens(data.transcript_path);
-  const pct = Math.min(100, Math.round((tokens / CONTEXT_WINDOW) * 100));
+  // context — prefer the harness's own numbers (real window size, survives
+  // compaction); fall back to transcript math against CONTEXT_WINDOW.
+  const cw = data.context_window || {};
+  let pct;
+  if (typeof cw.used_percentage === 'number') {
+    pct = Math.min(100, Math.round(cw.used_percentage));
+  } else {
+    const tokens = usedTokens(data.transcript_path);
+    const windowSize = cw.context_window_size || CONTEXT_WINDOW;
+    pct = Math.min(100, Math.round((tokens / windowSize) * 100));
+  }
 
   // code velocity
   const cost = data.cost || {};
