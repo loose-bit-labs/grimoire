@@ -26,6 +26,7 @@
 const fs       = require('node:fs')
 const path     = require('node:path')
 const minimist = require('minimist')
+const { execFileSync } = require('node:child_process')
 
 const ROLES  = ['mage', 'minion', 'hierophant']
 const STATES = ['brief', 'report', 'revise', 'accepted', 'question', 'blocked', 'direction', 'escalate']
@@ -95,6 +96,60 @@ function stampRole(dir, role, session) {
   fs.writeFileSync(path.join(dir, `.role-${session}`), `${role}\n`, 'utf8')
 }
 
+// ── Next-move footer ─────────────────────────────────────────────────────────
+//
+// Who legally replies to what, and with which states. Mirrors the pact's actual
+// reply graph (minion<->mage, mage<->hierophant) so the skills no longer have to
+// re-explain it in prose — `read`'s footer prints the exact legal command instead.
+
+const NEXT_OWNER   = { mage: 'minion', minion: 'mage', hierophant: 'mage' }
+const REPLY_STATES = {
+  minion:     { mage:       { brief: ['report', 'question', 'blocked'], revise: ['report', 'question', 'blocked'] } },
+  mage:       { minion:     { report: ['accepted', 'revise'], question: ['revise'], blocked: ['revise'] },
+                hierophant: { direction: ['brief'] } },
+  hierophant: { mage:       { escalate: ['direction'] } },
+}
+
+function legalReplyStates(readerRole, speakerRole, speakerState) {
+  return REPLY_STATES[readerRole]?.[speakerRole]?.[speakerState] || null
+}
+
+// One object describing what happens next, used by both --json (`nextMove`) and
+// the human-readable footer. `waiting`/`phaseComplete` are the same booleans `read`
+// already computes.
+function computeNextMove({ role, latest, waiting, phaseComplete }) {
+  if (!latest) return { note: 'no messages yet' }
+  if (phaseComplete) {
+    const n = parseInt(latest.phase, 10)
+    const nextN = Number.isFinite(n) ? n + 1 : '<N+1>'
+    return {
+      action:  'archive-then-brief',
+      command: `grim mm archive --phase ${latest.phase}`,
+      note:    `then brief phase ${nextN} (--state brief) or declare done`,
+    }
+  }
+  if (waiting) return { note: 'waiting on reply; nothing to send' }
+  if (latest.role !== role && TERMINAL.includes(latest.state)) {
+    return { note: 'phase accepted by another role; idle until next brief' }
+  }
+  const states = legalReplyStates(role, latest.role, latest.state)
+  if (!states) return { note: 'no defined reply for this situation' }
+  return {
+    states,
+    command: `grim mm write --role ${role} --session "$CLAUDE_CODE_SESSION_ID" --state <${states.join('|')}> --file <reply.md>`,
+  }
+}
+
+function printFooter(nextMove) {
+  if (!nextMove.states && !nextMove.action) return
+  if (nextMove.action === 'archive-then-brief') {
+    console.log(`next: ${nextMove.command}, ${nextMove.note}.`)
+    return
+  }
+  console.log(`\nNEXT MOVE — choose --state ${nextMove.states.join('|')}:`)
+  console.log(`  ${nextMove.command}`)
+}
+
 // ── Verbs ──────────────────────────────────────────────────────────────────────
 
 function read({ dir, role, all, json }) {
@@ -109,12 +164,14 @@ function read({ dir, role, all, json }) {
     : thread.filter(m => m.num > myLast && m.role !== role && LISTENS[role].includes(m.role))
 
   const phaseComplete = waiting && TERMINAL.includes(latest.state)
+  const nextMove      = computeNextMove({ role, latest, waiting, phaseComplete })
 
   if (json) {
     console.log(JSON.stringify({
       role, count: thread.length, waiting, phaseComplete,
       latest: latest && { num: latest.num, role: latest.role, state: latest.state, phase: latest.phase },
       inbox: inbox.map(m => ({ num: m.num, role: m.role, state: m.state, phase: m.phase, body: m.raw })),
+      nextMove,
     }, null, 2))
     return
   }
@@ -126,7 +183,7 @@ function read({ dir, role, all, json }) {
   }
   if (phaseComplete && !all) {
     console.log(`PHASE COMPLETE — your #${String(latest.num).padStart(PAD, '0')} is '${latest.state}' (phase ${latest.phase}). Nobody owes a reply; the loop is idle.`)
-    console.log(`YOUR MOVE: brief the next phase (grim mm write --state brief --phase <N+1>), or tell the user the engagement is done. Do NOT just wait.`)
+    printFooter(nextMove)
     return
   }
   if (waiting && !all) {
@@ -150,6 +207,7 @@ function read({ dir, role, all, json }) {
     console.log(`\n${'─'.repeat(72)}\n${m.file}  (from ${m.role}, state: ${m.state}, phase: ${m.phase})\n${'─'.repeat(72)}`)
     console.log(m.raw.trimEnd())
   }
+  if (!all) printFooter(nextMove)
 }
 
 function write({ dir, role, state, phase, body, force, json }) {
@@ -188,6 +246,55 @@ function write({ dir, role, state, phase, body, force, json }) {
   }
 }
 
+function status({ dir, json }) {
+  const thread = readThread(dir)
+  const latest = thread[thread.length - 1] || null
+  const owner  = latest ? (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role]) : null
+
+  if (json) {
+    console.log(JSON.stringify({
+      count: thread.length,
+      latest: latest && { num: latest.num, role: latest.role, state: latest.state, phase: latest.phase },
+      owner,
+    }, null, 2))
+    return
+  }
+
+  if (!latest) { console.log(`[grim-mm] status: EMPTY — no messages yet.`); return }
+  console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.role} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
+}
+
+// Concatenate one phase's messages, in order, to plans/reviews/phase-N.md and
+// commit it. Report-only in spirit: refuses on an open phase or an existing
+// file (unless --force-overwrite) rather than silently clobbering history.
+function archive({ cwd, dir, phase, forceOverwrite }) {
+  const thread  = readThread(dir)
+  const phaseMessages = thread.filter(m => m.phase === String(phase))
+  if (!phaseMessages.length) throw new Error(`no messages found for phase ${phase}`)
+
+  const latest = phaseMessages[phaseMessages.length - 1]
+  if (!TERMINAL.includes(latest.state)) {
+    throw new Error(`phase ${phase} is not accepted yet (latest: #${String(latest.num).padStart(PAD, '0')}-${latest.role}, state: ${latest.state}) — refusing to archive an open phase`)
+  }
+
+  const outPath = path.join(cwd, 'plans', 'reviews', `phase-${phase}.md`)
+  if (fs.existsSync(outPath) && !forceOverwrite) {
+    throw new Error(`${outPath} already exists — pass --force-overwrite to replace`)
+  }
+
+  const content = phaseMessages
+    .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.role} (${m.state})\n\n${m.raw.trim()}\n`)
+    .join('\n')
+
+  fs.mkdirSync(path.dirname(outPath), { recursive: true })
+  fs.writeFileSync(outPath, content, 'utf8')
+
+  execFileSync('git', ['add', outPath], { cwd })
+  execFileSync('git', ['commit', '-m', `mm: archive phase ${phase} review thread`], { cwd })
+
+  return { file: outPath, messageCount: phaseMessages.length }
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 function main() {
@@ -198,19 +305,33 @@ function main() {
   const verb = argv[0]
 
   const args = minimist(argv.slice(1), {
-    boolean: ['all', 'json', 'force'],
+    boolean: ['all', 'json', 'force', 'force-overwrite'],
     string:  ['role', 'session', 'state', 'phase', 'file', 'body'],
   })
-
-  const role = (args.role || '').toLowerCase()
-  if (!ROLES.includes(role)) {
-    fail(`--role must be one of: ${ROLES.join(', ')}`)
-  }
 
   const cwd = process.cwd()
   const dir = path.join(cwd, MM)
   ensureDir(dir)
   ensureGitignore(cwd)
+
+  // status/archive are role-agnostic — thread mechanics, not a pact voice.
+  if (verb === 'status') {
+    status({ dir, json: args.json })
+    return
+  }
+
+  if (verb === 'archive') {
+    if (args.phase == null) fail('archive needs --phase N')
+    const result = archive({ cwd, dir, phase: args.phase, forceOverwrite: args['force-overwrite'] })
+    if (args.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2))
+    else console.log(`[grim-mm] archived phase ${args.phase} -> ${result.file} (${result.messageCount} messages), committed.`)
+    return
+  }
+
+  const role = (args.role || '').toLowerCase()
+  if (!ROLES.includes(role)) {
+    fail(`--role must be one of: ${ROLES.join(', ')}`)
+  }
   stampRole(dir, role, args.session)
 
   if (verb === 'read') {
@@ -230,7 +351,7 @@ function main() {
     return
   }
 
-  fail(`unknown verb '${verb || ''}'. Use: read | write`)
+  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive`)
 }
 
 function fail(msg) {
@@ -242,4 +363,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader }
+module.exports = { readThread, parseName, parseHeader, status, archive, computeNextMove }

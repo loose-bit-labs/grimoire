@@ -48,6 +48,50 @@ function mostRecent(entities, n = 3) {
     .slice(0, n)
 }
 
+// ── Briefing size caps ────────────────────────────────────────────────────────
+// The briefing is read by the SessionStart hook and MCP session_load on every
+// launch — keep it well under tool-result limits (budget: grim load --json ≤ 20000 bytes).
+
+const SIGNIFICANCE_RANK = { high: 3, medium: 2, low: 1 }
+
+function truncate(text, max) {
+  if (!text) return text
+  return text.length > max ? text.slice(0, max) + '…' : text
+}
+
+function firstSentence(text) {
+  if (!text) return ''
+  const m = /^[^.!?\n]*[.!?]/.exec(text)
+  return (m ? m[0] : text).trim()
+}
+
+// Highest-significance first, then most recent — top N.
+function topTurningPoints(points, n = 3) {
+  return [...(points || [])]
+    .sort((a, b) =>
+      (SIGNIFICANCE_RANK[b.significance] || 0) - (SIGNIFICANCE_RANK[a.significance] || 0) ||
+      (b.date > a.date ? 1 : -1))
+    .slice(0, n)
+}
+
+// Drop empty arrays/objects and empty-string fields, recursively.
+function pruneEmpty(value) {
+  if (Array.isArray(value)) {
+    const arr = value.map(pruneEmpty).filter(v => v !== undefined)
+    return arr.length ? arr : undefined
+  }
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      const pruned = pruneEmpty(v)
+      if (pruned !== undefined) out[k] = pruned
+    }
+    return Object.keys(out).length ? out : undefined
+  }
+  if (value === '') return undefined
+  return value
+}
+
 // ── Affect model constants ────────────────────────────────────────────────────
 //
 // PAD (Valence / Arousal / Dominance) affect model.
@@ -189,8 +233,10 @@ async function loadBriefing() {
   const dreams = allEntitiesOfType('Dream', graph)
   const recentDreams = mostRecent(dreams, 3)
 
-  // Techniques / cheat codes
+  // Techniques / cheat codes — capped, name + first sentence only
   const techniques = allEntitiesOfType('HowTo', graph)
+    .slice(0, 8)
+    .map(t => ({ name: t.name, description: firstSentence(t.description) }))
 
   // Personas
   const personas = Object.values(graph.entities)
@@ -204,14 +250,15 @@ async function loadBriefing() {
   // Recent episodes (high-salience only for briefing)
   const recentEpisodes = (cognitiveState?.episodes || [])
     .filter(e => e.salience === 'high')
-    .slice(-3)
+    .slice(-5)
+    .map(e => ({ ...e, summary: truncate(e.summary, 400) }))
 
   // Compact projection. The full agentModel/userModel/cognitiveState carry the
   // entire benchmark table, every episode, and all turning points — tens of KB
   // that the briefing never uses and that the SessionStart hook injects into
   // context on every launch. Keep only what `formatBriefing` and the /load skill
   // read; the rest already lives in CLAUDE.md and is one `grim oracle` away.
-  return {
+  return pruneEmpty({
     agentModel: agentModel && {
       name:     agentModel.name,
       identity: agentModel.identity,
@@ -228,7 +275,7 @@ async function loadBriefing() {
         chapterDescription: cognitiveState.narrative.chapterDescription,
         trajectory:         cognitiveState.narrative.trajectory,
         themes:             cognitiveState.narrative.themes,
-        turningPoints:      (cognitiveState.narrative.turningPoints || []).slice(-3),
+        turningPoints:      topTurningPoints(cognitiveState.narrative.turningPoints, 3),
       },
     },
     recentEpisodes,
@@ -236,9 +283,9 @@ async function loadBriefing() {
     recentSessions:     recentSessions.map(slimSession),
     recentDreams,
     activeGoals: activeGoals.map(g => ({ '@id': g['@id'], name: g.name, description: g.description })),
-    techniques: techniques.map(t => ({ name: t.name })),
+    techniques,
     personas,
-  }
+  })
 }
 
 // Keep only the session fields the briefing surfaces — drops decisions/learned/
