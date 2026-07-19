@@ -31,6 +31,7 @@ const os       = require('node:os')
 const axios    = require('axios')
 const minimist = require('minimist')
 const readline = require('node:readline')
+const { refreshLblCache } = require('../lib/env')
 
 // Bootstrap .env
 if (!process.env.OLLAMA_HOST) {
@@ -50,11 +51,22 @@ function _lbl() {
 function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
 function _lblModel(task)    { return _lbl().models?.[task] ?? null }
 
-const OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('ollama') || null
+let OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('ollama') || null
 
 // OpenAI-compatible llama-server for text/chat tasks (lbl use.coding → endpoint).
 // Ollama keeps vision + embedding (llava, nomic-embed live there).
-const CODING_BASE  = process.env.LLM_CODING_HOST || _lblEndpoint('coding') || null
+let CODING_BASE  = process.env.LLM_CODING_HOST || _lblEndpoint('coding') || null
+
+// Re-derive OLLAMA_BASE/CODING_BASE from a freshly-fetched config (see
+// refreshLblCache() in lib/env.js) — called once at the start of the CLI's
+// async entry path so `use.ollama`/`use.coding` reflect the server's
+// canonical config, not just the last-good local cache.
+async function refreshEndpoints() {
+  const cfg = await refreshLblCache()
+  if (!cfg) return
+  OLLAMA_BASE = process.env.OLLAMA_HOST     || (cfg.endpoints?.[cfg.use?.ollama]) || OLLAMA_BASE
+  CODING_BASE = process.env.LLM_CODING_HOST || (cfg.endpoints?.[cfg.use?.coding]) || CODING_BASE
+}
 const OPENAI_TASKS = new Set(['extraction', 'linking', 'synthesis', 'dreaming', 'reflection', 'rumination', 'default'])
 
 // ── Capability profiles ───────────────────────────────────────────────────────
@@ -409,7 +421,7 @@ async function askJSON(opts) {
   }
 }
 
-module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, OLLAMA_BASE, CODING_BASE, ALL_TASKS }
+module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, refreshEndpoints, OLLAMA_BASE, CODING_BASE, ALL_TASKS }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -421,6 +433,8 @@ if (require.main === module) {
   })
 
   async function main() {
+    await refreshEndpoints()
+
     if (args.routes) {
       const table = await buildRouteTable()
       const installed = await getInstalledModels()

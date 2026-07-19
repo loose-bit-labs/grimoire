@@ -21,7 +21,7 @@ const os       = require('node:os')
 const path     = require('node:path')
 const axios    = require('axios')
 const minimist = require('minimist')
-const { config } = require('../lib/env')
+const { config, refreshLblCache } = require('../lib/env')
 
 const LOCAL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'lbl-config.json')
 const CACHE_PATH        = path.join(os.homedir(), '.config', 'lbl-config.json')
@@ -74,12 +74,8 @@ class GrimConfig {
   async sync() {
     if (!config.host) { console.error('No server configured (endpoints.grimoire in ~/.config/lbl-config.json or GRIMOIRE_HOST).'); process.exit(1) }
 
-    const res    = await axios.get(`${config.host}/config/lbl`, { timeout: 5000 })
-    const fresh  = res.data
     const before = fs.existsSync(CACHE_PATH) ? this._safeParse(fs.readFileSync(CACHE_PATH, 'utf8')) : {}
-
-    fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true })
-    fs.writeFileSync(CACHE_PATH, JSON.stringify(fresh, null, 2) + '\n')
+    const fresh  = await refreshLblCache()
 
     const changed = this._changedKeys(before, fresh)
     if (!changed.length) console.log('unchanged')
