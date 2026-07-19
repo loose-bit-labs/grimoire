@@ -69,7 +69,16 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 7 | plans/phase-7.md | report-only dedup stage in grim-ritual + noise-floor addressed-message warning | 🔄 briefed, minion working — last phase |
+| 7 | plans/phase-7.md | report-only dedup stage in grim-ritual + noise-floor addressed-message warning | ✅ accepted (`plans/reviews/phase-7.md`) — Track C complete, three-track engagement done |
+
+## Track D — pact tooling streamline (phase 8)
+
+**Goal:** mechanics out of skill prose, into `grim mm` (Rule 13); cap the oversized
+`grim load` briefing payload (~70K chars, overflows the MCP result limit).
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 8 | plans/phase-8.md | `grim mm status` + `grim mm archive --phase N` + role-aware next-move footer on `read`; pact SKILL.md files slimmed to judgment only; briefing projection capped (≤20K chars) | 🔄 briefed, minion working |
 
 ## Acceptance bar (mage enforces per phase)
 
