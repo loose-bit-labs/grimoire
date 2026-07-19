@@ -1,0 +1,35 @@
+{
+  "models": {
+    "default":    "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q3_K_M.gguf",
+    "fast":       "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q3_K_M.gguf",
+    "slow":       "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q3_K_M.gguf",
+    "synthesis":  "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q3_K_M.gguf",
+    "rumination": "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q3_K_M.gguf",
+
+    "ole_default":    "gemma4-qat:26b",
+    "old_default":    "gemma4:26b",
+    "old_fast":       "gemma4:26b",
+    "old_slow":       "qwen3.6:27b",
+    "old_synthesis":  "qwen3.6:27b",
+    "old_rumination": "qwen3.5:9b",
+
+    "vision":     "llava:latest"
+  },
+  "use": {
+    "openai":    "mh_llama",
+    "anthropic": "mh_llama",
+    "a1111":     "a1111",
+	"ollama":    "chonko_ollama",
+	"coding":    "chonko"
+  },
+  "endpoints": {
+    "mh_llama": "http://meinherz:11311",
+    "chonko": "http://chonko:11311",
+    "chonko_ollama": "http://chonko:11434",
+    "aid":    "http://aid:11311",
+    "a2c":    "http://meinherz:17071",
+    "a1111":  "http://superack:7860",
+    "grimoire": "http://aid:3663",
+    "ner":      "http://aid:3773"
+  }
+}

@@ -55,4 +55,19 @@ if [[ $errors -gt 0 ]]; then
   exit 1
 fi
 
+# ── config/lbl-config.json validity ───────────────────────────────────────────
+# Canonical config authority — must parse and have top-level endpoints/use objects.
+
+if git diff --cached --name-only | grep -qx 'config/lbl-config.json'; then
+  if ! node -e "
+    const c = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    if (!c.endpoints || !c.use) { console.error('missing top-level endpoints or use object'); process.exit(1) }
+  " < <(git show ':config/lbl-config.json'); then
+    echo ""
+    echo "  BLOCKED  config/lbl-config.json — invalid (must parse, must have 'endpoints' and 'use')"
+    echo ""
+    exit 1
+  fi
+fi
+
 exit 0

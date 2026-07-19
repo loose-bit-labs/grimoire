@@ -27,6 +27,7 @@
  *   GET  /api/archaeology/backlog       → list pending/stale/integrated entries
  *   POST /api/archaeology/:slug/integrate → mark KB pass complete
  *   GET  /api/archaeology/:slug/:file   → fetch artifact content
+ *   GET  /config/lbl                    → canonical lbl-config.json (?path=dot.path for a single value)
  *   POST /mcp                           → MCP Streamable HTTP transport
  *
  * Run on grimoire.local: node bin/grim-server.js
@@ -79,6 +80,29 @@ function loadThoughts() {
 function saveThoughts(thoughts) {
   fs.writeFileSync(NOISE_FILE, JSON.stringify(thoughts.slice(-500), null, 2))
 }
+
+// ── lbl-config (config authority) ─────────────────────────────────────────────
+
+const LBL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'lbl-config.json')
+
+function loadLblConfig() {
+  let parsed
+  try {
+    parsed = JSON.parse(fs.readFileSync(LBL_CONFIG_PATH, 'utf8'))
+  } catch (e) {
+    throw new Error(`Invalid lbl-config.json at ${LBL_CONFIG_PATH}: ${e.message}`)
+  }
+  if (!parsed.endpoints || !parsed.use) {
+    throw new Error(`Invalid lbl-config.json at ${LBL_CONFIG_PATH}: missing top-level 'endpoints' or 'use' object`)
+  }
+  return parsed
+}
+
+function dotGet(obj, dotPath) {
+  return dotPath.split('.').reduce((v, k) => (v && typeof v === 'object' ? v[k] : undefined), obj)
+}
+
+loadLblConfig() // fail loud on boot if config/lbl-config.json is missing/invalid
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -237,6 +261,18 @@ app.post('/api/tome/forget', async (req, res) => {
     res.json(result)
   } catch (e) {
     if (e.message.includes('not found')) return res.json({ ok: false, reason: 'not_found' })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/config/lbl', (req, res) => {
+  try {
+    const cfg = loadLblConfig()
+    if (!req.query.path) return res.json(cfg)
+    const value = dotGet(cfg, req.query.path)
+    if (value === undefined) return res.status(404).json({ error: `path not found: ${req.query.path}` })
+    res.json({ path: req.query.path, value })
+  } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
@@ -495,6 +531,16 @@ const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: 'config_get',
+    description: 'Get the canonical lbl-config.json (shared homelab topology: endpoints, use routing), or a single value at a dot-path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Dot-path into the config, e.g. "use.coding"' },
+      },
+    },
+  },
 ]
 
 async function executeMCPTool(name, args) {
@@ -585,6 +631,14 @@ async function executeMCPTool(name, args) {
         _graphCachedAt = 0
       }
       return result
+    }
+
+    case 'config_get': {
+      const cfg = loadLblConfig()
+      if (!args.path) return cfg
+      const value = dotGet(cfg, args.path)
+      if (value === undefined) throw new Error(`path not found: ${args.path}`)
+      return { path: args.path, value }
     }
 
     default:
