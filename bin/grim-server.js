@@ -379,6 +379,11 @@ app.get('/api/archaeology/:slug/:filename(*)', (req, res) => {
   res.type('text/plain').send(fs.readFileSync(filePath, 'utf8'))
 })
 
+// An "addressed to" thought (e.g. "mage -> minion: ...") looks like a directed
+// message, but the noise floor is a broadcast with no recipient concept — flag
+// it rather than silently letting the sender think it was delivered.
+const ADDRESSED_PATTERN = /^\s*[\w-]+\s*(→|->)\s*[\w-]+\s*:/
+
 app.post('/noise-floor/think', (req, res) => {
   const { text, source = 'unknown', type = 'observation' } = req.body
   if (!text) return res.status(400).json({ error: 'text required' })
@@ -386,7 +391,11 @@ app.post('/noise-floor/think', (req, res) => {
   const thought  = { at: new Date().toISOString(), text, source, type }
   thoughts.push(thought)
   saveThoughts(thoughts)
-  res.json({ ok: true, count: thoughts.length })
+  const response = { ok: true, count: thoughts.length }
+  if (ADDRESSED_PATTERN.test(text)) {
+    response.warning = 'looks addressed — broadcast has no recipient; use grim mm for directed messages'
+  }
+  res.json(response)
 })
 
 app.get('/noise-floor/context', (req, res) => {

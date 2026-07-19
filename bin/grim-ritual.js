@@ -11,24 +11,29 @@
  *   1. Long Rest    — dream analysis, surface gaps and patterns
  *   2. Scribe       — rebuild graph index
  *   3. Divination   — compute health score
- *   4. Pathfinder   — link orphan entities (batch 20)
- *   5. Scribe again — incorporate new edges
- *   6. Noise Floor  — post ritual summary as thought
+ *   4. Dedup        — report-only near-duplicate entity candidates
+ *   5. Pathfinder   — link orphan entities (batch 20)
+ *   6. Scribe again — incorporate new edges
+ *   7. Noise Floor  — post ritual summary as thought
  *
  * Local only — must run on grimoire.local.
  *
  * CLI:
  *   node bin/grim-ritual.js
  *   node bin/grim-ritual.js --skip-rest      Skip Long Rest (faster, no Ollama)
+ *   node bin/grim-ritual.js --skip-dedup     Skip Dedup stage
  *   node bin/grim-ritual.js --skip-pathfind  Skip Pathfinder
  *   node bin/grim-ritual.js --batch 50       Pathfinder batch size
+ *   node bin/grim-ritual.js --dedup-threshold 0.92  Cosine similarity threshold for Dedup
  *   node bin/grim-ritual.js --json           Machine-readable stage log
  */
 
 const fs        = require('node:fs')
 const path      = require('node:path')
 const minimist  = require('minimist')
+const { LocalIndex } = require('vectra')
 const { config, requireMode } = require('../lib/env')
+const { indexReady } = require('../lib/vectors')
 
 requireMode('local')
 
@@ -52,6 +57,90 @@ async function runStage(name, fn) {
   }
 }
 
+// ── Dedup — near-duplicate entity detection (report-only) ──────────────────────
+
+function normalizeName(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function cosineSim(a, b) {
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb))
+}
+
+/**
+ * Find near-duplicate entity pairs. Never merges/edits/deletes — report only.
+ * Degrades gracefully: if the vector index is missing/unreadable, name-match
+ * results are still returned and `embeddingError` explains why embedding
+ * comparison was skipped.
+ */
+async function findDuplicateCandidates(graph, threshold) {
+  const entities = Object.values(graph.entities)
+  const byNorm   = new Map()
+  const pairs    = new Map() // "id1|id2" (sorted) -> candidate
+
+  function addPair(idA, idB, nameA, nameB, type, matchType, score) {
+    const key = [idA, idB].sort().join('|')
+    const existing = pairs.get(key)
+    if (existing) {
+      existing.score     = Math.max(existing.score, score)
+      existing.matchType = existing.matchType === matchType ? matchType : `${existing.matchType}+${matchType}`
+    } else {
+      pairs.set(key, { a: idA, b: idB, aName: nameA, bName: nameB, type, matchType, score })
+    }
+  }
+
+  for (const e of entities) {
+    const norm = normalizeName(e.name)
+    if (!norm) continue
+    const bucket = byNorm.get(norm) || []
+    for (const other of bucket) {
+      if (other['@type'] === e['@type']) {
+        addPair(other['@id'], e['@id'], other.name, e.name, e['@type'], 'name', 1)
+      }
+    }
+    bucket.push(e)
+    byNorm.set(norm, bucket)
+  }
+
+  let embeddingError = null
+  try {
+    const ready = await indexReady()
+    if (!ready) {
+      embeddingError = 'vector index not ready'
+    } else {
+      const idx     = new LocalIndex(path.join(config.root, 'indexes', 'vectors'))
+      const items   = await idx.listItems()
+      const byType  = new Map()
+      for (const item of items) {
+        const list = byType.get(item.metadata.type) || []
+        list.push(item)
+        byType.set(item.metadata.type, list)
+      }
+      for (const [type, list] of byType) {
+        for (let i = 0; i < list.length; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const score = cosineSim(list[i].vector, list[j].vector)
+            if (score > threshold) {
+              addPair(list[i].metadata.id, list[j].metadata.id, list[i].metadata.name, list[j].metadata.name, type, 'embedding', score)
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    embeddingError = e.message
+  }
+
+  const candidates = [...pairs.values()].sort((x, y) => y.score - x.score)
+  return { candidates, embeddingError }
+}
+
 // ── Noise Floor poster ────────────────────────────────────────────────────────
 
 function postToNoiseFloor(thought) {
@@ -64,7 +153,7 @@ function postToNoiseFloor(thought) {
 
 // ── Main ritual ───────────────────────────────────────────────────────────────
 
-async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 20 } = {}) {
+async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 20, skipDedup = false, dedupThreshold = 0.92 } = {}) {
   const date    = new Date().toISOString().slice(0, 10)
   const logFile = path.join(LOGS_DIR, `ritual-${date}.json`)
   const stages  = []
@@ -106,7 +195,19 @@ async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 2
   })
   stages.push(divineStage)
 
-  // Stage 4: Pathfinder
+  // Stage 4: Dedup — report-only near-duplicate entity candidates
+  if (!skipDedup) {
+    stages.push(await runStage('Dedup', async () => {
+      const { loadGraph } = require('../lib/graph')
+      const graph = await loadGraph()
+      const { candidates, embeddingError } = await findDuplicateCandidates(graph, dedupThreshold)
+      return { candidateCount: candidates.length, candidates, embeddingError }
+    }))
+  } else {
+    console.log(`  [--] Dedup skipped`)
+  }
+
+  // Stage 5: Pathfinder
   if (!skipPathfind) {
     stages.push(await runStage('Pathfinder', async () => {
       const { pathfind } = require('./grim-pathfind')
@@ -116,7 +217,7 @@ async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 2
     console.log(`  [--] Pathfinder skipped`)
   }
 
-  // Stage 5: Final Scribe
+  // Stage 6: Final Scribe
   stages.push(await runStage('Scribe (final)', async () => {
     const { scribe } = require('./grim-scribe')
     const { graph }  = scribe()
@@ -124,11 +225,18 @@ async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 2
   }))
 
   // Summary
-  const health  = divineStage.result
-  const failed  = stages.filter(s => !s.ok)
+  const health     = divineStage.result
+  const dedupStage = stages.find(s => s.stage === 'Dedup')
+  const dedup      = dedupStage?.result
+  const failed     = stages.filter(s => !s.ok)
+  const dedupLine  = dedup ? (() => {
+    const top3 = dedup.candidates.slice(0, 3).map(c => `${c.aName}~${c.bName} (${c.score.toFixed(2)})`).join(', ')
+    return `Dedup: ${dedup.candidateCount} candidate pair(s)${top3 ? ` — top: ${top3}` : ''}.`
+  })() : null
   const summary = [
     `Ritual complete ${date}.`,
     health ? `Graph health: ${health.score}/100 (${health.grade}). Orphans: ${health.orphans}.` : null,
+    dedupLine,
     failed.length ? `Failures: ${failed.map(s => s.stage).join(', ')}.` : 'All stages passed.',
   ].filter(Boolean)
 
@@ -154,15 +262,17 @@ async function runRitual({ skipRest = false, skipPathfind = false, batchSize = 2
 
 async function main() {
   const args = minimist(process.argv.slice(3), {
-    boolean: ['json', 'skip-rest', 'skip-pathfind'],
+    boolean: ['json', 'skip-rest', 'skip-pathfind', 'skip-dedup'],
     alias:   { j: 'json', b: 'batch' },
-    default: { batch: 20 },
+    default: { batch: 20, 'dedup-threshold': 0.92 },
   })
 
   const result = await runRitual({
-    skipRest:     args['skip-rest'],
-    skipPathfind: args['skip-pathfind'],
-    batchSize:    Number(args.batch),
+    skipRest:       args['skip-rest'],
+    skipPathfind:   args['skip-pathfind'],
+    batchSize:      Number(args.batch),
+    skipDedup:      args['skip-dedup'],
+    dedupThreshold: Number(args['dedup-threshold']),
   })
 
   if (args.json) console.log(JSON.stringify(result, null, 2))
