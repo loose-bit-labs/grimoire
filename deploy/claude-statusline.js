@@ -317,6 +317,15 @@ function main(input) {
 
   parts.push(paint(c256.magenta, `${modelIcon} ${model}`));
 
+  const lastActor = (
+	fs.existsSync('.mm') 
+	&& fs.statSync('.mm').isDirectory() 
+	&& fs.readdirSync('.mm').sort().pop().replace(/\.md$/,'').replace(/^\d+-/, 'from:')
+  ) || null;
+  if (lastActor) {
+	  parts.push(lastActor);
+  }
+
   process.stdout.write(parts.join(sep) + sep + dungeonScene());
 }
 
