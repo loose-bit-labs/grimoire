@@ -63,13 +63,13 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 5 | plans/phase-5.md | canonical `config/lbl-config.json` in repo + `GET /config/lbl` (+ `?path=`) + MCP `config_get` + `bin/grim-config.js` (`grim config get/sync`) | ✅ accepted (`plans/reviews/phase-5.md`) |
-| 6 | plans/phase-6.md | client precedence layer (env → fetch → cache → fallback) in `lib/env.js` + `model-ask.js` migrated as proof + KB entity update + noise-floor event on config commit | 🔄 briefed, minion working |
+| 6 | plans/phase-6.md | client precedence layer (env → fetch → cache → fallback) in `lib/env.js` + `model-ask.js` migrated as proof + KB entity update + noise-floor event on config commit | ✅ accepted (`plans/reviews/phase-6.md`) — Track B complete |
 
 ## Track C — memory-spec deltas (phase 7)
 
-| Phase | Brief | What lands |
-|-------|-------|-----------|
-| 7 | plans/phase-7.md | report-only dedup stage in grim-ritual + noise-floor addressed-message warning |
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 7 | plans/phase-7.md | report-only dedup stage in grim-ritual + noise-floor addressed-message warning | 🔄 briefed, minion working — last phase |
 
 ## Acceptance bar (mage enforces per phase)
 
