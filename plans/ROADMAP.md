@@ -1,6 +1,6 @@
 # Cross-phase roadmap
 
-**Authority:** hierophant, 2026-07-08; extended 2026-07-17. Binding for all phases.
+**Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19. Binding for all phases.
 
 Three tracks, one loop. Phases run in numeric order 1→7; phases 5–7 have no
 dependency on 1–4, so the mage may pull them forward if a Track A phase blocks.
@@ -79,7 +79,7 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 8 | plans/phase-8.md | `grim mm status` + `grim mm archive --phase N` + role-aware next-move footer on `read`; pact SKILL.md files slimmed to judgment only; briefing projection capped (≤20K chars) | ✅ accepted (`plans/reviews/phase-8.md`) — Track D complete, engagement done |
-| 9 | plans/phase-9.md | fix `grim tome <sub>` argv off-by-one (closes phase 0) + regression test + KB bug-list update | 📋 briefed to mage (#0031) |
+| 9 | plans/phase-9.md | fix `grim tome <sub>` argv off-by-one (closes phase 0) + regression test + KB bug-list update | 🔄 briefed, minion working (`.mm/0032-mage.md`) |
 
 ## Acceptance bar (mage enforces per phase)
 
