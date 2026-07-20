@@ -1,7 +1,7 @@
 ---
 name: vidaj
 description: Use when the user wants to run, resume, stitch, or inspect a vidaj story — the unattended Wan 2.2 i2v story machine at /Users/vgvm/data/project/vidaj. Triggers on "run vidaj", "concept → story", "go nuts", genesis, "stitch the clips", "vidaj report", canon/beats/drift, or Phase 2/3 conductor references for that project.
-version: 2
+version: 3
 allowed-tools: Bash, Read
 ---
 
@@ -86,10 +86,21 @@ wantan gap callouts: `plans/phase-3-conductor.md`. Roadmap: `ROADMAP.md`.
    + alien megacity anchoring, honest no-human clause. Scribe now discounts
    any film/game titles in OBSERVATION as llava hallucination.
    See ROADMAP Phase 1f notes + `prompts/observer.md`, `prompts/scribe.md`.
-9. LLM lane: `VIDAJ_LLM_URL` resolves from chat-completion endpoint. Infra:
-   chonko's ollama on 11434 has NO chat model (only llava 7B + nomic embed) —
-   scribe/director/genesis hit chonko:11311/v1/chat/completions which is
-   llama-server serving Qwen3.6_35B_A3B, not ollama. Wantan i2v lives on
+9. LLM lane (Phase 1g-0, `f02987a`): `VIDAJ_LLM_URL`/`MUSAK_LLM_URL` resolve
+   env var → `jq -r '.endpoints[.use.openai]' ~/.config/lbl-config.json`
+   → hardcoded `chonko:11311` fallback if jq/the file/the key are missing.
+   Muse1.1 moved text LLM off chonko onto meinherz — live value today is
+   `http://meinherz:11311` (`use.openai`/`use.anthropic` both point at
+   `mh_llama`). chonko is llava/vision-only now (11434 ollama, no chat
+   model). `_vidaj_llm_json`'s success check now explicitly guards against
+   empty LLM output before its `jq -e` test — a bare `jq -e` on empty
+   stdin exits 0, which used to make a dead LLM endpoint silently pass as
+   a successful empty response instead of failing loud. Genesis-path
+   fatal errors ("genesis LLM call failed", "grim vision cast failed for
+   genesis seed") now echo to stdout too, so `| tee` logs capture *why* a
+   run died instead of going 0-byte. **Known follow-up, not yet fixed**:
+   `musak.sh:81` has the same empty-input `jq -e` pattern (lower urgency,
+   musak runs post-hoc, not mid unattended run). Wantan i2v lives on
    aid:13031; it's the Wan abstraction (driver-over-wantan per user rule —
    when wantan lacks a feature, call it out so it can be added there, don't
    workaround in vidaj). `wantan-s2v` is GGUF lip-sync (face+audio) on
@@ -106,10 +117,16 @@ wantan gap callouts: `plans/phase-3-conductor.md`. Roadmap: `ROADMAP.md`.
 
 ## Rules
 
-- Lane map fixed: aid=Wan video (13031), chonko=LLM text — llama-server 11311
-  Qwen3.6_35B_A3B (NOT ollama 11434 for chat, only llava), superack=A1111
-  (7860). Don't improvise endpoints. Resolve from lbl-config / meta_user_model
-  infra at runtime — never hardcode. Gracefully default if fields missing.
+- Lane map (updated Phase 1g-0): aid=Wan video (13031), chonko=llava/vision
+  only (11434 ollama, no chat model), meinherz=text LLM via lbl-config
+  `use.openai` → `mh_llama` (11311, currently Qwen3.6_35B_A3B-equivalent —
+  check `models.default` live, it changes), superack=A1111 (7860). This
+  moved once already (Muse1.1) — don't hardcode a host, always resolve
+  `VIDAJ_LLM_URL`/`MUSAK_LLM_URL` from live `~/.config/lbl-config.json` at
+  runtime with a graceful hardcoded fallback if it's missing/changed shape
+  again. Owner flagged the meinherz=NPCs "untouched" convention is now in
+  tension with meinherz also serving the LLM lane — unresolved, don't
+  paper over it.
 - Reuse existing plumbing: thin bash over existing CLIs. No new wheels.
   If a capability is missing, check wantan first — vidaj is driver over wantan,
   the abstraction is "ask Ollama what, ComfyUI how".
