@@ -2,12 +2,15 @@
 
 **Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19. Binding for all phases.
 
-Three tracks, one loop. Phases run in numeric order 1→7; phases 5–7 have no
+Four tracks, one loop. Phases run in numeric order 1→9; phases 5–9 have no
 dependency on 1–4, so the mage may pull them forward if a Track A phase blocks.
 
 - **Track A (phases 1–4):** WanTan extraction — move generic tooling into grimoire.
 - **Track B (phases 5–6):** grimoire server as config authority (spec: `tmp/moar.md`).
 - **Track C (phase 7):** adopted deltas from the memory-architecture spec (`tmp/other.md`).
+- **Track D (phases 8–9):** pact tooling streamline + close the oldest open bug.
+
+**Status: all four tracks complete, all nine phases accepted. Board is clean — nothing queued.**
 
 ## Ruling on tmp/other.md (2026-07-17)
 
@@ -44,7 +47,7 @@ Hard rules:
 
 | Phase | Brief | What moves | Status |
 |-------|-------|-----------|--------|
-| 0 (optional warm-up) | KB: `meta_technique_grimoire_known_bugs_list` | Fix `grim tome <sub>` argv off-by-one (`bin/grim.js:87` injects cmd; `grim-tome.js:201` expects the subcommand) + regression test | ⏳ still open — hit again during phase 4, not yet fixed |
+| 0 (optional warm-up) | KB: `meta_technique_grimoire_known_bugs_list` | Fix `grim tome <sub>` argv off-by-one (`bin/grim.js:87` injects cmd; `grim-tome.js:201` expects the subcommand) + regression test | ✅ fixed in Phase 9 (`plans/reviews/phase-9.md`) |
 | 1 | plans/phase-1.md | ComfyUI client → `lib/comfy-client.js` + `lib/comfy-watch.js` | ✅ accepted (`plans/reviews/phase-1.md`) |
 | 2 | plans/phase-2.md | cull UI → `bin/grim-cull.js` + `grim cull` subcommand | ✅ accepted (`plans/reviews/phase-2.md`) |
 | 3 | plans/phase-3.md | civitai downloader → `bin/grim-civitai.sh` | ✅ accepted (`plans/reviews/phase-3.md`) |
