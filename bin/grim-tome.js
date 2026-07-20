@@ -198,8 +198,12 @@ function formatRecall(results) {
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const sub  = process.argv[2]  // subcommand injected by grim.js dispatcher
-  const args = minimist(process.argv.slice(3), {
+  // Accept both `grim tome <sub> …` (dispatcher prepends 'tome' at argv[2])
+  // and a direct `node grim-tome.js <sub> …` call — same fix as grim-mm.js.
+  let argv = process.argv.slice(2)
+  if (argv[0] === 'tome') argv = argv.slice(1)
+  const sub  = argv[0]
+  const args = minimist(argv.slice(1), {
     boolean: ['json'],
     alias:   { j: 'json', d: 'depth' },
     string:  ['type', 'name', 'desc', 'tags'],
