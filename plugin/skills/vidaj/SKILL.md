@@ -1,7 +1,7 @@
 ---
 name: vidaj
 description: Use when the user wants to run, resume, stitch, or inspect a vidaj story — the unattended Wan 2.2 i2v story machine at /Users/vgvm/data/project/vidaj. Triggers on "run vidaj", "concept → story", "go nuts", genesis, "stitch the clips", "vidaj report", canon/beats/drift, or Phase 2/3 conductor references for that project.
-version: 3
+version: 4
 allowed-tools: Bash, Read
 ---
 
@@ -33,7 +33,12 @@ wantan gap callouts: `plans/phase-3-conductor.md`. Roadmap: `ROADMAP.md`.
    switched to mp4-native `wantan-i2v` (no more `webp2mp4.sh`);
    Phase 1e is cache-bust retry with `. N` prompt suffix + `sleep 480`;
    Phase 1f hardened observer/scribe (see below); Phase 2 genesis landed;
-   Phase 3 (conductor, --audio, sections.json, chapter keyframes) is briefed.
+   Phase 1g-0 fixed the LLM lane (lbl-config resolution, chonko→meinherz);
+   Phase 1g-1 added the collapse guard (`_vidaj_collapsed`, re-anchor to
+   last known-good literal frame). **Gate 2 (overnight derelict03 proof
+   run) is the current gate — Phase 3 stays briefed-not-built until it
+   passes.** Check ROADMAP's latest Gate 2 attempt status before assuming
+   Phase 3 work is unblocked.
 3. Decide the mode:
    - **New genesis (Phase 2 path — preferred):**
      - `VIDAJ_STUB=1 ./vidaj.sh "a neon hamster dj at the sickest club" --loops 2`
@@ -57,14 +62,31 @@ wantan gap callouts: `plans/phase-3-conductor.md`. Roadmap: `ROADMAP.md`.
    `--history N` (beats shown to director, 4), `--model NAME`
    (Qwen3.6_35B_A3B, used for director/scribe/genesis via llama-server),
    `--res WxH` (generate small, upscale at stitch, test-speed knob),
-   `--go-nuts` (invent wild concept), `--stitch`, `--report`.
+   `--go-nuts` (invent wild concept), `--stitch`, `--report`,
+   `--test-collapse [N]` (Phase 1g-1 stub-only test knob: force
+   `_vidaj_collapsed()` to trip N times, default 1; do not use outside
+   testing).
    DELETED flags (do not pass — error): `--drift-patience`, `--denoise`.
 5. Each loop → `wantan-i2v --image FRAME --prompt PROMPT --seed N --watch
    --out clip-N.mp4` on aid:13031 (mp4-native since Phase 1d). Blocks 7-15 min
-   per clip. Failure shape: fried detection (`_vidaj_fried()` SATAVG ratio
-   >1.5 flags progressive saturation bleed); retry path is attempt 2 with
-   `". N"` prompt cache-buster + `sleep 480` for aid's free-watchdog reload
-   (Phase 1e, 56a3c9c). For >1-2 loops, run in bg — don't poll.
+   per clip. Two failure detectors run per clip, same retry convention
+   (0=flagged, 1=fine — always capture `$?` explicitly, `!`/`||` on these
+   is a bash gotcha since bash treats any nonzero as "failure"): (a)
+   `_vidaj_fried()` — SATAVG ratio >1.5 flags progressive saturation
+   bleed; (b) `_vidaj_collapsed()` (Phase 1g-1, `be5495d`/`80e27e3`) —
+   clip size <50% of the run's rolling median (`.clip-sizes`), or
+   near-zero SATAVG spread (blank/solid-color frame, the cold-collapse
+   signature). Either flag retries once via the existing `". N"` prompt
+   cache-buster + `sleep 480` reload wait (Phase 1e). On a **second**
+   collapse failure specifically (not fried): re-anchors to the last
+   known-good **literal** frame (`frames/frame-(N-1).png` or `seed.png`)
+   and the run continues — logged to `beats.jsonl` as
+   `{i,ts,stage:"generate",collapsed:true,reanchored_from:PATH}` so the
+   dawn report can count recoveries. This is NOT a resurrection of the
+   dead `_vidaj_reanchor`/img2img path (Phase 1c killed that for good) —
+   just chaining off a prior real frame. A second *fried* (not collapsed)
+   failure still falls through to `_vidaj_fail_loop` as before. For
+   >1-2 loops, run in bg — don't poll.
 6. `VIDAJ_STUB=1` runs instantly with canned LLM/ffmpeg output — use for
    plumbing verification. `bash tests/smoke.sh` now covers Phase 1 explicit
    canon+image path (resume+stitch+report+musak) PLUS Phase 2a bare concept
