@@ -14,26 +14,22 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/lib.sh
+source "$SCRIPT_DIR/lib.sh"
+# Tight report formatting (CPU/Memory/GPU/... back to back) — override lib.sh's
+# blank-line-prefixed step() for this script only.
+step() { echo -e "░ $*"; }
+
 # Resolve GRIMOIRE_HOST: env var → lbl-config.json endpoints.grimoire → fallback
-GRIMOIRE_HOST="${GRIMOIRE_HOST:-$(node -e "
-  const fs=require('fs'),os=require('os'),p=require('path');
-  try {
-    const c=JSON.parse(fs.readFileSync(p.join(os.homedir(),'.config','lbl-config.json'),'utf8'));
-    process.stdout.write(c.endpoints?.grimoire||'http://aid:3663');
-  } catch { process.stdout.write('http://aid:3663'); }
-" 2>/dev/null || echo 'http://aid:3663')}"
+GRIMOIRE_HOST="${GRIMOIRE_HOST:-$(_grimoire_host)}"
 export HOSTNAME_S="$(hostname -s)"
 export TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 export PLATFORM="$(uname -s)"   # Linux | Darwin
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✔${NC}  $*"; }
-warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
-step() { echo -e "░ $*"; }
-
 # ── Platform ──────────────────────────────────────────────────────────────────
 
-PLATFORM_FILE="$(dirname "$0")/platform.d/$(echo "$PLATFORM" | tr '[:upper:]' '[:lower:]').sh"
+PLATFORM_FILE="$SCRIPT_DIR/platform.d/$(echo "$PLATFORM" | tr '[:upper:]' '[:lower:]').sh"
 if [[ ! -f "$PLATFORM_FILE" ]]; then
   echo "Unsupported platform: $PLATFORM (no platform.d/$(echo "$PLATFORM" | tr '[:upper:]' '[:lower:]').sh)" >&2
   exit 1

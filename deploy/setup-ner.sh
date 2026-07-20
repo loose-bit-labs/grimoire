@@ -12,11 +12,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✔${NC}  $*"; }
-warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
-fail() { echo -e "${RED}✘${NC}  $*"; exit 1; }
-step() { echo -e "\n░ $*"; }
+# shellcheck source=deploy/lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
 # ── 1. pyenv ──────────────────────────────────────────────────────────────────
 

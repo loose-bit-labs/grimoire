@@ -5,39 +5,46 @@
 
 set -euo pipefail
 
-# ── Re-exec as root if needed ─────────────────────────────────────────────────
-if [[ $EUID -ne 0 ]]; then
-  echo "grimoire: root required to install systemd service — re-running with sudo..."
-  exec sudo --preserve-env=HOME,USER,PATH "$0" "$@"
-fi
-
-# ── Resolve paths ─────────────────────────────────────────────────────────────
-# SUDO_USER is set when we got here via sudo; fall back to USER
-TARGET_USER="${SUDO_USER:-$USER}"
-TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
-
-# Engine root is the directory containing this script's parent (deploy/../)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$ENGINE_ROOT/.env"
 
-# Find node — prefer the user's nvm node, fall back to system node
-NODE_BIN=$(sudo -u "$TARGET_USER" bash -lc 'which node 2>/dev/null' || which node 2>/dev/null || true)
+# ── Re-exec as root if needed ─────────────────────────────────────────────────
 
-if [[ -z "$NODE_BIN" ]]; then
-  echo "error: node not found — install Node.js 18+ first"
-  exit 1
-fi
+_reexec_as_root() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "grimoire: root required to install systemd service — re-running with sudo..."
+    exec sudo --preserve-env=HOME,USER,PATH "$0" "$@"
+  fi
+}
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "error: $ENV_FILE not found — copy .env.example to .env and configure it first"
-  exit 1
-fi
+# ── Resolve paths + node binary ───────────────────────────────────────────────
 
-SERVICE_FILE=/etc/systemd/system/grimoire.service
+_resolve_node() {
+  # SUDO_USER is set when we got here via sudo; fall back to USER
+  TARGET_USER="${SUDO_USER:-$USER}"
+  TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+  ENV_FILE="$ENGINE_ROOT/.env"
+
+  # Find node — prefer the user's nvm node, fall back to system node
+  NODE_BIN=$(sudo -u "$TARGET_USER" bash -lc 'which node 2>/dev/null' || which node 2>/dev/null || true)
+
+  if [[ -z "$NODE_BIN" ]]; then
+    echo "error: node not found — install Node.js 18+ first"
+    exit 1
+  fi
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "error: $ENV_FILE not found — copy .env.example to .env and configure it first"
+    exit 1
+  fi
+}
 
 # ── Write service unit ────────────────────────────────────────────────────────
-cat > "$SERVICE_FILE" <<EOF
+
+_write_service_unit() {
+  SERVICE_FILE=/etc/systemd/system/grimoire.service
+
+  cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Grimoire Knowledge Graph Server
 Documentation=https://github.com/vgvm-lbl/grimoire
@@ -60,16 +67,31 @@ SyslogIdentifier=grimoire
 WantedBy=multi-user.target
 EOF
 
-echo "grimoire: wrote $SERVICE_FILE"
+  echo "grimoire: wrote $SERVICE_FILE"
+}
 
 # ── Enable and start ──────────────────────────────────────────────────────────
-systemctl daemon-reload
-systemctl enable grimoire
-systemctl restart grimoire
 
-echo ""
-systemctl status grimoire --no-pager -l
-echo ""
-echo "grimoire: service installed and running"
-echo "  logs:   journalctl -u grimoire -f"
-echo "  health: curl http://grimoire.local:3663/health"
+_enable_and_start() {
+  systemctl daemon-reload
+  systemctl enable grimoire
+  systemctl restart grimoire
+
+  echo ""
+  systemctl status grimoire --no-pager -l
+  echo ""
+  echo "grimoire: service installed and running"
+  echo "  logs:   journalctl -u grimoire -f"
+  echo "  health: curl http://grimoire.local:3663/health"
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+_main() {
+  _reexec_as_root "$@"
+  _resolve_node
+  _write_service_unit
+  _enable_and_start
+}
+
+_main "$@"

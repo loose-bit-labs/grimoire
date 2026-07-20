@@ -10,8 +10,8 @@
 #   3. Writes minimal .env (GRIMOIRE_ROOT unset; host resolved via lbl-config.json)
 #   4. Ensures the grimoire host is in /etc/hosts (reads aid from lbl-config if present)
 #   5. Activates git hooks (.githooks/pre-commit)
-#   6. Symlinks grim CLI into ~/bin (no sudo, no global install)
-#   7. Configures Claude Code: MCP server + plugin
+#   6. Configures Claude Code: MCP server + plugin
+#   7. Symlinks grim CLI into ~/bin (no sudo, no global install)
 #   8. Creates ~/.grimoire dotlink
 #   9. Installs grim-boot-report userspace systemd service
 #  10. Registers hardware inventory in the KB (re-run anytime after upgrades)
@@ -22,47 +22,43 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Resolve grimoire server URL from lbl-config.json → fallback to aid:3663
-_grimoire_url() {
-  node -e "
-    const fs=require('fs'),os=require('os'),p=require('path');
-    try {
-      const c=JSON.parse(fs.readFileSync(p.join(os.homedir(),'.config','lbl-config.json'),'utf8'));
-      process.stdout.write(c.endpoints?.grimoire||'http://aid:3663');
-    } catch { process.stdout.write('http://aid:3663'); }
-  " 2>/dev/null || echo 'http://aid:3663'
-}
-
-# ── Colours ───────────────────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-ok()   { echo -e "${GREEN}✔${NC}  $*"; }
-warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
-fail() { echo -e "${RED}✘${NC}  $*"; exit 1; }
-step() { echo -e "\n░ $*"; }
+# shellcheck source=deploy/lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
-step "Checking Node.js..."
-NODE_BIN=$(which node 2>/dev/null || true)
-[[ -z "$NODE_BIN" ]] && fail "Node.js not found — install Node.js 18+ first (https://nodejs.org)"
 
-NODE_MAJOR=$(node -e 'process.stdout.write(process.version.slice(1).split(".")[0])')
-[[ "$NODE_MAJOR" -lt 18 ]] && fail "Node.js 18+ required (found v$(node -e 'process.stdout.write(process.version.slice(1))'))"
-ok "Node.js $(node --version)"
+_check_node() {
+  step "Checking Node.js..."
+  local node_bin node_major
+  node_bin=$(which node 2>/dev/null || true)
+  [[ -z "$node_bin" ]] && fail "Node.js not found — install Node.js 18+ first (https://nodejs.org)"
+
+  node_major=$(node -e 'process.stdout.write(process.version.slice(1).split(".")[0])')
+  [[ "$node_major" -lt 18 ]] && fail "Node.js 18+ required (found v$(node -e 'process.stdout.write(process.version.slice(1))'))"
+  ok "Node.js $(node --version)"
+}
 
 # ── 2. npm install ────────────────────────────────────────────────────────────
-step "Installing dependencies..."
-cd "$ENGINE_ROOT"
-npm install --silent
-ok "npm install done"
 
-# ── 3. Write .env (minimal — host resolution uses lbl-config.json) ───────────
-step "Configuring .env..."
-ENV_FILE="$ENGINE_ROOT/.env"
+_npm_install() {
+  step "Installing dependencies..."
+  cd "$ENGINE_ROOT"
+  npm install --silent
+  ok "npm install done"
+}
 
-if [[ -f "$ENV_FILE" ]]; then
-  warn ".env already exists — skipping (delete it to regenerate)"
-else
-  cat > "$ENV_FILE" <<'EOF'
+# ── 3. .env (minimal — host resolution uses lbl-config.json) ────────────────
+
+_write_env() {
+  step "Configuring .env..."
+  local env_file="$ENGINE_ROOT/.env"
+
+  if [[ -f "$env_file" ]]; then
+    warn ".env already exists — skipping (delete it to regenerate)"
+    return
+  fi
+
+  cat > "$env_file" <<'EOF'
 # Grimoire client — remote mode
 # GRIMOIRE_ROOT is intentionally unset; all KB access goes via the server.
 # Host/model resolution uses ~/.config/lbl-config.json (endpoints.grimoire).
@@ -70,108 +66,91 @@ else
 # GRIMOIRE_HOST=http://aid:3663
 EOF
   ok "wrote .env (minimal)"
-fi
+}
 
 # ── 4. /etc/hosts — ensure 'aid' resolves ────────────────────────────────────
-step "Checking /etc/hosts for 'aid'..."
-if grep -qE '^\s*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\baid\b' /etc/hosts; then
-  ok "aid already in /etc/hosts"
-else
-  warn "aid not found in /etc/hosts"
-  echo    "  The Grimoire server runs on a host named 'aid'."
-  echo    "  Enter the IP address of aid (leave blank to skip — use grim host gen-hosts later):"
-  read -r -p "  aid IP: " AID_IP
 
-  if [[ -n "$AID_IP" ]]; then
-    if [[ "$EUID" -ne 0 ]]; then
-      echo "  Adding to /etc/hosts (requires sudo)..."
-      echo "$AID_IP  aid" | sudo tee -a /etc/hosts > /dev/null
-    else
-      echo "$AID_IP  aid" >> /etc/hosts
-    fi
-    ok "added: $AID_IP  aid"
-  else
-    warn "skipped — run 'grim host gen-hosts' once KB is populated, then apply to /etc/hosts"
-  fi
-fi
-
-# ── 5. Git hooks ─────────────────────────────────────────────────────────────
-step "Activating git hooks (.githooks/)..."
-cd "$ENGINE_ROOT"
-git config core.hooksPath .githooks \
-  && ok "git hooks active (.githooks/pre-commit)" \
-  || warn "git config failed — run manually: git config core.hooksPath .githooks"
-
-# ── 7. Symlink grim CLI into ~/bin ───────────────────────────────────────────
-step "Linking grim CLI into ~/bin..."
-
-install_grim_link() {
-  local bin_dir="$HOME/bin"
-  local link="$bin_dir/grim"
-  local target="$ENGINE_ROOT/bin/grim.js"
-
-  mkdir -p "$bin_dir"
-  chmod +x "$target"
-
-  if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
-    ok "~/bin/grim already linked"
+_ensure_etc_hosts() {
+  step "Checking /etc/hosts for 'aid'..."
+  if grep -qE '^\s*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\baid\b' /etc/hosts; then
+    ok "aid already in /etc/hosts"
     return
   fi
 
-  if [[ -L "$link" || -e "$link" ]]; then
-    warn "~/bin/grim already exists ($(readlink "$link" 2>/dev/null || echo 'not a symlink'))"
-    read -r -p "  Overwrite it? [y/N] " CONFIRM
-    [[ "${CONFIRM,,}" == "y" ]] || { warn "skipped — leaving existing ~/bin/grim in place"; return; }
-    rm "$link"
-  fi
-  ln -s "$target" "$link"
-  ok "linked: ~/bin/grim → $target"
+  warn "aid not found in /etc/hosts"
+  echo    "  The Grimoire server runs on a host named 'aid'."
+  echo    "  Enter the IP address of aid (leave blank to skip — use grim host gen-hosts later):"
+  local aid_ip
+  read -r -p "  aid IP: " aid_ip
 
-  if ! echo ":$PATH:" | grep -q ":$bin_dir:"; then
-    warn "~/bin is not in PATH — add this to your shell profile:"
-    warn "  export PATH=\"\$HOME/bin:\$PATH\""
+  if [[ -z "$aid_ip" ]]; then
+    warn "skipped — run 'grim host gen-hosts' once KB is populated, then apply to /etc/hosts"
+    return
   fi
+
+  if [[ "$EUID" -ne 0 ]]; then
+    echo "  Adding to /etc/hosts (requires sudo)..."
+    echo "$aid_ip  aid" | sudo tee -a /etc/hosts > /dev/null
+  else
+    echo "$aid_ip  aid" >> /etc/hosts
+  fi
+  ok "added: $aid_ip  aid"
 }
 
-install_grim_link
+# ── 5. Git hooks ─────────────────────────────────────────────────────────────
+
+_activate_git_hooks() {
+  step "Activating git hooks (.githooks/)..."
+  cd "$ENGINE_ROOT"
+  git config core.hooksPath .githooks \
+    && ok "git hooks active (.githooks/pre-commit)" \
+    || warn "git config failed — run manually: git config core.hooksPath .githooks"
+}
 
 # ── 6. Claude Code — MCP + plugin ─────────────────────────────────────────────
-step "Configuring Claude Code..."
 
-CLAUDE_BIN=$(which claude 2>/dev/null || true)
-GRIMOIRE_URL="$(_grimoire_url)"
-MCP_URL="${GRIMOIRE_URL}/mcp"
+_configure_claude_code() {
+  step "Configuring Claude Code..."
 
-if [[ -z "$CLAUDE_BIN" ]]; then
-  warn "claude CLI not found — skipping Claude Code setup"
-  warn "Install Claude Code then run: claude mcp add --transport http grimoire ${MCP_URL} --scope user"
-else
+  local claude_bin grimoire_url mcp_url
+  claude_bin=$(which claude 2>/dev/null || true)
+  grimoire_url="$(_grimoire_host)"
+  mcp_url="${grimoire_url}/mcp"
+
+  if [[ -z "$claude_bin" ]]; then
+    warn "claude CLI not found — skipping Claude Code setup"
+    warn "Install Claude Code then run: claude mcp add --transport http grimoire ${mcp_url} --scope user"
+    return
+  fi
+
   # MCP server
   if claude mcp list 2>/dev/null | grep -q 'grimoire'; then
     ok "grimoire MCP server already configured"
   else
-    claude mcp add --transport http grimoire "${MCP_URL}" --scope user 2>/dev/null \
-      && ok "grimoire MCP server registered (${MCP_URL})" \
-      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire ${MCP_URL} --scope user"
+    claude mcp add --transport http grimoire "${mcp_url}" --scope user 2>/dev/null \
+      && ok "grimoire MCP server registered (${mcp_url})" \
+      || warn "MCP registration failed — run manually: claude mcp add --transport http grimoire ${mcp_url} --scope user"
   fi
 
   # Plugin marketplace + install
-  MARKETPLACE_DIR="$HOME/data/claude-plugins"
-  MARKETPLACE_JSON="$MARKETPLACE_DIR/.claude-plugin/marketplace.json"
+  local marketplace_dir="$HOME/data/claude-plugins"
+  local marketplace_json="$marketplace_dir/.claude-plugin/marketplace.json"
 
   if claude plugin list 2>/dev/null | grep -q 'grimoire'; then
     ok "grimoire plugin already installed"
-  else
-    # Set up local marketplace pointing at this repo's plugin dir
-    mkdir -p "$MARKETPLACE_DIR/.claude-plugin"
-    mkdir -p "$MARKETPLACE_DIR/plugins"
+    return
+  fi
 
-    # Symlink or copy plugin dir
-    if [[ ! -e "$MARKETPLACE_DIR/plugins/grimoire" ]]; then
-      ln -s "$ENGINE_ROOT/plugin" "$MARKETPLACE_DIR/plugins/grimoire"
-    fi
+  # Set up local marketplace pointing at this repo's plugin dir
+  mkdir -p "$marketplace_dir/.claude-plugin"
+  mkdir -p "$marketplace_dir/plugins"
 
-    cat > "$MARKETPLACE_JSON" <<EOF
+  # Symlink or copy plugin dir
+  if [[ ! -e "$marketplace_dir/plugins/grimoire" ]]; then
+    ln -s "$ENGINE_ROOT/plugin" "$marketplace_dir/plugins/grimoire"
+  fi
+
+  cat > "$marketplace_json" <<EOF
 {
   "\$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "local-plugins",
@@ -188,68 +167,133 @@ else
 }
 EOF
 
-    claude plugin marketplace add "$MARKETPLACE_DIR" 2>/dev/null || true
-    claude plugin install grimoire --scope user 2>/dev/null \
-      && ok "grimoire plugin installed" \
-      || warn "plugin install failed — run manually: claude plugin install grimoire --scope user"
+  claude plugin marketplace add "$marketplace_dir" 2>/dev/null || true
+  claude plugin install grimoire --scope user 2>/dev/null \
+    && ok "grimoire plugin installed" \
+    || warn "plugin install failed — run manually: claude plugin install grimoire --scope user"
+}
+
+# ── 7. Symlink grim CLI into ~/bin ───────────────────────────────────────────
+
+_install_grim_link() {
+  step "Linking grim CLI into ~/bin..."
+
+  local bin_dir="$HOME/bin"
+  local link="$bin_dir/grim"
+  local target="$ENGINE_ROOT/bin/grim.js"
+
+  mkdir -p "$bin_dir"
+  chmod +x "$target"
+
+  if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
+    ok "~/bin/grim already linked"
+    return
   fi
-fi
 
-# ── 7. ~/.grimoire dotlink ────────────────────────────────────────────────────
-step "Creating ~/.grimoire dotlink..."
-DOTLINK="$HOME/.grimoire"
-if [[ -L "$DOTLINK" && "$(readlink "$DOTLINK")" == "$ENGINE_ROOT" ]]; then
-  ok "~/.grimoire already linked"
-elif [[ -e "$DOTLINK" ]]; then
-  warn "~/.grimoire exists but points elsewhere ($(readlink "$DOTLINK" 2>/dev/null || echo 'not a symlink')) — skipping"
-else
-  ln -s "$ENGINE_ROOT" "$DOTLINK"
-  ok "linked: ~/.grimoire → $ENGINE_ROOT"
-fi
+  if [[ -L "$link" || -e "$link" ]]; then
+    warn "~/bin/grim already exists ($(readlink "$link" 2>/dev/null || echo 'not a symlink'))"
+    local confirm
+    read -r -p "  Overwrite it? [y/N] " confirm
+    [[ "${confirm,,}" == "y" ]] || { warn "skipped — leaving existing ~/bin/grim in place"; return; }
+    rm "$link"
+  fi
+  ln -s "$target" "$link"
+  ok "linked: ~/bin/grim → $target"
 
-# ── 8. grim-boot-report userspace service ─────────────────────────────────────
-step "Installing grim-boot-report systemd user service..."
-SERVICE_SRC="$ENGINE_ROOT/deploy/grim-boot-report.service"
-SERVICE_DIR="$HOME/.config/systemd/user"
-SERVICE_DST="$SERVICE_DIR/grim-boot-report.service"
+  if ! echo ":$PATH:" | grep -q ":$bin_dir:"; then
+    warn "~/bin is not in PATH — add this to your shell profile:"
+    warn "  export PATH=\"\$HOME/bin:\$PATH\""
+  fi
+}
 
-if [[ ! -f "$SERVICE_SRC" ]]; then
-  warn "grim-boot-report.service not found in deploy/ — skipping"
-elif systemctl --user is-enabled grim-boot-report &>/dev/null; then
-  ok "grim-boot-report service already enabled"
-else
-  mkdir -p "$SERVICE_DIR"
-  install -m644 "$SERVICE_SRC" "$SERVICE_DST"
-  systemctl --user daemon-reload
-  systemctl --user enable grim-boot-report 2>/dev/null \
-    && ok "grim-boot-report enabled (fires on next boot)" \
-    || warn "systemctl enable failed — run: systemctl --user enable grim-boot-report"
-fi
+# ── 8. ~/.grimoire dotlink ────────────────────────────────────────────────────
 
-# ── 9. Register this machine in the KB ───────────────────────────────────────
-step "Registering hardware inventory in KB..."
-REGISTER_SCRIPT="$ENGINE_ROOT/deploy/grim-register-host.sh"
-if [[ -x "$REGISTER_SCRIPT" ]]; then
-  # Script resolves its own GRIMOIRE_HOST via lbl-config.json if not set
-  "$REGISTER_SCRIPT" \
-    || warn "registration failed — re-run manually: $REGISTER_SCRIPT"
-else
-  warn "grim-register-host.sh not found — skipping"
-fi
+_create_dotlink() {
+  step "Creating ~/.grimoire dotlink..."
+  local dotlink="$HOME/.grimoire"
+  if [[ -L "$dotlink" && "$(readlink "$dotlink")" == "$ENGINE_ROOT" ]]; then
+    ok "~/.grimoire already linked"
+  elif [[ -e "$dotlink" ]]; then
+    warn "~/.grimoire exists but points elsewhere ($(readlink "$dotlink" 2>/dev/null || echo 'not a symlink')) — skipping"
+  else
+    ln -s "$ENGINE_ROOT" "$dotlink"
+    ok "linked: ~/.grimoire → $ENGINE_ROOT"
+  fi
+}
 
-# ── 10. Smoke test ────────────────────────────────────────────────────────────
-GRIMOIRE_URL="${GRIMOIRE_URL:-$(_grimoire_url)}"
-step "Testing connection to ${GRIMOIRE_URL}..."
-if curl -sf --max-time 5 "${GRIMOIRE_URL}/health" -o /dev/null 2>/dev/null; then
-  HEALTH=$(curl -s "${GRIMOIRE_URL}/health")
-  ok "Grimoire server reachable — $HEALTH"
-else
-  warn "Cannot reach ${GRIMOIRE_URL}/health"
-  warn "Make sure grim serve is running on aid (or set endpoints.grimoire in ~/.config/lbl-config.json)"
-fi
+# ── 9. grim-boot-report userspace service ─────────────────────────────────────
 
-# ── Done ──────────────────────────────────────────────────────────────────────
-echo ""
-echo "░ Setup complete."
-echo "  Restart Claude Code to activate the MCP tools, then: /load"
-echo ""
+_install_boot_report_service() {
+  step "Installing grim-boot-report systemd user service..."
+  local service_src="$ENGINE_ROOT/deploy/grim-boot-report.service"
+  local service_dir="$HOME/.config/systemd/user"
+  local service_dst="$service_dir/grim-boot-report.service"
+
+  if ! command -v systemctl &>/dev/null; then
+    warn "systemctl not found (not a systemd host, e.g. macOS) — skipping grim-boot-report service"
+  elif [[ ! -f "$service_src" ]]; then
+    warn "grim-boot-report.service not found in deploy/ — skipping"
+  elif systemctl --user is-enabled grim-boot-report &>/dev/null; then
+    ok "grim-boot-report service already enabled"
+  else
+    mkdir -p "$service_dir"
+    install -m644 "$service_src" "$service_dst"
+    systemctl --user daemon-reload
+    systemctl --user enable grim-boot-report 2>/dev/null \
+      && ok "grim-boot-report enabled (fires on next boot)" \
+      || warn "systemctl enable failed — run: systemctl --user enable grim-boot-report"
+  fi
+}
+
+# ── 10. Register this machine in the KB ───────────────────────────────────────
+
+_register_host() {
+  step "Registering hardware inventory in KB..."
+  local register_script="$ENGINE_ROOT/deploy/grim-register-host.sh"
+  if [[ -x "$register_script" ]]; then
+    # Script resolves its own GRIMOIRE_HOST via lbl-config.json if not set
+    "$register_script" \
+      || warn "registration failed — re-run manually: $register_script"
+  else
+    warn "grim-register-host.sh not found — skipping"
+  fi
+}
+
+# ── 11. Smoke test ────────────────────────────────────────────────────────────
+
+_smoke_test() {
+  local grimoire_url
+  grimoire_url="$(_grimoire_host)"
+  step "Testing connection to ${grimoire_url}..."
+  if curl -sf --max-time 5 "${grimoire_url}/health" -o /dev/null 2>/dev/null; then
+    local health
+    health=$(curl -s "${grimoire_url}/health")
+    ok "Grimoire server reachable — $health"
+  else
+    warn "Cannot reach ${grimoire_url}/health"
+    warn "Make sure grim serve is running on aid (or set endpoints.grimoire in ~/.config/lbl-config.json)"
+  fi
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+_main() {
+  _check_node
+  _npm_install
+  _write_env
+  _ensure_etc_hosts
+  _activate_git_hooks
+  _configure_claude_code
+  _install_grim_link
+  _create_dotlink
+  _install_boot_report_service
+  _register_host
+  _smoke_test
+
+  echo ""
+  echo "░ Setup complete."
+  echo "  Restart Claude Code to activate the MCP tools, then: /load"
+  echo ""
+}
+
+_main "$@"
