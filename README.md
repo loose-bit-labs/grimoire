@@ -71,7 +71,9 @@ grim vision cast       Generate images via AUTOMATIC1111          (The Vision)  
 grim vision interrogate  CLIP-caption images → entity hints       (The Vision)        [local + remote]
 grim load              Load save — begin a session                (SAVESTATE)         [local + remote]
 grim save              Write save — end a session                 (SAVESTATE)         [local + remote]
-grim tome              Memory ops: recall/remember/relate         (The Tome)          [local + remote]
+grim tome              Memory ops: recall/remember/relate/update  (The Tome)          [local + remote]
+grim cull              Generate portrait/image culling UI         (The Cull)          [local]
+grim config            Get/sync shared homelab config (lbl-config)                    [local + remote]
 grim mm                Read/write the .mm pact thread             (The Postbox)       [any cwd]
 grim serve             Start HTTP + MCP server                                        [run on grimoire.local]
 ```
@@ -190,9 +192,11 @@ The sessions **never touch `.mm/` by hand** — all the fiddly mechanics (creati
 grim mm read  --role minion --session "$CLAUDE_CODE_SESSION_ID"          # what's unread for me?
 grim mm read  --role hierophant --session "$ID" --all                    # whole thread, cold start
 grim mm write --role mage --session "$ID" --state revise --phase 3 --file fixes.md
+grim mm status                                                            # one-line: latest message, who owes the next move
+grim mm archive --phase 3                                                 # concatenate an accepted phase to plans/reviews/, commit it
 ```
 
-`read` prints only the messages a role should act on (the minion hears the mage; the mage hears the minion below and the hierophant above) and tells you whose move it is. `write` refuses to double-send while you're waiting on a reply, and stamps the next sequence number and header for you.
+`read` prints only the messages a role should act on (the minion hears the mage; the mage hears the minion below and the hierophant above), tells you whose move it is, and appends the exact legal reply command as a footer. `write` refuses to double-send while you're waiting on a reply, and stamps the next sequence number and header for you. `archive` refuses on an open phase or an existing output file (`--force-overwrite` to replace).
 
 ### Message convention
 
