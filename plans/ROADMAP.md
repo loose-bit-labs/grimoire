@@ -1,16 +1,39 @@
 # Cross-phase roadmap
 
-**Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19. Binding for all phases.
+**Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19, 2026-07-22. Binding for all phases.
 
-Four tracks, one loop. Phases run in numeric order 1→9; phases 5–9 have no
-dependency on 1–4, so the mage may pull them forward if a Track A phase blocks.
+Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
+may be pulled forward if an earlier one blocks.
 
-- **Track A (phases 1–4):** WanTan extraction — move generic tooling into grimoire.
-- **Track B (phases 5–6):** grimoire server as config authority (spec: `tmp/moar.md`).
-- **Track C (phase 7):** adopted deltas from the memory-architecture spec (`tmp/other.md`).
-- **Track D (phases 8–9):** pact tooling streamline + close the oldest open bug.
+- **Track A (phases 1–4):** WanTan extraction — move generic tooling into grimoire. ✅
+- **Track B (phases 5–6):** grimoire server as config authority (spec: `tmp/moar.md`). ✅
+- **Track C (phase 7):** adopted deltas from the memory-architecture spec (`tmp/other.md`). ✅
+- **Track D (phases 8–9):** pact tooling streamline + close the oldest open bug. ✅
+- **Track E (phases 10–11):** typed clients + registry generators (spec: `tmp/hi/SERVICE-MESH-LITE.md`).
+- **Track F (phases 12–13):** rig telemetry — agent mode + central scrape stack (spec: `tmp/hi/telementry-Full-PoC-Markdown-hand-this-to-your-agent.md`).
 
-**Status: all four tracks complete, all nine phases accepted. Board is clean — nothing queued.**
+**Status: Tracks A–D complete (phases 1–9 accepted). Tracks E–F queued 2026-07-22.**
+
+## Ruling on tmp/hi/SERVICE-MESH-LITE.md (2026-07-22)
+
+Layer 1 (registry) **already exists** — Track B made `config/lbl-config.json`
+authoritative with server route + client precedence. Layer 3 (typed clients) is the
+real delta — phase 10. The doc's "generate, don't duplicate" rule is adopted as
+phase 11 (registry → hosts/probes/caddy views, generation only). **Layer 2 deferred
+by ruling, do not build:** DNS (dnsmasq/CoreDNS) and reverse-proxy deployment.
+Reason: every Node caller already resolves by name through `lib/env.js`; a resolver/
+proxy adds a SPOF ("it's always DNS" made load-bearing) for zero caller-visible gain
+today. Revisit only when a non-Node consumer demonstrates need — the generated
+Caddyfile from phase 11 will be sitting there ready.
+
+## Ruling on the telemetry PoC (2026-07-22)
+
+Adopted, reshaped: the per-box agent is not a new `/poc` tree — it's `grim rig serve`
+(phase 12), because `grim rig status` is already the sensor layer and `rig.json` is
+already the box/service inventory. The doc's hardcoded ports are **wrong for this
+lab** — all targets derive from config. Central Prometheus+Grafana lands as a deploy
+script with generated scrape targets (phase 13). **Deferred, do not build:** ComfyUI
+custom node, Loki, remote_write, connection-level client tracking.
 
 ## Ruling on tmp/other.md (2026-07-17)
 
@@ -83,6 +106,25 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 |-------|-------|-----------|--------|
 | 8 | plans/phase-8.md | `grim mm status` + `grim mm archive --phase N` + role-aware next-move footer on `read`; pact SKILL.md files slimmed to judgment only; briefing projection capped (≤20K chars) | ✅ accepted (`plans/reviews/phase-8.md`) — Track D complete, engagement done |
 | 9 | plans/phase-9.md | fix `grim tome <sub>` argv off-by-one (closes phase 0) + regression test + KB bug-list update | ✅ accepted (`plans/reviews/phase-9.md`) — board clean, engagement done |
+
+## Track E — typed clients + registry generators (phases 10–11)
+
+**Goal:** the one-off clients become a family with a shared base (name-resolved,
+fail-loud, timeout-bounded); every derived view of the registry is generated.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 10 | plans/phase-10.md | `lib/service-client.js` base class + ner/a1111 clients migrated (export shapes unchanged; comfy-client explicitly excluded) | queued |
+| 11 | plans/phase-11.md | `grim config gen hosts\|probes\|caddy` — deterministic generated views of lbl-config, stdout only | queued |
+
+## Track F — rig telemetry (phases 12–13)
+
+**Goal:** see hot spots across the lab — persistent per-box agent + central scrape.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 12 | plans/phase-12.md | `grim rig serve` — `/status` JSON + `/metrics` Prometheus text; systeminformation + service pollers from rig.json; graceful degradation | queued |
+| 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | queued (blocked on 12) |
 
 ## Acceptance bar (mage enforces per phase)
 
