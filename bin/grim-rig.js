@@ -749,7 +749,7 @@ function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
     }
 
     if (req.url === '/cluster' && req.method === 'GET') {
-      const htmlPath = path.join(config.root || __dirname, '..', 'deploy', 'rig-cluster.html')
+      const htmlPath = path.resolve('deploy/rig-cluster.html')
       const result = serveStatic(htmlPath, 'text/html; charset=utf-8')
       if (result) {
         res.writeHead(result.status, { 'Content-Type': result.contentType })
