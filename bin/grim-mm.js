@@ -214,6 +214,11 @@ function write({ dir, role, state, phase, body, force, json }) {
   if (!STATES.includes(state)) {
     throw new Error(`invalid --state '${state}'. One of: ${STATES.join(', ')}`)
   }
+  // --state brief requires explicit --phase to prevent silent carry-forward
+  // of the previous phase (the root cause of the phase-label drift bug).
+  if (state === 'brief' && phase == null) {
+    throw new Error('grim mm write: --state brief requires an explicit --phase')
+  }
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
 
@@ -264,25 +269,73 @@ function status({ dir, json }) {
   console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.role} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
 }
 
-// Concatenate one phase's messages, in order, to plans/reviews/phase-N.md and
-// commit it. Report-only in spirit: refuses on an open phase or an existing
+// Concatenate messages to plans/reviews/<name>.md and commit it.
+// Two modes: --phase N (filter by header phase field) or --from/--to/--out (filter by message num range).
+// Report-only in spirit: refuses on an open phase or an existing
 // file (unless --force-overwrite) rather than silently clobbering history.
-function archive({ cwd, dir, phase, forceOverwrite }) {
-  const thread  = readThread(dir)
-  const phaseMessages = thread.filter(m => m.phase === String(phase))
-  if (!phaseMessages.length) throw new Error(`no messages found for phase ${phase}`)
+function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
+  const thread = readThread(dir)
+  let selected
 
-  const latest = phaseMessages[phaseMessages.length - 1]
-  if (!TERMINAL.includes(latest.state)) {
-    throw new Error(`phase ${phase} is not accepted yet (latest: #${String(latest.num).padStart(PAD, '0')}-${latest.role}, state: ${latest.state}) — refusing to archive an open phase`)
+  if (phase != null) {
+    // --phase mode: filter by header phase field
+    if (from != null || to != null || out != null) {
+      fail('archive: --phase is mutually exclusive with --from/--to/--out')
+    }
+    selected = thread.filter(m => m.phase === String(phase))
+    if (!selected.length) throw new Error(`no messages found for phase ${phase}`)
+
+    const latest = selected[selected.length - 1]
+    if (!TERMINAL.includes(latest.state)) {
+      throw new Error(`phase ${phase} is not accepted yet (latest: #${String(latest.num).padStart(PAD, '0')}-${latest.role}, state: ${latest.state}) — refusing to archive an open phase`)
+    }
+
+    const outPath = path.join(cwd, 'plans', 'reviews', `phase-${phase}.md`)
+    if (fs.existsSync(outPath) && !forceOverwrite) {
+      throw new Error(`${outPath} already exists — pass --force-overwrite to replace`)
+    }
+
+    const content = selected
+      .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.role} (${m.state})\n\n${m.raw.trim()}\n`)
+      .join('\n')
+
+    fs.mkdirSync(path.dirname(outPath), { recursive: true })
+    fs.writeFileSync(outPath, content, 'utf8')
+
+    execFileSync('git', ['add', outPath], { cwd })
+    execFileSync('git', ['commit', '-m', `mm: archive phase ${phase} review thread`], { cwd })
+
+    return { file: outPath, messageCount: selected.length }
   }
 
-  const outPath = path.join(cwd, 'plans', 'reviews', `phase-${phase}.md`)
+  // --from/--to/--out mode: filter by message number range
+  if (from == null || to == null || out == null) {
+    fail('archive: --from and --to and --out are all required together (use --phase N instead)')
+  }
+  if (phase != null) {
+    fail('archive: --phase is mutually exclusive with --from/--to/--out')
+  }
+
+  const fromNum = parseInt(String(from), 10)
+  const toNum   = parseInt(String(to), 10)
+  if (isNaN(fromNum) || isNaN(toNum) || fromNum > toNum) {
+    fail(`archive: --from ${from} and --to ${to} must be valid integers with from <= to`)
+  }
+
+  selected = thread.filter(m => m.num >= fromNum && m.num <= toNum)
+  if (!selected.length) throw new Error(`no messages in range ${fromNum}–${toNum}`)
+
+  const latest = selected[selected.length - 1]
+  if (!TERMINAL.includes(latest.state)) {
+    throw new Error(`message #${String(latest.num).padStart(PAD, '0')}-${latest.role} (state: ${latest.state}) is not accepted — refusing to archive an open range`)
+  }
+
+  const outPath = path.join(cwd, 'plans', 'reviews', `${out}.md`)
   if (fs.existsSync(outPath) && !forceOverwrite) {
     throw new Error(`${outPath} already exists — pass --force-overwrite to replace`)
   }
 
-  const content = phaseMessages
+  const content = selected
     .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.role} (${m.state})\n\n${m.raw.trim()}\n`)
     .join('\n')
 
@@ -290,9 +343,9 @@ function archive({ cwd, dir, phase, forceOverwrite }) {
   fs.writeFileSync(outPath, content, 'utf8')
 
   execFileSync('git', ['add', outPath], { cwd })
-  execFileSync('git', ['commit', '-m', `mm: archive phase ${phase} review thread`], { cwd })
+  execFileSync('git', ['commit', '-m', `mm: archive ${out} review thread`], { cwd })
 
-  return { file: outPath, messageCount: phaseMessages.length }
+  return { file: outPath, messageCount: selected.length }
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
@@ -306,7 +359,7 @@ function main() {
 
   const args = minimist(argv.slice(1), {
     boolean: ['all', 'json', 'force', 'force-overwrite'],
-    string:  ['role', 'session', 'state', 'phase', 'file', 'body'],
+    string:  ['role', 'session', 'state', 'phase', 'file', 'body', 'from', 'to', 'out'],
   })
 
   const cwd = process.cwd()
@@ -321,10 +374,9 @@ function main() {
   }
 
   if (verb === 'archive') {
-    if (args.phase == null) fail('archive needs --phase N')
-    const result = archive({ cwd, dir, phase: args.phase, forceOverwrite: args['force-overwrite'] })
+    const result = archive({ cwd, dir, phase: args.phase, from: args.from, to: args.to, out: args.out, forceOverwrite: args['force-overwrite'] })
     if (args.json) console.log(JSON.stringify({ ok: true, ...result }, null, 2))
-    else console.log(`[grim-mm] archived phase ${args.phase} -> ${result.file} (${result.messageCount} messages), committed.`)
+    else console.log(`[grim-mm] archived -> ${result.file} (${result.messageCount} messages), committed.`)
     return
   }
 
@@ -355,12 +407,13 @@ function main() {
 }
 
 function fail(msg) {
-  console.error(`grim mm: ${msg}`)
-  process.exit(1)
+  const e = new Error(`grim mm: ${msg}`)
+  e.code = 'USAGE_ERROR'
+  throw e
 }
 
 if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, computeNextMove }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove }
