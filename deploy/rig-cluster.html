@@ -1,0 +1,651 @@
+<title>Grimoire Motors — Rig Instrument Cluster</title>
+<style>
+  :root {
+    --ground: #08090d;
+    --ground-2: #0c0e14;
+    --panel: #10131a;
+    --panel-2: #141824;
+    --well: #0a0c12;
+    --ink: #eef2f8;
+    --muted: #6b7686;
+    --muted-2: #454f60;
+    --accent: #46d5ff;
+    --amber: #ffb020;
+    --red: #ff4436;
+    --green: #3ddc84;
+    --hair: #1e2432;
+    --font-label: "Eurostile", "Bahnschrift", "DIN Alternate", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+    --font-digit: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(120% 90% at 50% -10%, #141a26 0%, var(--ground-2) 42%, var(--ground) 100%);
+    color: var(--ink);
+    font-family: var(--font-label);
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(16px, 3vw, 40px);
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 26px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand .mark {
+    width: 40px; height: 40px; border-radius: 9px;
+    background: linear-gradient(145deg, #1b2233, #0c0f16);
+    border: 1px solid var(--hair);
+    display: grid; place-items: center;
+    box-shadow: inset 0 1px 0 #2a3444, 0 6px 18px rgba(0,0,0,.5);
+    font-size: 20px;
+  }
+  .brand h1 {
+    margin: 0;
+    font-size: clamp(15px, 2vw, 18px);
+    letter-spacing: .34em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .brand .sub {
+    margin: 2px 0 0;
+    font-size: 10.5px; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ignition {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 10.5px; letter-spacing: .24em; text-transform: uppercase;
+    color: var(--muted);
+    font-family: var(--font-digit);
+  }
+  .ignition .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* ── Box selector (choose which box the binnacle shows) ── */
+  .keys { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .key {
+    appearance: none; cursor: pointer;
+    background: var(--panel); color: var(--muted);
+    border: 1px solid var(--hair); border-radius: 8px;
+    padding: 8px 14px;
+    font-family: var(--font-digit); font-size: 12px;
+    letter-spacing: .12em; text-transform: uppercase;
+    transition: color .18s, border-color .18s, background .18s;
+  }
+  .key:hover { color: var(--ink); border-color: #2c3648; }
+  .key[aria-pressed="true"] {
+    color: var(--ground); background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 18px rgba(70,213,255,.35);
+    font-weight: 700;
+  }
+  .key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── Hero binnacle ──────────────────────────────────── */
+  .binnacle {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair);
+    border-radius: 20px;
+    padding: clamp(16px, 2.4vw, 30px);
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,.9), inset 0 1px 0 #222b3b;
+    position: relative;
+    overflow: hidden;
+  }
+  .binnacle::before {
+    /* windshield sheen */
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(105deg, transparent 55%, rgba(70,213,255,.05) 78%, transparent 82%);
+    pointer-events: none;
+  }
+  .cluster {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    align-items: center;
+    gap: clamp(6px, 1.5vw, 22px);
+  }
+  .gpod { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .gpod.mini { transform: scale(.86); }
+  canvas { display: block; width: 100%; height: auto; touch-action: none; }
+  .gcap {
+    font-size: 10px; letter-spacing: .26em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ── Digital strip: gear + odometer + tell-tales ────── */
+  .strip {
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+    border-top: 1px solid var(--hair);
+    padding-top: 18px;
+  }
+  .gear {
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .gear .g {
+    font-family: var(--font-digit); font-weight: 700;
+    font-size: 30px; color: var(--accent);
+    text-shadow: 0 0 16px rgba(70,213,255,.5);
+    line-height: 1;
+  }
+  .gear .glabel {
+    font-size: 9.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted);
+    max-width: 160px;
+  }
+  .gear .glabel b { color: var(--ink); font-weight: 600; letter-spacing: .06em; display: block; font-size: 11px; }
+
+  .odo {
+    justify-self: center;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .odo .digits {
+    font-family: var(--font-digit); font-variant-numeric: tabular-nums;
+    font-size: 20px; letter-spacing: .14em;
+    background: var(--well); border: 1px solid var(--hair); border-radius: 6px;
+    padding: 5px 12px; color: var(--ink);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,.6);
+  }
+  .odo .digits .unit { color: var(--muted); font-size: 12px; letter-spacing: .1em; }
+  .odo .olabel { font-size: 9px; letter-spacing: .24em; text-transform: uppercase; color: var(--muted-2); }
+
+  .tells { display: flex; gap: 10px; justify-self: end; }
+  .tell {
+    width: 40px; height: 40px; border-radius: 9px;
+    display: grid; place-items: center;
+    background: var(--well); border: 1px solid var(--hair);
+    color: var(--muted-2); font-size: 17px;
+    transition: color .2s, box-shadow .2s, border-color .2s, background .2s;
+  }
+  .tell.on-amber { color: var(--amber); border-color: rgba(255,176,32,.5); box-shadow: 0 0 16px rgba(255,176,32,.35); background: rgba(255,176,32,.08); }
+  .tell.on-red   { color: var(--red);   border-color: rgba(255,68,54,.55);  box-shadow: 0 0 16px rgba(255,68,54,.4);   background: rgba(255,68,54,.08); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: .4; } }
+
+  /* ── Garage row ─────────────────────────────────────── */
+  .garage-title {
+    margin: 34px 0 14px;
+    font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .garage-title::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+  .garage {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    appearance: none; text-align: left; cursor: pointer;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--hair); border-radius: 14px;
+    padding: 14px 16px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    transition: border-color .18s, transform .18s;
+  }
+  .card:hover { border-color: #2c3648; transform: translateY(-2px); }
+  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 14px 30px -18px rgba(70,213,255,.5); }
+  .card .chead { display: flex; align-items: center; justify-content: space-between; }
+  .card .cname { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+  .card .cstate { font-family: var(--font-digit); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--green); }
+  .card .cstate.warn { color: var(--amber); }
+  .card .cstate.crit { color: var(--red); }
+  .card .crow { display: flex; align-items: center; gap: 12px; }
+  .card .cmeta { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+  .bar { position: relative; }
+  .bar .blabel { display: flex; justify-content: space-between; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .bar .blabel .bval { font-family: var(--font-digit); color: var(--ink); letter-spacing: .04em; }
+  .bar .track { height: 7px; border-radius: 4px; background: var(--well); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,.7); }
+  .bar .fill { height: 100%; border-radius: 4px; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+
+  .foot {
+    margin-top: 30px; text-align: center;
+    font-size: 10px; letter-spacing: .22em; text-transform: uppercase; color: var(--muted-2);
+    font-family: var(--font-digit);
+  }
+  .foot b { color: var(--amber); font-weight: 600; }
+
+  @media (max-width: 640px) {
+    .cluster { grid-template-columns: 1fr 1fr; }
+    .gpod.hero { grid-column: 1 / -1; order: -1; }
+    .strip { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 18px; }
+    .tells { justify-self: center; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ignition .dot, .tell.on-red { animation: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">🏎️</div>
+      <div>
+        <h1>Grimoire Motors</h1>
+        <p class="sub">Rig Instrument Cluster</p>
+      </div>
+    </div>
+    <div class="ignition"><span class="dot"></span> Ignition · Live Bench</div>
+  </div>
+
+  <div class="keys" id="keys" role="group" aria-label="Select box"></div>
+
+  <section class="binnacle" aria-label="Instrument binnacle">
+    <div class="cluster">
+      <div class="gpod"><canvas id="g-tach" width="300" height="300" aria-label="Revs"></canvas><span class="gcap">Revs · load</span></div>
+      <div class="gpod hero"><canvas id="g-speed" width="360" height="360" aria-label="Compute"></canvas><span class="gcap">Compute · GPU util</span></div>
+      <div class="gpod">
+        <canvas id="g-fuel" width="300" height="300" aria-label="VRAM"></canvas><span class="gcap">Fuel · VRAM</span>
+        <canvas id="g-temp" width="300" height="150" aria-label="Coolant temp" style="margin-top:-14px"></canvas><span class="gcap">Coolant · GPU °C</span>
+      </div>
+    </div>
+
+    <div class="strip">
+      <div class="gear">
+        <span class="g" id="gear-g">D</span>
+        <span class="glabel">Gear · loaded model<b id="gear-model">—</b></span>
+      </div>
+      <div class="odo">
+        <span class="digits"><span id="odo-val">00.0</span> <span class="unit">GB VRAM</span></span>
+        <span class="olabel">Odometer</span>
+      </div>
+      <div class="tells" id="tells">
+        <div class="tell" data-tell="fuel" title="Low VRAM headroom">⛽</div>
+        <div class="tell" data-tell="temp" title="High coolant temp">🌡️</div>
+        <div class="tell" data-tell="rev"  title="Compute redline">🔺</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="garage-title">The Garage · all boxes</div>
+  <div class="garage" id="garage"></div>
+
+  <p class="foot">Live telemetry · <b>/fleet</b> polls every 2s · <b>grim rig serve</b></p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const TAU = Math.PI * 2;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ── Fleet: loaded from /fleet, each box has easing state ──
+  let FLEET = [];
+  let active = 0;
+  let fleetLoaded = false;
+
+  // ── Poll /fleet and merge into FLEET with needle easing ──
+  async function pollFleet() {
+    try {
+      const res = await fetch("/fleet");
+      const data = await res.json();
+      const raw = data.boxes || [];
+
+      // Build a map by name for merging
+      const byName = {};
+      FLEET.forEach(b => { byName[b.name] = b; });
+
+      // New/updated boxes
+      raw.forEach(r => {
+        let b = byName[r.name];
+        if (!b) {
+          // New box: seed with current values
+          b = {
+            name: r.name, gpu: r.gpu || "", up: r.up,
+            util: r.util || 0, utilTarget: r.util || 0,
+            revs: 0, temp: r.temp || 42,
+            vramUsed: r.vramUsed || 0, vramTotal: r.vramTotal || 1,
+            model: r.model || "—",
+          };
+          byName[r.name] = b;
+          FLEET.push(b);
+        } else {
+          // Update metadata, keep easing state
+          b.up = r.up;
+          b.model = r.model || b.model;
+          b.gpu = r.gpu || b.gpu;
+          b.vramTotal = r.vramTotal || b.vramTotal;
+          // needle easing: real values become targets
+          b.utilTarget = (r.util || 0);
+          b.vramUsed = r.vramUsed || b.vramUsed;
+          b.temp = r.temp ?? b.temp;
+        }
+      });
+
+      // Remove boxes no longer in response
+      FLEET = FLEET.filter(b => raw.some(r => r.name === b.name));
+
+      if (!fleetLoaded) {
+        fleetLoaded = true;
+        rebuildGarage();
+      }
+    } catch {
+      // Network error — keep last known data
+    }
+  }
+
+  // ── Easing frame: smooth needle motion between polls ──
+  function tickEasing(dt, t) {
+    FLEET.forEach((b, i) => {
+      if (!b.up) return;
+      // util easing
+      b.util += (b.utilTarget - b.util) * Math.min(1, dt * 3.5);
+      // revs = smoothed load with idle shimmer -> tach "revving"
+      const targetRev = b.util / 100 * 8.2 + (b.util > 60 ? Math.sin(t * 9 + i) * 0.25 : 0);
+      b.revs += (targetRev - b.revs) * Math.min(1, dt * (targetRev > b.revs ? 6 : 2.5));
+      // temp trails util
+      const targetTemp = 40 + b.util * 0.46 + (b.vramUsed / Math.max(1, b.vramTotal)) * 14;
+      b.temp += (targetTemp - b.temp) * Math.min(1, dt * 0.6);
+    });
+  }
+
+  // ── Canvas gauge primitive ──────────────────────────────
+  function prep(canvas) {
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const cssW = canvas.clientWidth || canvas.width;
+    const cssH = canvas.width && canvas.height ? cssW * (canvas.height / canvas.width) : cssW;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w: cssW, h: cssH };
+  }
+
+  const C = {
+    ink: "#eef2f8", muted: "#6b7686", faint: "#2b3446",
+    accent: "#46d5ff", amber: "#ffb020", red: "#ff4436", green: "#3ddc84", well: "#0a0c12",
+  };
+
+  // radial dial: value 0..1 across a sweep, with tick marks, redline zone, glowing needle
+  function dial(ctx, cx, cy, r, opts) {
+    const { value, redFrom = 1.1, label, readout, sub, big } = opts;
+    const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25; // 270° sweep, bottom gap
+    const span = a1 - a0;
+    const v = Math.max(0, Math.min(1, value));
+
+    // face
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU);
+    const g = ctx.createRadialGradient(cx, cy - r * .3, r * .2, cx, cy, r);
+    g.addColorStop(0, "#161b26"); g.addColorStop(1, "#0a0d14");
+    ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "#222b3b"; ctx.stroke();
+
+    // track arc
+    ctx.beginPath(); ctx.arc(cx, cy, r * .82, a0, a1);
+    ctx.lineWidth = big ? 9 : 7; ctx.lineCap = "round";
+    ctx.strokeStyle = C.well; ctx.stroke();
+
+    // redline zone
+    if (redFrom <= 1) {
+      ctx.beginPath(); ctx.arc(cx, cy, r * .82, a0 + span * redFrom, a1);
+      ctx.strokeStyle = "rgba(255,68,54,.85)"; ctx.stroke();
+    }
+
+    // value arc (glow)
+    const va = a0 + span * v;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r * .82, a0, va);
+    ctx.strokeStyle = v > redFrom ? C.red : C.accent;
+    ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = big ? 22 : 14;
+    ctx.stroke();
+    ctx.restore();
+
+    // ticks
+    const ticks = 10;
+    for (let i = 0; i <= ticks; i++) {
+      const a = a0 + span * (i / ticks);
+      const major = i % (ticks / (big ? 10 : 5)) === 0 || true;
+      const rr0 = r * (major ? .62 : .68), rr1 = r * .74;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * rr0, cy + Math.sin(a) * rr0);
+      ctx.lineTo(cx + Math.cos(a) * rr1, cy + Math.sin(a) * rr1);
+      ctx.lineWidth = major ? 2 : 1;
+      ctx.strokeStyle = (i / ticks) > redFrom ? "rgba(255,68,54,.7)" : "#3a4456";
+      ctx.stroke();
+    }
+
+    // needle
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(va);
+    ctx.beginPath(); ctx.moveTo(-r * .12, 0); ctx.lineTo(r * .78, 0);
+    ctx.lineWidth = big ? 4 : 3; ctx.lineCap = "round";
+    ctx.strokeStyle = C.ink; ctx.shadowColor = C.ink; ctx.shadowBlur = 8; ctx.stroke();
+    ctx.restore();
+    // hub
+    ctx.beginPath(); ctx.arc(cx, cy, big ? 11 : 8, 0, TAU);
+    ctx.fillStyle = "#1a2130"; ctx.fill();
+    ctx.strokeStyle = "#3a4456"; ctx.lineWidth = 1; ctx.stroke();
+
+    // readout
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = C.ink;
+    ctx.font = `700 ${big ? r * .30 : r * .26}px ui-monospace, "SF Mono", monospace`;
+    ctx.fillText(readout, cx, cy + r * .42);
+    if (sub) {
+      ctx.fillStyle = C.muted;
+      ctx.font = `600 ${r * .10}px var(--font-label), sans-serif`;
+      ctx.fillText(sub, cx, cy + r * .60);
+    }
+    if (label) {
+      ctx.fillStyle = C.muted;
+      ctx.font = `700 ${r * .095}px sans-serif`;
+      // (label handled in HTML caption; kept minimal here)
+    }
+  }
+
+  // horizontal temp bar-gauge
+  function tempGauge(canvas, b) {
+    const { ctx, w, h } = prep(canvas);
+    ctx.clearRect(0, 0, w, h);
+    const x = w * .12, y = h * .52, bw = w * .76, bh = 12;
+    const t = Math.max(0, Math.min(1, (b.temp - 30) / 60)); // 30..90°C
+    ctx.fillStyle = C.well; ctx.beginPath();
+    roundRect(ctx, x, y, bw, bh, 6); ctx.fill();
+    const col = b.temp > 80 ? C.red : b.temp > 68 ? C.amber : C.green;
+    ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 12;
+    ctx.fillStyle = col; roundRect(ctx, x, y, bw * t, bh, 6); ctx.fill(); ctx.restore();
+    // scale ticks
+    ctx.fillStyle = C.muted; ctx.font = '600 10px ui-monospace, monospace';
+    ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left";  ctx.fillText("30", x, y - 8);
+    ctx.textAlign = "center";ctx.fillText("60", x + bw * .5, y - 8);
+    ctx.textAlign = "right"; ctx.fillText("90°", x + bw, y - 8);
+    ctx.textAlign = "center"; ctx.fillStyle = C.ink;
+    ctx.font = '700 20px ui-monospace, monospace';
+    ctx.fillText(Math.round(b.temp) + "°C", w / 2, y + bh + 26);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, h / 2, w / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  // ── Build box selector + garage cards from FLEET ────────
+  const keysEl = document.getElementById("keys");
+  const garageEl = document.getElementById("garage");
+  const cards = [];
+
+  function rebuildGarage() {
+    keysEl.innerHTML = "";
+    garageEl.innerHTML = "";
+    cards.length = 0;
+    FLEET.forEach((b, i) => {
+      const k = document.createElement("button");
+      k.className = "key"; k.textContent = b.name;
+      k.setAttribute("aria-pressed", i === active ? "true" : "false");
+      k.onclick = () => setActive(i);
+      keysEl.appendChild(k);
+
+      const c = document.createElement("button");
+      c.className = "card" + (i === active ? " active" : "");
+      c.onclick = () => setActive(i);
+      c.innerHTML = `
+        <div class="chead">
+          <span class="cname">${b.name}</span>
+          <span class="cstate" data-state>${b.up ? "IDLE" : "OFFLINE"}</span>
+        </div>
+        <div class="crow">
+          <canvas data-mini width="88" height="88" style="width:88px;height:88px"></canvas>
+          <div class="cmeta">
+            <div class="bar">
+              <div class="blabel"><span>VRAM</span><span class="bval" data-vram>0</span></div>
+              <div class="track"><div class="fill" data-vfill style="background:var(--accent)"></div></div>
+            </div>
+            <div class="bar">
+              <div class="blabel"><span>${b.gpu || "GPU"}</span><span class="bval" data-tmp>0°</span></div>
+              <div class="track"><div class="fill" data-tfill style="background:var(--green)"></div></div>
+            </div>
+          </div>
+        </div>`;
+      garageEl.appendChild(c);
+      cards.push(c);
+    });
+  }
+
+  function setActive(i) {
+    active = Math.max(0, Math.min(FLEET.length - 1, i));
+    [...keysEl.children].forEach((k, j) => k.setAttribute("aria-pressed", j === active ? "true" : "false"));
+    cards.forEach((c, j) => c.classList.toggle("active", j === active));
+  }
+
+  const el = {
+    speed: document.getElementById("g-speed"),
+    tach: document.getElementById("g-tach"),
+    fuel: document.getElementById("g-fuel"),
+    temp: document.getElementById("g-temp"),
+    gearG: document.getElementById("gear-g"),
+    gearModel: document.getElementById("gear-model"),
+    odo: document.getElementById("odo-val"),
+    tells: document.getElementById("tells"),
+  };
+
+  function drawDial(canvas, opts) {
+    const { ctx, w, h } = prep(canvas);
+    ctx.clearRect(0, 0, w, h);
+    dial(ctx, w / 2, h / 2, Math.min(w, h) / 2 - 6, opts);
+  }
+
+  function render() {
+    if (!fleetLoaded || FLEET.length === 0) return;
+    const b = FLEET[active];
+    if (!b) return;
+
+    const vramFrac = b.vramTotal > 0 ? b.vramUsed / b.vramTotal : 0;
+
+    if (!b.up) {
+      // Dimmed offline cluster
+      drawDial(el.speed, { value: 0, redFrom: .85, big: true,
+        readout: "—", sub: "OFFLINE" });
+      drawDial(el.tach, { value: 0, redFrom: 7 / 9,
+        readout: "—", sub: "OFFLINE" });
+      drawDial(el.fuel, { value: 0, redFrom: .88,
+        readout: "—", sub: "OFFLINE" });
+      el.gearG.textContent = "—";
+      el.gearModel.textContent = "—";
+      el.odo.textContent = "00.0";
+      // Dim the binnacle
+      document.querySelector(".binnacle").style.opacity = "0.3";
+      return;
+    }
+
+    document.querySelector(".binnacle").style.opacity = "1";
+
+    drawDial(el.speed, { value: b.util / 100, redFrom: .85, big: true,
+      readout: Math.round(b.util) + "%", sub: "GPU LOAD" });
+    drawDial(el.tach, { value: b.revs / 9, redFrom: 7 / 9,
+      readout: (b.revs).toFixed(1) + "k", sub: "×1000 OPS" });
+    drawDial(el.fuel, { value: vramFrac, redFrom: .88,
+      readout: b.vramUsed.toFixed(1) + "/" + b.vramTotal, sub: "GB" });
+    tempGauge(el.temp, b);
+
+    // gear = a playful ratio of load; model in label
+    const gear = b.util < 6 ? "P" : b.util < 25 ? "1" : b.util < 50 ? "2" : b.util < 75 ? "3" : b.util < 92 ? "4" : "5";
+    el.gearG.textContent = gear;
+    el.gearModel.textContent = b.model;
+    el.odo.textContent = b.vramUsed.toFixed(1);
+
+    // tell-tales
+    setTell("fuel", vramFrac > .88 ? "red" : vramFrac > .75 ? "amber" : "");
+    setTell("temp", b.temp > 80 ? "red" : b.temp > 68 ? "amber" : "");
+    setTell("rev",  b.util > 92 ? "red" : b.util > 78 ? "amber" : "");
+
+    // garage cards
+    FLEET.forEach((bx, i) => {
+      const c = cards[i];
+      if (!c) return;
+      const vf = bx.vramTotal > 0 ? bx.vramUsed / bx.vramTotal : 0;
+      const st = c.querySelector("[data-state]");
+      if (!bx.up) {
+        st.textContent = "OFFLINE";
+        st.className = "cstate crit";
+        c.style.opacity = "0.3";
+      } else {
+        const busy = bx.util > 55, warn = vf > .88 || bx.temp > 80;
+        st.textContent = warn ? "REDLINE" : busy ? "DRIVING" : "IDLE";
+        st.className = "cstate" + (warn ? " crit" : busy ? " warn" : "");
+        c.style.opacity = "1";
+      }
+      c.querySelector("[data-vram]").textContent = bx.vramUsed.toFixed(1) + "/" + bx.vramTotal;
+      c.querySelector("[data-tmp]").textContent = Math.round(bx.temp) + "°";
+      c.querySelector("[data-vfill]").style.width = (vf * 100).toFixed(0) + "%";
+      c.querySelector("[data-vfill]").style.background = vf > .88 ? C.red : vf > .7 ? C.amber : C.accent;
+      const tf = Math.max(0, Math.min(1, (bx.temp - 30) / 60));
+      c.querySelector("[data-tfill]").style.width = (tf * 100).toFixed(0) + "%";
+      c.querySelector("[data-tfill]").style.background = bx.temp > 80 ? C.red : bx.temp > 68 ? C.amber : C.green;
+      const mini = c.querySelector("[data-mini]");
+      drawDial(mini, { value: bx.up ? bx.util / 100 : 0, redFrom: .85, readout: bx.up ? Math.round(bx.util) + "" : "—", sub: "" });
+    });
+  }
+
+  function setTell(name, level) {
+    const t = el.tells.querySelector(`[data-tell="${name}"]`);
+    t.classList.toggle("on-amber", level === "amber");
+    t.classList.toggle("on-red", level === "red");
+  }
+
+  // ── Poll /fleet on interval ─────────────────────────────
+  const POLL_INTERVAL = 2000; // ms
+  pollFleet(); // initial
+  setInterval(pollFleet, POLL_INTERVAL);
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    tickEasing(dt, now / 1000);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  if (reduce) {
+    // static: poll once, draw once, no animation
+    pollFleet().then(() => {
+      // Set eased values to current targets
+      FLEET.forEach(b => { b.util = b.utilTarget || 0; b.revs = (b.utilTarget || 0) / 100 * 8.2; });
+      render();
+    });
+  } else {
+    requestAnimationFrame(frame);
+  }
+})();
+</script>

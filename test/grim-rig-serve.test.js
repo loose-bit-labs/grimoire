@@ -268,3 +268,50 @@ describe('buildSnapshot()', () => {
     }
   })
 })
+
+// ── getFleet() ────────────────────────────────────────────────────────────────
+
+describe('getFleet()', () => {
+  it('returns correct shape with down boxes', async () => {
+    const boxes = [{
+      host: 'nowhere',
+      label: 'nowhere',
+      aliases: ['nowhere'],
+      services: [],
+    }]
+    const fleet = await rig.getFleet(boxes)
+    assert.ok(fleet.boxes)
+    assert.ok(Array.isArray(fleet.boxes))
+    assert.strictEqual(fleet.boxes.length, 1)
+    assert.strictEqual(fleet.boxes[0].name, 'nowhere')
+    assert.strictEqual(fleet.boxes[0].up, false)
+  })
+
+  it('returns up:true with real data for local box', async () => {
+    const hostname = os.hostname().toLowerCase()
+    const boxes = [{
+      host: hostname,
+      label: hostname,
+      aliases: [hostname],
+      services: [],
+    }, {
+      host: 'nonexistent',
+      label: 'nonexistent',
+      aliases: ['nonexistent'],
+      services: [],
+    }]
+    const fleet = await rig.getFleet(boxes)
+    assert.ok(fleet.boxes)
+
+    // Local box should be up (agent running on 127.0.0.1:8001)
+    const local = fleet.boxes.find(b => b.name === hostname)
+    assert.ok(local, 'local box should be in fleet')
+    assert.strictEqual(local.up, true, 'local box should be up')
+    assert.ok(local.vramTotal > 0, 'should have real VRAM total')
+
+    // Nonexistent box should be down
+    const remote = fleet.boxes.find(b => b.name === 'nonexistent')
+    assert.ok(remote, 'nonexistent box should be in fleet')
+    assert.strictEqual(remote.up, false, 'nonexistent box should be down')
+  })
+})

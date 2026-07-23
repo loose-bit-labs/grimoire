@@ -617,6 +617,95 @@ function toPrometheusText(snapshot) {
 /**
  * Start the telemetry serve loop.
  * @param {object} opts
+/**
+ * GET /fleet — server-side fan-out to all rig.json boxes' /status.
+ * Returns { boxes: [{name, util, vramUsed, vramTotal, temp, model, gpu, up}] }.
+ * A down box → up:false, never fails the whole response.
+ */
+function httpGetJson(url, timeout = 2000) {
+  return new Promise(resolve => {
+    const { get } = require('node:http')
+    const timer = setTimeout(() => { resolve(null) }, timeout)
+    get(url, { signal: AbortSignal.timeout(timeout) }, res => {
+      clearTimeout(timer)
+      if (res.statusCode !== 200) return resolve(null)
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)) }
+        catch { resolve(null) }
+      })
+    }).on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
+  })
+}
+
+async function getFleet(boxes) {
+  const results = []
+  for (const box of boxes) {
+    if (box.skip) continue
+    const boxName = box.label || box.host
+    // Find a reachable address for this box
+    let addr = null
+    if (boxName === LOCAL_HOSTNAME) {
+      addr = 'http://127.0.0.1:8001/status'
+    } else {
+      // Try box host on port 8001
+      addr = `http://${boxName}:8001/status`
+    }
+    if (!addr) continue
+
+    try {
+      const data = await httpGetJson(addr, 2000)
+      if (!data || !data.host) throw new Error('no host data')
+
+      const gpu = data.host.gpu || null
+      const vramTotal = gpu ? gpu.vramTotalMb / 1024 : 0
+      const vramUsed = gpu ? gpu.vramUsedMb / 1024 : 0
+      const util = gpu ? gpu.gpuPercent : 0
+      const temp = gpu ? gpu.tempC : 0
+
+      // Find loaded model from services
+      let model = '—'
+      for (const svc of (data.services || [])) {
+        if (svc.models && svc.models.length > 0) {
+          const loaded = svc.models.find(m => m.loaded)
+          if (loaded) { model = loaded.name; break }
+        }
+      }
+
+      results.push({
+        name: boxName,
+        util,
+        vramUsed: Math.round(vramUsed * 10) / 10,
+        vramTotal: Math.round(vramTotal * 10) / 10,
+        temp,
+        model,
+        gpu: gpu ? gpu.model : '—',
+        up: true,
+      })
+    } catch {
+      results.push({ name: boxName, util: 0, vramUsed: 0, vramTotal: 0, temp: 0, model: '—', gpu: '—', up: false })
+    }
+  }
+  return { boxes: results }
+}
+
+/**
+ * Serve a static file from disk.
+ */
+function serveStatic(filePath, contentType) {
+  try {
+    const body = fs.readFileSync(filePath, 'utf8')
+    return { status: 200, contentType, body }
+  } catch {
+    return null
+  }
+}
+
+/**
  * @param {number} opts.port — HTTP listen port
  * @param {number} opts.interval — poll interval in seconds
  * @param {string} opts.listen — bind address
@@ -646,7 +735,7 @@ function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
   poll()
 
   // HTTP server
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     if (req.url === '/status' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(snapshot, null, 2))
@@ -656,6 +745,31 @@ function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
     if (req.url === '/metrics' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end(toPrometheusText(snapshot))
+      return
+    }
+
+    if (req.url === '/cluster' && req.method === 'GET') {
+      const htmlPath = path.join(config.root || __dirname, '..', 'deploy', 'rig-cluster.html')
+      const result = serveStatic(htmlPath, 'text/html; charset=utf-8')
+      if (result) {
+        res.writeHead(result.status, { 'Content-Type': result.contentType })
+        res.end(result.body)
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('cluster page not found\n')
+      }
+      return
+    }
+
+    if (req.url === '/fleet' && req.method === 'GET') {
+      try {
+        const fleet = await getFleet(boxes)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(fleet))
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: e.message }))
+      }
       return
     }
 
@@ -671,6 +785,8 @@ function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
     console.log(`grim rig serve: listening on ${listen}:${port}`)
     console.log(`  /status  — JSON snapshot`)
     console.log(`  /metrics — Prometheus text`)
+    console.log(`  /cluster — instrument cluster (HTML)`)
+    console.log(`  /fleet   — aggregate fleet status (JSON)`)
     console.log(`  poll interval: ${interval}s`)
   })
 
@@ -685,7 +801,7 @@ function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, serve }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
