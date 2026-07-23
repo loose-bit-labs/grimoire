@@ -126,6 +126,26 @@ fail-loud, timeout-bounded); every derived view of the registry is generated.
 | 12 | plans/phase-12.md | `grim rig serve` — `/status` JSON + `/metrics` Prometheus text; systeminformation + service pollers from rig.json; graceful degradation | queued |
 | 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | queued (blocked on 12) |
 
+## Track G — the research brain (phases 14–15)
+
+**Goal:** turn a dropped link/term/note into an understood, filed, project-routed KB
+entity. The acquisition front half that `grim ingest`/`grim crawl` never had. Design
+dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | queued |
+| 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | queued (blocked on 14) |
+
+## Track H — the capture doorbell (phase 16)
+
+**Goal:** drop-to-Discord. A thin `researcher` persona on flimflam forwards drops to
+`grim research`; grimoire owns the brain, flimflam owns the mouth.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | queued (blocked on 14+15) |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
