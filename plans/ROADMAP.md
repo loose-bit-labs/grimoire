@@ -119,12 +119,14 @@ fail-loud, timeout-bounded); every derived view of the registry is generated.
 
 ## Track F — rig telemetry (phases 12–13)
 
-**Goal:** see hot spots across the lab — persistent per-box agent + central scrape.
+**Goal:** see hot spots across the lab — persistent per-box agent, central scrape,
+and a glanceable automotive cockpit.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 12 | plans/phase-12.md | `grim rig serve` — `/status` JSON + `/metrics` Prometheus text; systeminformation + service pollers from rig.json; graceful degradation | ✅ accepted (`plans/reviews/phase-12.md`) |
 | 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | queued |
+| 17 | plans/phase-17.md | `grim rig serve /cluster` — automotive instrument cluster (VRAM=fuel, compute=speedo, load=revs, temp=coolant) + `/fleet` aggregate; live off `/status`, built from approved mockup `plans/assets/rig-cluster-mockup.html` | queued |
 
 ## Track G — the research brain (phases 14–15)
 
