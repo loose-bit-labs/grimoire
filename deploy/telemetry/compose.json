@@ -4,9 +4,7 @@
       "image": "prom/prometheus:v2.55.0",
       "container_name": "grim-prometheus",
       "restart": "unless-stopped",
-      "ports": [
-        "9090:9090"
-      ],
+      "network_mode": "host",
       "volumes": [
         "./prometheus.json:/etc/prometheus/prometheus.yml:ro",
         "prometheus-data:/prometheus"
