@@ -27,16 +27,19 @@ function writeConfig(obj) {
   fs.writeFileSync(REAL_CONFIG, JSON.stringify(obj, null, 2) + '\n')
 }
 
-function captureLog(fn) {
+async function captureLog(fn) {
   const captured = []
   const orig = console.log
   console.log = (...args) => captured.push(args.join(' '))
-  try { fn() } finally { console.log = orig }
+  try {
+    const result = fn()
+    if (result && typeof result.then === 'function') await result
+  } finally { console.log = orig }
   return captured.join('\n')
 }
 
 describe('GrimConfig.gen()', () => {
-  it('gen("hosts") output contains endpoint entries, sorted by service name', () => {
+  it('gen("hosts") output contains endpoint entries, sorted by service name', async () => {
     backupConfig()
     try {
       writeConfig({
@@ -47,7 +50,7 @@ describe('GrimConfig.gen()', () => {
         },
         use: {},
       })
-      const output = captureLog(() => new GrimConfig().gen('hosts'))
+      const output = await captureLog(async () => await new GrimConfig().gen('hosts'))
       const lines = output.trim().split('\n')
       assert.strictEqual(lines.length, 3)
       assert.ok(lines[0].includes('alpha.grim'))
@@ -56,7 +59,7 @@ describe('GrimConfig.gen()', () => {
     } finally { restoreConfig() }
   })
 
-  it('gen("probes") parses as valid JSON, covers all endpoints', () => {
+  it('gen("probes") parses as valid JSON, covers all endpoints', async () => {
     backupConfig()
     try {
       writeConfig({
@@ -66,7 +69,7 @@ describe('GrimConfig.gen()', () => {
         },
         use: {},
       })
-      const output = captureLog(() => new GrimConfig().gen('probes'))
+      const output = await captureLog(() => new GrimConfig().gen('probes'))
       const probes = JSON.parse(output.trim())
       assert.strictEqual(probes.length, 2)
       assert.strictEqual(probes[0].name, 'a1111')
@@ -76,7 +79,7 @@ describe('GrimConfig.gen()', () => {
     } finally { restoreConfig() }
   })
 
-  it('gen("caddy") output has correct structure per endpoint', () => {
+  it('gen("caddy") output has correct structure per endpoint', async () => {
     backupConfig()
     try {
       writeConfig({
@@ -85,7 +88,7 @@ describe('GrimConfig.gen()', () => {
         },
         use: {},
       })
-      const output = captureLog(() => new GrimConfig().gen('caddy'))
+      const output = await captureLog(() => new GrimConfig().gen('caddy'))
       assert.ok(output.includes('svc.grim {'))
       assert.ok(output.includes('reverse_proxy http://10.0.0.1:8080'))
       assert.ok(output.includes('}'))
@@ -111,15 +114,15 @@ describe('GrimConfig.gen()', () => {
     } finally { restoreConfig() }
   })
 
-  it('missing endpoints throws error', () => {
+  it('missing endpoints throws error', async () => {
     backupConfig()
     try {
       writeConfig({ use: {} })
-      assert.throws(() => new GrimConfig().gen('hosts'), /endpoints/)
+      await assert.rejects(() => new GrimConfig().gen('hosts'), /endpoints/)
     } finally { restoreConfig() }
   })
 
-  it('hosts resolves hostnames to IPs when possible', () => {
+  it('hosts resolves localhost to 127.0.0.1', async () => {
     backupConfig()
     try {
       writeConfig({
@@ -128,8 +131,10 @@ describe('GrimConfig.gen()', () => {
         },
         use: {},
       })
-      const output = captureLog(() => new GrimConfig().gen('hosts'))
-      assert.ok(output.includes('127.0.0.1') || output.includes('localhost'))
+      const output = await captureLog(async () => await new GrimConfig().gen('hosts'))
+      // dns.promises.lookup('localhost') should return 127.0.0.1
+      assert.ok(output.includes('127.0.0.1') || output.match(/\d+\.\d+\.\d+\.\d+/),
+        `expected IP address in output: ${output}`)
     } finally { restoreConfig() }
   })
 })

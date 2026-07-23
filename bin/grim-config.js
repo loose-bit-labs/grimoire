@@ -116,7 +116,7 @@ class GrimConfig {
    * Generate derived views from the config registry.
    * @param {string} format — 'hosts', 'probes', or 'caddy'
    */
-  gen(format) {
+  async gen(format) {
     const cfg = this._loadConfig()
     const endpoints = cfg.endpoints
 
@@ -139,28 +139,31 @@ class GrimConfig {
    * Generate /etc/hosts-style block.
    * @param {object} endpoints
    */
-  _genHosts(endpoints) {
-    const lines = []
-    for (const [key, url] of Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))) {
-      const parsed = new URL(url)
-      const host = parsed.hostname
-      // Resolve hostname to IP if it looks like a hostname (not an IP literal)
-      const ip = this._resolveHost(host)
-      lines.push(`${ip} ${key}.grim`)
-    }
+  async _genHosts(endpoints) {
+    const entries = Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))
+    const dns = require('node:dns').promises
+    const lines = await Promise.all(
+      entries.map(async ([key, url]) => {
+        const parsed = new URL(url)
+        const host = parsed.hostname
+        // Resolve hostname to IP if it looks like a hostname (not an IP literal)
+        const ip = await this._resolveHost(dns, host)
+        return `${ip} ${key}.grim`
+      })
+    )
     console.log(lines.join('\n'))
   }
 
   /**
    * Resolve a hostname to an IP address. Returns the input if resolution fails.
+   * @param {object} dns — require('node:dns').promises
    * @param {string} hostname
-   * @returns {string}
+   * @returns {Promise<string>}
    */
-  _resolveHost(hostname) {
+  async _resolveHost(dns, hostname) {
     try {
-      const dns = require('node:dns')
-      const result = dns.lookup(hostname, { all: false })
-      return result || hostname
+      const { address } = await dns.lookup(hostname)
+      return address || hostname
     } catch {
       return hostname
     }
