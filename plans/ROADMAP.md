@@ -123,8 +123,8 @@ fail-loud, timeout-bounded); every derived view of the registry is generated.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 12 | plans/phase-12.md | `grim rig serve` — `/status` JSON + `/metrics` Prometheus text; systeminformation + service pollers from rig.json; graceful degradation | queued |
-| 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | queued (blocked on 12) |
+| 12 | plans/phase-12.md | `grim rig serve` — `/status` JSON + `/metrics` Prometheus text; systeminformation + service pollers from rig.json; graceful degradation | ✅ accepted (`plans/reviews/phase-12.md`) |
+| 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | queued |
 
 ## Track G — the research brain (phases 14–15)
 
