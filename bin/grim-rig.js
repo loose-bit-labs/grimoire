@@ -262,7 +262,430 @@ async function status({ json = false } = {}) {
   display(results, elapsed)
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices }
+// ── Serve — resident telemetry agent ──────────────────────────────────────────
+
+const http      = require('node:http')
+const si        = require('systeminformation')
+
+// Well-known ports per service type (used when rig.json doesn't specify one)
+const WELL_KNOWN_PORT = { ollama: 11434, llama_cpp: 8080, a1111: 7860, comfyui: 8188 }
+
+/**
+ * Normalize a service name from rig.json to a canonical type.
+ * Handles common aliases: "comfy" → "comfyui", "a1111" → "a1111", etc.
+ */
+function serviceType(name) {
+  const n = name.toLowerCase().replace(/[-_]/g, '')
+  if (n === 'comfyui' || n === 'comfy' || n === 'comfy') return 'comfyui'
+  if (n === 'a1111' || n === 'automatic1111' || n === 'auto1111') return 'a1111'
+  if (n === 'ollama') return 'ollama'
+  if (n === 'llamacpp' || n === 'llamacpp' || n === 'llamacpp') return 'llama_cpp'
+  return null // unknown type — can't build metrics endpoint
+}
+
+/**
+ * Build the metrics endpoint URL for a known service type.
+ */
+function metricsUrl(base, type) {
+  switch (type) {
+    case 'ollama':     return `${base}/api/ps`
+    case 'llama_cpp':  return `${base}/slots`
+    case 'a1111':      return `${base}/sdapi/v1/memory`
+    case 'comfyui':    return `${base}/system_stats`
+    default:           return null
+  }
+}
+
+/**
+ * Parse rocm-smi text output for GPU% and temp.
+ * Returns { gpuPct, temp } or null on failure.
+ */
+function parseRocmSmi(text) {
+  try {
+    // Match the data line: Device Node IDs Temp Power ... VRAM% GPU%
+    const line = text.split('\n').find(l => l.match(/^\d+\s+\d+\s+0x/))
+    if (!line) return null
+    // Extract temp: number followed by °C
+    const tempMatch = line.match(/(\d+(?:\.\d+)?)°C/)
+    // GPU% is the last numeric value before any formatting codes
+    const clean = line.replace(/\x1b\[[^a-zA-Z]*[a-zA-Z]/g, '').trim()
+    const nums = clean.match(/(\d+(?:\.\d+)?)%/g)
+    if (!nums || nums.length < 2) return null
+    // Last % is GPU%, second-to-last is VRAM%
+    const gpuPct = parseFloat(nums[nums.length - 1])
+    const temp = tempMatch ? parseFloat(tempMatch[1]) : null
+    if (isNaN(gpuPct)) return null
+    return { gpuPct, temp: isNaN(temp) ? null : temp }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Run rocm-smi and parse GPU metrics. Graceful degradation.
+ */
+async function getGpuMetricsFallback() {
+  return new Promise(resolve => {
+    const { exec } = require('node:child_process')
+    exec('rocm-smi 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout) return resolve(null)
+      resolve(parseRocmSmi(stdout))
+    })
+  })
+}
+
+/**
+ * Poll a single service's metrics endpoint.
+ * Returns { up, models, vram, queue, running } or null on failure.
+ */
+async function pollService(url, type, timeout = 2000) {
+  return new Promise(resolve => {
+    const { get } = require('node:http')
+    const timer = setTimeout(() => { resolve(null) }, timeout)
+    get(url, { signal: AbortSignal.timeout(timeout) }, res => {
+      clearTimeout(timer)
+      if (res.statusCode !== 200) return resolve(null)
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body)
+          resolve(parseServiceMetrics(data, type))
+        } catch {
+          resolve(null)
+        }
+      })
+    }).on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
+  })
+}
+
+/**
+ * Parse raw JSON response into normalized service metrics.
+ */
+function parseServiceMetrics(data, type) {
+  switch (type) {
+    case 'ollama': {
+      const models = []
+      if (data.models) {
+        for (const m of data.models) {
+          models.push({ name: m.model, vram: m.total_vram || 0, loaded: true })
+        }
+      } else if (data.models === undefined) {
+        // /api/ps may return { "models": [...] } or just {}
+        // Also check top-level for single-model response
+        if (data.model) {
+          models.push({ name: data.model, vram: data.total_vram || 0, loaded: true })
+        }
+      }
+      return { models, queue: 0, running: models.length }
+    }
+    case 'comfyui': {
+      // system_stats returns { GPU: [{ ... }] } or { memory: {...}, ... }
+      const models = []
+      const queue = data.queue_pending || 0
+      const running = data.queue_running || 0
+      if (data.GPU) {
+        for (const g of data.GPU) {
+          if (g.allocated && g.total) {
+            models.push({ name: g.name || 'gpu', vram: g.allocated, loaded: true })
+          }
+        }
+      }
+      return { models, vramUsed: data.GPU?.[0]?.allocated, vramTotal: data.GPU?.[0]?.total, queue, running }
+    }
+    case 'a1111': {
+      // /sdapi/v1/memory returns { vram: { total, allocated, swapped } }
+      const models = []
+      const vram = data.vram || {}
+      return { models, vramUsed: vram.allocated, vramTotal: vram.total, queue: 0, running: 0 }
+    }
+    case 'llama_cpp': {
+      // /slots returns array of slot objects
+      const slots = Array.isArray(data) ? data : []
+      const models = []
+      let running = 0
+      let queue = 0
+      for (const s of slots) {
+        if (s.prompt) {
+          models.push({ name: s.prompt?.slice(0, 60) || 'unknown', vram: 0, loaded: true })
+          running++
+        } else if (s.idling) {
+          // idle slot — may have a model loaded
+          if (s.model_path) {
+            models.push({ name: s.model_path.split('/').pop() || 'unknown', vram: 0, loaded: true })
+          }
+        }
+      }
+      return { models, queue, running }
+    }
+    default:
+      return { models: [], queue: 0, running: 0 }
+  }
+}
+
+/**
+ * Build the snapshot of host + service metrics.
+ * Called by the poller loop; never blocks HTTP responses.
+ */
+async function buildSnapshot(boxes) {
+  const hostname = os.hostname().toLowerCase()
+
+  // Find local box entry
+  const localBox = boxes.find(b => {
+    if (b.skip) return false
+    return (b.aliases || []).includes(hostname) || b.host === hostname || b.label === hostname
+  })
+
+  const services = []
+  if (localBox) {
+    for (const svc of localBox.services || []) {
+      const type = serviceType(svc.name)
+      if (!type) continue // unknown service type — skip metrics
+
+      const port = svc.port || WELL_KNOWN_PORT[type] || 0
+      if (!port) continue
+
+      const base = `http://127.0.0.1:${port}`
+      const endpoint = metricsUrl(base, type)
+      if (!endpoint) continue
+
+      const [svcMetrics] = await Promise.all([
+        pollService(endpoint, type, 200),
+      ])
+
+      services.push({
+        name: svc.name,
+        up: svcMetrics !== null,
+        type,
+        models: svcMetrics?.models || [],
+        vramUsed: svcMetrics?.vramUsed,
+        vramTotal: svcMetrics?.vramTotal,
+        queue: svcMetrics?.queue || 0,
+        running: svcMetrics?.running || 0,
+      })
+    }
+  }
+
+  // Host metrics
+  let cpuLoad = 0
+  let memUsed = 0
+  let memTotal = 0
+  let gpuInfo = null
+  let gpuFallback = null
+
+  try {
+    const [load, mem, graphics] = await Promise.all([
+      si.currentLoad().catch(() => null),
+      si.mem().catch(() => null),
+      si.graphics().catch(() => null),
+    ])
+
+    if (load && load.currentLoadEnabled) cpuLoad = load.currentLoad
+    if (mem) { memUsed = mem.used; memTotal = mem.total }
+    if (graphics && graphics.controllers && graphics.controllers.length > 0) {
+      gpuInfo = graphics.controllers[0]
+    }
+  } catch { /* graceful degradation — host metrics may be partial */ }
+
+  // AMD GPU fallback for utilization/temp
+  if (gpuInfo && (gpuInfo.vendor || '').includes('AMD')) {
+    gpuFallback = await getGpuMetricsFallback()
+  }
+
+  let diskUsedPct = 0
+  try {
+    const fs = await si.fsSize().catch(() => [])
+    if (fs && fs.length > 0) {
+      const root = fs.find(f => f.mount === '/') || fs[0]
+      if (root) diskUsedPct = root.use || 0
+    }
+  } catch { /* graceful degradation */ }
+
+  return {
+    host: {
+      hostname,
+      cpuPercent: Math.round(cpuLoad * 100) / 100,
+      memUsedMb: Math.round(memUsed / 1024 / 1024),
+      memTotalMb: Math.round(memTotal / 1024 / 1024),
+      diskUsedPercent: Math.round(diskUsedPct * 100) / 100,
+      gpu: gpuInfo ? {
+        vendor: gpuInfo.vendor,
+        model: gpuInfo.model,
+        vramTotalMb: gpuInfo.vram,
+        vramUsedMb: gpuFallback?.gpuPct ? Math.round(gpuInfo.vram * gpuFallback.gpuPct / 100) : null,
+        gpuPercent: gpuFallback?.gpuPct || null,
+        tempC: gpuFallback?.temp || null,
+      } : null,
+    },
+    services,
+    lastUpdated: new Date().toISOString(),
+  }
+}
+
+/**
+ * Convert snapshot to Prometheus text format.
+ */
+function toPrometheusText(snapshot) {
+  const lines = []
+  const h = snapshot.host
+  const node = h.hostname
+
+  // Host metrics
+  lines.push(`# HELP gen_host_cpu_percent Current CPU utilization percentage`)
+  lines.push(`# TYPE gen_host_cpu_percent gauge`)
+  lines.push(`gen_host_cpu_percent{node="${node}"} ${h.cpuPercent}`)
+
+  lines.push(`# HELP gen_host_mem_used_mb Used memory in megabytes`)
+  lines.push(`# TYPE gen_host_mem_used_mb gauge`)
+  lines.push(`gen_host_mem_used_mb{node="${node}"} ${h.memUsedMb}`)
+
+  lines.push(`# HELP gen_host_mem_total_mb Total memory in megabytes`)
+  lines.push(`# TYPE gen_host_mem_total_mb gauge`)
+  lines.push(`gen_host_mem_total_mb{node="${node}"} ${h.memTotalMb}`)
+
+  lines.push(`# HELP gen_host_disk_used_percent Disk usage percentage`)
+  lines.push(`# TYPE gen_host_disk_used_percent gauge`)
+  lines.push(`gen_host_disk_used_percent{node="${node}"} ${h.diskUsedPercent}`)
+
+  // GPU metrics
+  if (h.gpu) {
+    const g = h.gpu
+    lines.push(`# HELP gen_gpu_vram_total_mb Total GPU VRAM in megabytes`)
+    lines.push(`# TYPE gen_gpu_vram_total_mb gauge`)
+    lines.push(`gen_gpu_vram_total_mb{node="${node}"} ${g.vramTotalMb}`)
+
+    if (g.vramUsedMb != null) {
+      lines.push(`# HELP gen_gpu_vram_used_mb Used GPU VRAM in megabytes`)
+      lines.push(`# TYPE gen_gpu_vram_used_mb gauge`)
+      lines.push(`gen_gpu_vram_used_mb{node="${node}"} ${g.vramUsedMb}`)
+    }
+
+    if (g.gpuPercent != null) {
+      lines.push(`# HELP gen_gpu_util_percent GPU utilization percentage`)
+      lines.push(`# TYPE gen_gpu_util_percent gauge`)
+      lines.push(`gen_gpu_util_percent{node="${node}"} ${g.gpuPercent}`)
+    }
+
+    if (g.tempC != null) {
+      lines.push(`# HELP gen_gpu_temp_c GPU temperature in Celsius`)
+      lines.push(`# TYPE gen_gpu_temp_c gauge`)
+      lines.push(`gen_gpu_temp_c{node="${node}"} ${g.tempC}`)
+    }
+  }
+
+  // Service metrics
+  for (const svc of snapshot.services) {
+    const label = svc.name
+    const svcNode = node
+
+    // Service up gauge
+    lines.push(`# HELP gen_service_up Whether the service is reachable`)
+    lines.push(`# TYPE gen_service_up gauge`)
+    lines.push(`gen_service_up{node="${svcNode}",service="${label}"} ${svc.up ? 1 : 0}`)
+
+    // Queue pending
+    lines.push(`# HELP gen_queue_pending Pending jobs in service queue`)
+    lines.push(`# TYPE gen_queue_pending gauge`)
+    lines.push(`gen_queue_pending{node="${svcNode}",service="${label}"} ${svc.queue}`)
+
+    // Running count
+    lines.push(`# HELP gen_requests_running Currently running jobs`)
+    lines.push(`# TYPE gen_requests_running gauge`)
+    lines.push(`gen_requests_running{node="${svcNode}",service="${label}"} ${svc.running}`)
+
+    // Per-model metrics
+    for (const m of svc.models) {
+      const modelName = m.name.replace(/"/g, '\\"')
+      lines.push(`# HELP gen_model_loaded Whether a model is loaded in this service`)
+      lines.push(`# TYPE gen_model_loaded gauge`)
+      lines.push(`gen_model_loaded{node="${svcNode}",service="${label}",model="${modelName}"} 1`)
+
+      if (m.vram) {
+        lines.push(`# HELP gen_model_vram_mb VRAM used by a loaded model`)
+        lines.push(`# TYPE gen_model_vram_mb gauge`)
+        lines.push(`gen_model_vram_mb{node="${svcNode}",service="${label}",model="${modelName}"} ${m.vram}`)
+      }
+    }
+  }
+
+  return lines.join('\n') + '\n'
+}
+
+/**
+ * Start the telemetry serve loop.
+ * @param {object} opts
+ * @param {number} opts.port — HTTP listen port
+ * @param {number} opts.interval — poll interval in seconds
+ * @param {string} opts.listen — bind address
+ * @param {object} opts.boxes — loaded rig.json boxes
+ * @returns {object} — { server, stop }
+ */
+function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
+  let snapshot = {
+    host: { hostname: os.hostname().toLowerCase(), cpuPercent: 0, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0, gpu: null },
+    services: [],
+    lastUpdated: null,
+  }
+
+  // Background poller loop
+  let running = true
+  const poll = async () => {
+    while (running) {
+      try {
+        snapshot = await buildSnapshot(boxes)
+      } catch (e) {
+        // Never crash the server on poll failure
+        process.stderr.write(`grim rig serve: poll error: ${e.message}\n`)
+      }
+      await new Promise(r => setTimeout(r, interval * 1000))
+    }
+  }
+  poll()
+
+  // HTTP server
+  const server = http.createServer((req, res) => {
+    if (req.url === '/status' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(snapshot, null, 2))
+      return
+    }
+
+    if (req.url === '/metrics' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end(toPrometheusText(snapshot))
+      return
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('not found\n')
+  })
+
+  server.on('error', (e) => {
+    process.stderr.write(`grim rig serve: server error: ${e.message}\n`)
+  })
+
+  server.listen(port, listen, () => {
+    console.log(`grim rig serve: listening on ${listen}:${port}`)
+    console.log(`  /status  — JSON snapshot`)
+    console.log(`  /metrics — Prometheus text`)
+    console.log(`  poll interval: ${interval}s`)
+  })
+
+  return {
+    server,
+    stop() {
+      running = false
+      return new Promise(resolve => server.close(resolve))
+    },
+    // Expose snapshot for testing
+    getSnapshot() { return snapshot },
+  }
+}
+
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, serve }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -280,15 +703,20 @@ async function main() {
   Usage: grim rig [status] [--json]
          grim rig up <service> [--box <name>]
          grim rig down <service> [--box <name>]
+         grim rig serve [--port 8001] [--interval 5] [--listen 127.0.0.1]
 
   Subcommands:
     status (default)   Show VRAM + service status for all boxes
     up <service>       systemctl start <service>
     down <service>     systemctl stop <service>
+    serve              Start resident telemetry agent (/status + /metrics)
 
   Options:
     --box <name>   Target a specific box (required when service is on multiple boxes)
     --json         Machine-readable status output
+    --port <n>     HTTP port for serve (default: 8001)
+    --interval <s> Poll interval in seconds for serve (default: 5)
+    --listen <addr> Bind address for serve (default: 127.0.0.1)
 
   Config:
     $GRIMOIRE_ROOT/rig.json — box inventory (copy from rig.example.json)
@@ -303,6 +731,15 @@ async function main() {
 
   if (sub === 'status') {
     await status({ json: args.json })
+    return
+  }
+
+  if (sub === 'serve') {
+    const port    = parseInt(args.port, 10) || 8001
+    const interval = parseInt(args.interval, 10) || 5
+    const listen  = args.listen || '127.0.0.1'
+    const boxes   = loadBoxes()
+    serve({ port, interval, listen, boxes })
     return
   }
 

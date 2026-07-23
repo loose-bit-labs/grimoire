@@ -4,8 +4,8 @@
     "label": "gpu-box-1",
     "aliases": ["gpu-box-1"],
     "services": [
-      { "name": "ollama",  "check": "curl -sf --max-time 3 http://localhost:11434/ >/dev/null 2>&1 && echo OK || echo FAIL" },
-      { "name": "comfyui", "check": "curl -sf --max-time 4 http://localhost:8188/system_stats >/dev/null 2>&1 && echo OK || echo FAIL" },
+      { "name": "ollama",  "port": 11434, "check": "curl -sf --max-time 3 http://localhost:11434/ >/dev/null 2>&1 && echo OK || echo FAIL" },
+      { "name": "comfyui", "port": 8188,  "check": "curl -sf --max-time 4 http://localhost:8188/system_stats >/dev/null 2>&1 && echo OK || echo FAIL" },
       { "name": "script-svc", "check": "pgrep -f script-svc >/dev/null 2>&1 && echo OK || echo FAIL",
         "start": "/path/to/start.sh", "stop": "pkill -f script-svc" }
     ]
@@ -15,7 +15,7 @@
     "label": "gpu-box-2",
     "aliases": ["gpu-box-2"],
     "services": [
-      { "name": "a1111",   "check": "curl -sf --max-time 4 http://localhost:7860/ >/dev/null 2>&1 && echo OK || echo FAIL" },
+      { "name": "a1111",   "port": 7860,  "check": "curl -sf --max-time 4 http://localhost:7860/ >/dev/null 2>&1 && echo OK || echo FAIL" },
       { "name": "whisper", "check": "curl -sf --max-time 3 http://localhost:9000/ >/dev/null 2>&1 && echo OK || echo FAIL" }
     ]
   },
