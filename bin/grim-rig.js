@@ -483,7 +483,7 @@ async function buildSnapshot(boxes) {
       si.graphics().catch(() => null),
     ])
 
-    if (load && load.currentLoadEnabled) cpuLoad = load.currentLoad
+    if (load) cpuLoad = load.currentLoad
     if (mem) { memUsed = mem.used; memTotal = mem.total }
     if (graphics && graphics.controllers && graphics.controllers.length > 0) {
       gpuInfo = graphics.controllers[0]
