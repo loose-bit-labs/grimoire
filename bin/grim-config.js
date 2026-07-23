@@ -28,9 +28,17 @@ const CACHE_PATH        = path.join(os.homedir(), '.config', 'lbl-config.json')
 
 class GrimConfig {
 
-  // ── local fallback ────────────────────────────────────────────────────────────
+  // ── config loading ────────────────────────────────────────────────────────────
 
   _loadLocal() {
+    return this._loadConfig()
+  }
+
+  /**
+   * Parse and validate the local config file.
+   * @returns {object}
+   */
+  _loadConfig() {
     let parsed
     try {
       parsed = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'))
@@ -102,6 +110,86 @@ class GrimConfig {
     return changed
   }
 
+  // ── gen ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Generate derived views from the config registry.
+   * @param {string} format — 'hosts', 'probes', or 'caddy'
+   */
+  gen(format) {
+    const cfg = this._loadConfig()
+    const endpoints = cfg.endpoints
+
+    if (!endpoints || typeof endpoints !== 'object' || Object.keys(endpoints).length === 0) {
+      console.error('Error: no endpoints defined in config')
+      process.exit(1)
+    }
+
+    switch (format) {
+      case 'hosts': return this._genHosts(endpoints)
+      case 'probes': return this._genProbes(endpoints)
+      case 'caddy': return this._genCaddy(endpoints)
+      default:
+        console.error(`Usage: grim config gen <hosts|probes|caddy>`)
+        process.exit(1)
+    }
+  }
+
+  /**
+   * Generate /etc/hosts-style block.
+   * @param {object} endpoints
+   */
+  _genHosts(endpoints) {
+    const lines = []
+    for (const [key, url] of Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))) {
+      const parsed = new URL(url)
+      const host = parsed.hostname
+      // Resolve hostname to IP if it looks like a hostname (not an IP literal)
+      const ip = this._resolveHost(host)
+      lines.push(`${ip} ${key}.grim`)
+    }
+    console.log(lines.join('\n'))
+  }
+
+  /**
+   * Resolve a hostname to an IP address. Returns the input if resolution fails.
+   * @param {string} hostname
+   * @returns {string}
+   */
+  _resolveHost(hostname) {
+    try {
+      const dns = require('node:dns')
+      const result = dns.lookup(hostname, { all: false })
+      return result || hostname
+    } catch {
+      return hostname
+    }
+  }
+
+  /**
+   * Generate JSON probe list.
+   * @param {object} endpoints
+   */
+  _genProbes(endpoints) {
+    const probes = []
+    for (const [key, url] of Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))) {
+      probes.push({ name: key, url })
+    }
+    console.log(JSON.stringify(probes, null, 2))
+  }
+
+  /**
+   * Generate Caddyfile text.
+   * @param {object} endpoints
+   */
+  _genCaddy(endpoints) {
+    const blocks = []
+    for (const [key, url] of Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))) {
+      blocks.push(`${key}.grim {\n    reverse_proxy ${url}\n}`)
+    }
+    console.log(blocks.join('\n\n'))
+  }
+
   // ── CLI ───────────────────────────────────────────────────────────────────────
 
   async main() {
@@ -110,8 +198,13 @@ class GrimConfig {
 
     if (sub === 'get')  return this.get(args._[1])
     if (sub === 'sync') return this.sync()
+    if (sub === 'gen')  return this.gen(args._[1])
 
-    console.error('Usage: grim config <get [<path>]|sync>')
+    // Direct invocation: `node bin/grim-config.js gen <format>` (no 'config' token)
+    const knownFormats = ['hosts', 'probes', 'caddy']
+    if (knownFormats.includes(sub)) return this.gen(sub)
+
+    console.error('Usage: grim config <get [<path>]|sync|gen <hosts|probes|caddy>>')
     process.exit(1)
   }
 }
