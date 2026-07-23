@@ -114,8 +114,8 @@ fail-loud, timeout-bounded); every derived view of the registry is generated.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 10 | plans/phase-10.md | `lib/service-client.js` base class + ner/a1111 clients migrated (export shapes unchanged; comfy-client explicitly excluded) | queued |
-| 11 | plans/phase-11.md | `grim config gen hosts\|probes\|caddy` — deterministic generated views of lbl-config, stdout only | queued |
+| 10 | plans/phase-10.md | `lib/service-client.js` base class + ner/a1111 clients migrated (export shapes unchanged; comfy-client explicitly excluded) | ✅ accepted in-thread — archive pending |
+| 11 | plans/phase-11.md | `grim config gen hosts\|probes\|caddy` — deterministic generated views of lbl-config, stdout only | ✅ accepted in-thread (`.mm/0045`) — archive pending |
 
 ## Track F — rig telemetry (phases 12–13)
 
