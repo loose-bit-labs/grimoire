@@ -66,5 +66,66 @@ describe('acquireUrl()', () => {
   it('returns fetch-failed for unreachable URLs', async () => {
     const result = await rig.acquireUrl({ url: 'http://127.0.0.1:1/nonexistent' })
     assert.strictEqual(result.text, '[fetch failed]')
+    assert.strictEqual(result.failed, true)
+  })
+})
+
+// ── isRedditShortlink() ─────────────────────────────────────────────────────────
+
+describe('isRedditShortlink()', () => {
+  it('matches old-style redd.it shortlinks', () => {
+    assert.strictEqual(rig.isRedditShortlink('https://redd.it/xyz123'), true)
+  })
+
+  it('matches the newer reddit.com/r/.../s/... mobile-share shortlinks', () => {
+    assert.strictEqual(
+      rig.isRedditShortlink('https://www.reddit.com/r/StableDiffusion/s/dFWbqaAlgL'),
+      true,
+    )
+  })
+
+  it('does not match a full comments URL (no redirect needed)', () => {
+    assert.strictEqual(
+      rig.isRedditShortlink('https://www.reddit.com/r/LocalLLaMA/comments/abc/some_title/'),
+      false,
+    )
+  })
+})
+
+// ── acquireReddit() ──────────────────────────────────────────────────────────────
+
+describe('acquireReddit()', () => {
+  it('marks failed:true when the API fetch fails', async () => {
+    const result = await rig.acquireReddit({ url: 'http://127.0.0.1:1/r/x/comments/y' })
+    assert.strictEqual(result.text, '[fetch failed]')
+    assert.strictEqual(result.failed, true)
+  })
+})
+
+// ── buildCseUrl() ──────────────────────────────────────────────────────────────
+
+describe('buildCseUrl()', () => {
+  it('builds the Google Custom Search endpoint shape with key, cx and query', () => {
+    const url = rig.buildCseUrl('ZLUDA', { key: 'fake-key-123', cx: 'fake-cx-456' })
+    assert.match(url, /^https:\/\/www\.googleapis\.com\/customsearch\/v1\?/)
+    assert.match(url, /key=fake-key-123/)
+    assert.match(url, /cx=fake-cx-456/)
+    assert.match(url, /q=ZLUDA/)
+    assert.match(url, /num=1/)
+  })
+
+  it('URL-encodes multi-word terms in the query', () => {
+    const url = rig.buildCseUrl('vector database benchmark', { key: 'k', cx: 'c' })
+    assert.match(url, /q=vector%20database%20benchmark/)
+  })
+})
+
+// ── researchDrop() failure handling ───────────────────────────────────────────
+
+describe('researchDrop() acquisition failure', () => {
+  it('skips the model judge and files a plain stub when acquisition fails', async () => {
+    const result = await rig.researchDrop('http://127.0.0.1:1/nonexistent', { dryRun: true, json: true })
+    assert.strictEqual(result.acquisitionFailed, true)
+    assert.match(result.digest, /Could not acquire content/)
   })
 })

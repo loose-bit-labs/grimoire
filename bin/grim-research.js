@@ -34,10 +34,13 @@ const { config, isLocal, resolveGoogleCseKeys } = require('../lib/env')
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
+// Reddit (and some other sites) 403 requests with no User-Agent header at all.
+const USER_AGENT = 'grim-research/1.0 (grimoire link-backlog research tool)'
+
 function httpGet(url, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http
-    const req = mod.get(url, { signal: AbortSignal.timeout(timeout) }, res => {
+    const req = mod.get(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(timeout) }, res => {
       let body = ''
       res.on('data', c => { body += c })
       res.on('end', () => {
@@ -136,13 +139,16 @@ async function checkDedup(query) {
 }
 
 // Export for testing
-module.exports = { classify, checkDedup, acquire, acquireUrl, researchDrop }
+module.exports = {
+  classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
+  isRedditShortlink, buildCseUrl,
+}
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
 
 async function acquireUrl(info) {
   const html = await httpGet(info.url, 15000)
-  if (!html) return { title: info.url, text: '[fetch failed]' }
+  if (!html) return { title: info.url, text: '[fetch failed]', failed: true }
 
   // Try to extract title
   let title = info.url
@@ -153,34 +159,47 @@ async function acquireUrl(info) {
   return { title, text }
 }
 
+// Both old-style shortlinks (redd.it/xyz) and the newer mobile-share links
+// (reddit.com/r/.../s/xyz) 302-redirect to the real post and need resolving
+// before `.json` can be appended — appending it to the shortlink itself is
+// not a valid API path and silently fails.
+function isRedditShortlink(url) {
+  return /^https?:\/\/(www\.)?redd\.it\//i.test(url) ||
+    /^https?:\/\/(www\.)?reddit\.com\/r\/[^/]+\/s\//i.test(url)
+}
+
+function resolveRedirect(url, timeout = 5000) {
+  return new Promise(resolve => {
+    const req = https.get(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(timeout) }, res => {
+      res.resume() // discard body, we only want the Location header
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        resolve(res.headers.location)
+      } else {
+        resolve(url)
+      }
+    })
+    req.on('error', () => resolve(url))
+  })
+}
+
 async function acquireReddit(info) {
-  // Convert Reddit URL to JSON API endpoint
   let apiUrl = info.url
-  if (/redd\.it\//i.test(apiUrl)) {
-    // Shortlink — resolve redirect first
-    const resolved = await httpGet(apiUrl, 5000)
-    if (resolved) {
-      // Redirect response body won't have the URL, use the original
-      // We need to follow redirects manually to get the final URL
-      const mod = https
-      const req = mod.get(apiUrl, { maxRedirects: 5 }, res => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          apiUrl = res.headers.location
-        }
-      })
-      await new Promise(r => { req.on('close', r) })
-    }
+  if (isRedditShortlink(apiUrl)) {
+    apiUrl = await resolveRedirect(apiUrl)
   }
-  // Append .json for Reddit API
-  apiUrl = apiUrl.replace(/\/?$/, '/.json')
+  // Append .json for Reddit API — must land before any query string (shortlink
+  // redirects carry share-tracking params like ?share_id=...&utm_term=1), or
+  // Reddit serves its HTML bot-check page instead of the JSON API response.
+  const [pathPart, queryPart] = apiUrl.split('?')
+  apiUrl = pathPart.replace(/\/?$/, '/.json') + (queryPart ? `?${queryPart}` : '')
 
   const json = await httpGet(apiUrl, 15000)
-  if (!json) return { title: 'Reddit post', text: '[fetch failed]' }
+  if (!json) return { title: 'Reddit post', text: '[fetch failed]', failed: true }
 
   try {
     const data = JSON.parse(json)
     const post = data[0]?.data?.children?.[0]?.data
-    if (!post) return { title: 'Reddit post', text: '[parse failed]' }
+    if (!post) return { title: 'Reddit post', text: '[parse failed]', failed: true }
 
     const title = post.title || 'Untitled Reddit post'
     const selftext = post.selftext || ''
@@ -194,8 +213,12 @@ async function acquireReddit(info) {
 
     return { title, text: [selftext, comments].filter(Boolean).join('\n\n') }
   } catch {
-    return { title: 'Reddit post', text: '[parse failed]' }
+    return { title: 'Reddit post', text: '[parse failed]', failed: true }
   }
+}
+
+function buildCseUrl(term, keys) {
+  return `https://www.googleapis.com/customsearch/v1?key=${keys.key}&cx=${keys.cx}&q=${encodeURIComponent(term)}&num=1`
 }
 
 async function acquireTerm(info) {
@@ -203,7 +226,7 @@ async function acquireTerm(info) {
 
   if (keys && keys.key && keys.cx) {
     // Google Custom Search JSON API
-    const cseUrl = `https://www.googleapis.com/customsearch/v1?key=${keys.key}&cx=${keys.cx}&q=${encodeURIComponent(info.term)}&num=1`
+    const cseUrl = buildCseUrl(info.term, keys)
     const json = await httpGet(cseUrl, 15000)
     if (json) {
       try {
@@ -213,9 +236,9 @@ async function acquireTerm(info) {
           // Fetch the top result's text
           const topUrl = items[0].link
           const html = await httpGet(topUrl, 15000)
-          const text = html ? extractText(html) : '[no content]'
           const title = items[0].title || info.term
-          return { title, text }
+          if (!html) return { title, text: '[no content]', failed: true }
+          return { title, text: extractText(html) }
         }
       } catch { /* CSE parse failed, fall through to DDG */ }
     }
@@ -223,12 +246,12 @@ async function acquireTerm(info) {
 
   // DuckDuckGo HTML scrape fallback
   const ddgHtml = await httpGet(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(info.term)}`, 15000)
-  if (!ddgHtml) return { title: info.term, text: '[search failed]' }
+  if (!ddgHtml) return { title: info.term, text: '[search failed]', failed: true }
 
   // Extract first result URL from DDG HTML
   // DDG wraps URLs in redirect links: //duckduckgo.com/l/?uddg=...
   const urlMatch = ddgHtml.match(/class="result__a"[^>]*href="([^"]+)"/)
-  if (!urlMatch) return { title: info.term, text: '[no results]' }
+  if (!urlMatch) return { title: info.term, text: '[no results]', failed: true }
 
   let topUrl = urlMatch[1]
   // Handle protocol-relative redirect URLs
@@ -241,8 +264,8 @@ async function acquireTerm(info) {
     }
   }
   const html = await httpGet(topUrl, 15000)
-  const text = html ? extractText(html) : '[no content]'
-  return { title: info.term, text }
+  if (!html) return { title: info.term, text: '[no content]', failed: true }
+  return { title: info.term, text: extractText(html) }
 }
 
 async function acquire(classification, projectOverride) {
@@ -266,6 +289,26 @@ Given the original drop and acquired text, output a JSON object with:
 - "digest": a one-paragraph summary of why this matters and what it is
 
 Return ONLY valid JSON. No markdown, no commentary.`
+
+// Acquisition genuinely failed (fetch/parse error, no results) — don't hand
+// placeholder text like "[fetch failed]" to the judge as if it were real
+// content; the model will narrate fluently around missing data and produce
+// a plausible-looking digest for something that was never actually read.
+function stubJudgment(drop, classification, acquired) {
+  const today = new Date().toISOString().slice(0, 10)
+  return {
+    type: 'DefinedTerm',
+    // Always key off the actual drop, never acquired.title — on failure,
+    // title is either absent or a generic placeholder ("Reddit post"),
+    // and two different failed drops of the same type would otherwise
+    // collide onto the same entity and silently overwrite each other.
+    name: drop,
+    description: `Reference stub — acquisition failed for "${drop}" (${classification.type}: ${acquired.text}). Filed for manual follow-up.`,
+    project: null,
+    tags: ['domain/research', 'research/acquisition-failed', `research/${today}`],
+    digest: `Could not acquire content for "${drop}" — ${acquired.text}. Filed as a plain reference stub, no summary was generated.`,
+  }
+}
 
 async function judge(drop, classification, acquired, timeout) {
   // Get existing project entities for context
@@ -357,8 +400,10 @@ async function researchDrop(drop, opts = {}) {
   // 3. Acquire
   const acquired = await acquire(classification, projectOverride)
 
-  // 4. Judge
-  const judgment = await judge(drop, classification, acquired, timeout)
+  // 4. Judge — skip the model entirely on a genuine acquisition failure
+  const judgment = acquired.failed
+    ? stubJudgment(drop, classification, acquired)
+    : await judge(drop, classification, acquired, timeout)
 
   // 5. File (unless dry-run)
   let result = {
@@ -368,6 +413,7 @@ async function researchDrop(drop, opts = {}) {
     project: judgment.project || null,
     digest: judgment.digest || '',
     deduped: false,
+    acquisitionFailed: !!acquired.failed,
   }
 
   if (!dryRun && isLocal) {
@@ -375,6 +421,10 @@ async function researchDrop(drop, opts = {}) {
     result.entityId = id
     result.file = file
     result.created = created
+    // Rebuild the graph index so an immediate re-run of the same drop can
+    // find it via checkDedup() — otherwise the just-written entity is
+    // invisible to oracle search until the next scheduled scribe pass.
+    require('./grim-scribe').scribe()
   } else if (dryRun) {
     result.dryRun = true
   }
