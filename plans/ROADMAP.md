@@ -35,6 +35,18 @@ lab** — all targets derive from config. Central Prometheus+Grafana lands as a 
 script with generated scrape targets (phase 13). **Deferred, do not build:** ComfyUI
 custom node, Loki, remote_write, connection-level client tracking.
 
+## Ruling on port numbers (2026-07-24)
+
+**Grimoire-authored services use mirror (palindrome) ports; third-party services keep
+their upstream default.** A palindrome port is the ownership marker — `:3663`
+(grimoire), `:3773` (ner), `:11311` (llama-server), `:17071` (a2c), `:13031` are all
+ours and already mirrored; `:11434` ollama, `:7860` a1111, `:8188` comfyui keep their
+upstream ports (fighting those causes drift and erases *their* identity). The lone
+defector was the rig agent on `:8001` — reassigned to **`:18081`** (abcba). The
+canonical service→port map is recorded in `config/lbl-config.json` (the config
+authority, Track B) as the single source of truth; do not hardcode a port anywhere a
+config lookup can answer.
+
 ## Ruling on tmp/other.md (2026-07-17)
 
 The spec describes what grimoire largely already is: entity files + index (scribe),
