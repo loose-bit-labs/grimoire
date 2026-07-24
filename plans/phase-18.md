@@ -8,24 +8,50 @@ phase closes that gap using the existing systemd-service conventions already in
 
 ## What lands
 
-1. **`deploy/grim-rig-serve.service`** — a **system** unit, modeled directly on
-   `deploy/grimoire.service`. *(Amended by user directive 2026-07-23: "I want it to use
-   systemctl like every other service." Supersedes this brief's original user-unit
-   plan.)*
-   - Same shape as `grimoire.service`: `Type=simple`, `User=YOUR_USER` template,
-     `WorkingDirectory=<engine root>`, `EnvironmentFile=<root>/.env`,
-     `ExecStart=<resolved node> bin/grim-rig.js serve`, `Restart=on-failure`,
-     `RestartSec=10`, journald + `SyslogIdentifier=grim-rig`,
-     `WantedBy=multi-user.target`.
+1. **`deploy/grim-rig-serve.service`** — a systemd **user** unit, same tier as
+   `grim-boot-report.service`. **No root. No sudo. `systemctl --user`.**
+   *(This brief's original plan was correct; a 2026-07-23 amendment to a system unit
+   was wrong and is reverted at user direction: "USER SPACE SYSTEMCTL like every other
+   service.")*
+   **Model it on `~/.config/systemd/user/grim-bridge.service`** — a persistent user
+   daemon, which is what we're building. Do **not** model it on `grim-boot-report`
+   (fire-once at boot) or `grimoire.service` (the lab's single system-unit outlier).
+   That house pattern, verbatim in shape:
    - `After=network.target`.
+   - `WorkingDirectory=%h/src/me/grimoire` — use the **`%h` specifier**, not a
+     templated `YOUR_USER` path. No sed-templating needed at install time.
+   - `ExecStart=%h/... /bin/node bin/grim-rig.js serve` (resolve node the way the
+     sibling units do).
+   - `Restart=on-failure`, `RestartSec=5`.
+   - `StandardOutput=append:%h/data/logs/grimoire/grim-rig.log` and the same for
+     `StandardError` — file logging like its siblings, **not** journald/SyslogIdentifier.
+   - `WantedBy=default.target`.
+   - No `User=` (implicit for user units). No `EnvironmentFile` unless the agent
+     actually needs one.
    - **Bind address is load-bearing — see item 2b.**
-2. **Installer follows `deploy/install-service.sh` exactly** — that's the house
-   pattern for system units: re-exec via `sudo --preserve-env`, resolve `TARGET_USER`
-   from `SUDO_USER`, resolve `NODE_BIN` through the target user's login shell,
-   template `YOUR_USER`/paths into `/etc/systemd/system/grim-rig-serve.service`, then
-   `daemon-reload` → `enable` → `restart` → `status`. Idempotent on re-run.
-   Add it as a sibling script (`deploy/install-rig-service.sh`) or a mode of
-   `install-service.sh` — mage's call, but do **not** fork the pattern.
+2. **New function in `deploy/setup-client.sh`**, e.g. `_install_rig_serve_service`,
+   mirroring `_install_boot_report_service` (check `systemctl` exists, check the
+   source file exists, check `is-enabled` first so re-runs are idempotent,
+   `install -m644` into `~/.config/systemd/user/`, `systemctl --user daemon-reload`,
+   `enable`). Difference from boot-report: this is a **persistent** service, not
+   boot-fire-once — after enabling, also `systemctl --user restart grim-rig-serve` so
+   it is running *now*, not just next boot. Call it right after `_register_host`
+   (step 10) in the existing numbered sequence.
+
+   **2a. Lingering — verify, don't assume.** A user unit dies at logout unless
+   lingering is on. **On `aid` it is already enabled** (`loginctl show-user` →
+   `Linger=yes`), which is why the 13 sibling user services survive logout. The
+   installer should *check* and only call `loginctl enable-linger "$USER"` when it's
+   off — idempotent, and don't fail the install if the check is unavailable, just say
+   so. **Acceptance still requires the service to survive a full logout.**
+
+   **2b. Reachability (do not skip).** Phase 12 defaults the agent to `127.0.0.1`.
+   A central Prometheus on another box then scrapes **nothing**, and `/fleet`'s
+   cross-box fan-out fails. The unit must start the agent listening on an interface
+   the other boxes can actually reach (`--listen` with the LAN/tailscale address, or
+   `0.0.0.0` if that's the lab norm — state which and why). Verify a *remote* box can
+   `curl http://<this-box>:8001/status` before calling this done. Keep the CLI's
+   own `127.0.0.1` default unchanged; this is a unit-level argument.
 
    **2b. Reachability (do not skip).** Phase 12 defaults the agent to `127.0.0.1`.
    A central Prometheus on another box then scrapes **nothing**, and `/fleet`'s
@@ -48,9 +74,11 @@ phase closes that gap using the existing systemd-service conventions already in
 
 ## Out of scope / do NOT
 
-- ~~No root-level systemd unit~~ — **reversed by user directive 2026-07-23.** It is a
-  system unit under `/etc/systemd/system/`, installed with sudo, exactly like
-  `grimoire.service`. The `grim-boot-report` user-unit tier is **not** the model here.
+- **No root-level systemd unit. No sudo anywhere in this phase.** This doesn't need
+  root — keep it at the user-service tier like `grim-boot-report`. `grimoire.service`
+  / `install-service.sh` are **not** the model here. (Restated emphatically: a
+  2026-07-23 amendment to a root unit was a misread and has been reverted.)
+  The sole permitted privileged-ish call is `loginctl enable-linger` (item 2a).
 - No changes to `bin/grim-rig.js` itself — the agent code is done (phases 12/13/17).
 - No cross-box orchestration/push (ansible, etc.) — rollout to each box happens by
   that box running `/update-host` itself, same as everything else in this repo.
@@ -60,12 +88,15 @@ phase closes that gap using the existing systemd-service conventions already in
 
 ## Success checks (mage runs these)
 
-- Fresh install on this box: `systemctl status grim-rig-serve` shows **active**
-  (system unit, no `--user`), `curl localhost:8001/status` returns real data, and the
-  service **survives logout and reboot** (`systemctl is-enabled` → enabled).
+- Fresh run of `setup-client.sh` on this box: `systemctl --user status grim-rig-serve`
+  shows **active**, `curl localhost:8001/status` returns real data. No sudo was used
+  to install or start it.
+- **Survives logout** — the lingering check (2a). Log out fully, log back in, service
+  is still running. This is the one that proves the user-unit approach actually works;
+  don't hand-wave it.
 - **Remote reachability:** from a *different* box, `curl http://<this-box>:8001/status`
   returns data. This is the check that proves telemetry can actually flow centrally.
-- Re-run the installer (idempotent path): no duplicate install, service still
+- Re-run `setup-client.sh` (idempotent path): no duplicate install, service still
   running, no errors.
 - Make a trivial code change to `bin/grim-rig.js`, run `/update-host` (or its
   underlying script directly), confirm the running service actually picked up the
