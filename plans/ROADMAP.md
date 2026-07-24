@@ -140,7 +140,8 @@ and a glanceable automotive cockpit.
 | 13 | plans/phase-13.md | `deploy/setup-telemetry.sh` + JSON compose/prometheus configs + generated scrape targets + hotspots dashboard | ✅ accepted (`plans/reviews/phase-13.md`) |
 | 17 | plans/phase-17.md | `grim rig serve /cluster` — automotive instrument cluster (VRAM=fuel, compute=speedo, load=revs, temp=coolant) + `/fleet` aggregate; live off `/status`, built from approved mockup `plans/assets/rig-cluster-mockup.html` | ✅ accepted (`plans/reviews/phase-17.md`) |
 | 18 | plans/phase-18.md | deploy `grim rig serve` as a persistent user systemd service, tied into `setup-client.sh` right after `grim-register-host.sh`; `/update-host` restarts it on every catch-up run; remote-reachability + logout-survival checks; amended to canonical port `:18081` (mirror-port ruling) | ✅ accepted (`plans/reviews/phase-18.md`) |
-| 19 | plans/phase-19.md | stop `grim-rig.js`'s `si.graphics()` from shelling `xrandr` every poll on headless boxes — drop it for the existing nvidia-smi/rocm-smi/amd-smi paths, or scrub `DISPLAY`/`XAUTHORITY` at startup | queued (hierophant, 2026-07-23; independent of 18, either order, low urgency) — Track F complete after this |
+| 19 | plans/phase-19.md | stop `grim-rig.js`'s `si.graphics()` from shelling `xrandr` every poll on headless boxes — drop it for the existing nvidia-smi/rocm-smi/amd-smi paths, or scrub `DISPLAY`/`XAUTHORITY` at startup | queued (hierophant, 2026-07-23; independent of 18, either order, low urgency) |
+| 20 | plans/phase-20.md | plink (macOS): launchd LaunchAgent (`com.grimoire.rig-serve.plist`) + `setup-client.sh` Darwin branch — same `:18081` agent, no systemd. **Acceptance must run on plink, not the Linux loop host.** Track F complete after 19+20 | queued (hierophant, 2026-07-24) |
 
 ## Track G — the research brain (phases 14–15)
 
