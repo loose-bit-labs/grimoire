@@ -264,21 +264,13 @@ _register_host() {
 
 _install_rig_serve_service() {
   step "Installing grim-rig-serve systemd user service..."
-  local service_src="$ENGINE_ROOT/deploy/grim-rig-serve.service"
-  local service_dir="$HOME/.config/systemd/user"
-  local service_dst="$service_dir/grim-rig-serve.service"
-  local log_dir="$HOME/data/logs/grimoire"
 
   if ! command -v systemctl &>/dev/null; then
     warn "systemctl not found (not a systemd host, e.g. macOS) — skipping grim-rig-serve service"
     return
   fi
-  if [[ ! -f "$service_src" ]]; then
-    warn "grim-rig-serve.service not found in deploy/ — skipping"
-    return
-  fi
 
-  mkdir -p "$log_dir"
+  mkdir -p "$HOME/data/logs/grimoire"
 
   # Lingering — a user unit dies at logout unless linger is on. Check first,
   # don't assume; don't fail the install if the check itself is unavailable.
@@ -300,8 +292,37 @@ _install_rig_serve_service() {
   local was_enabled=false
   systemctl --user is-enabled grim-rig-serve &>/dev/null && was_enabled=true
 
+  # Resolve node binary at install time (mirrors install-service.sh:_resolve_node)
+  # so the installed unit works on any box regardless of nvm version.
+  local NODE_BIN
+  NODE_BIN=$(which node)
+  if [[ -z "$NODE_BIN" ]]; then
+    warn "node not found — grim-rig-serve cannot start"
+    return
+  fi
+
+  local service_dir="$HOME/.config/systemd/user"
+  local service_dst="$service_dir/grim-rig-serve.service"
   mkdir -p "$service_dir"
-  install -m644 "$service_src" "$service_dst"
+
+  # Write unit dynamically — node path is box-specific, not static.
+  cat > "$service_dst" <<EOF
+[Unit]
+Description=grim rig serve — resident homelab telemetry agent (/status + /metrics)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/src/me/grimoire
+ExecStart=${NODE_BIN} bin/grim.js rig serve --listen 0.0.0.0
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/data/logs/grimoire/grim-rig.log
+StandardError=append:%h/data/logs/grimoire/grim-rig.log
+
+[Install]
+WantedBy=default.target
+EOF
+
   systemctl --user daemon-reload
 
   if $was_enabled; then
