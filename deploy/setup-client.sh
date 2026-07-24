@@ -15,7 +15,8 @@
 #   8. Creates ~/.grimoire dotlink
 #   9. Installs grim-boot-report userspace systemd service
 #  10. Registers hardware inventory in the KB (re-run anytime after upgrades)
-#  11. Smoke-tests the connection
+#  11. Installs & (re)starts the grim-rig-serve userspace telemetry service
+#  12. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -259,7 +260,64 @@ _register_host() {
   fi
 }
 
-# ── 11. Smoke test ────────────────────────────────────────────────────────────
+# ── 11. grim-rig-serve persistent userspace service ───────────────────────────
+
+_install_rig_serve_service() {
+  step "Installing grim-rig-serve systemd user service..."
+  local service_src="$ENGINE_ROOT/deploy/grim-rig-serve.service"
+  local service_dir="$HOME/.config/systemd/user"
+  local service_dst="$service_dir/grim-rig-serve.service"
+  local log_dir="$HOME/data/logs/grimoire"
+
+  if ! command -v systemctl &>/dev/null; then
+    warn "systemctl not found (not a systemd host, e.g. macOS) — skipping grim-rig-serve service"
+    return
+  fi
+  if [[ ! -f "$service_src" ]]; then
+    warn "grim-rig-serve.service not found in deploy/ — skipping"
+    return
+  fi
+
+  mkdir -p "$log_dir"
+
+  # Lingering — a user unit dies at logout unless linger is on. Check first,
+  # don't assume; don't fail the install if the check itself is unavailable.
+  if command -v loginctl &>/dev/null; then
+    if loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
+      ok "lingering already enabled for $USER"
+    else
+      loginctl enable-linger "$USER" 2>/dev/null \
+        && ok "lingering enabled for $USER (service will survive logout)" \
+        || warn "could not enable lingering — run: loginctl enable-linger $USER"
+    fi
+  else
+    warn "loginctl not found — cannot verify/enable lingering; service may not survive logout"
+  fi
+
+  # Unlike grim-boot-report (fire-once), this is a persistent service: always
+  # reinstall + restart so a re-run (e.g. via /update-host after a code
+  # change) actually picks up the latest unit file and code.
+  local was_enabled=false
+  systemctl --user is-enabled grim-rig-serve &>/dev/null && was_enabled=true
+
+  mkdir -p "$service_dir"
+  install -m644 "$service_src" "$service_dst"
+  systemctl --user daemon-reload
+
+  if $was_enabled; then
+    ok "grim-rig-serve already enabled"
+  else
+    systemctl --user enable grim-rig-serve 2>/dev/null \
+      && ok "grim-rig-serve enabled" \
+      || warn "systemctl enable failed — run: systemctl --user enable grim-rig-serve"
+  fi
+
+  systemctl --user restart grim-rig-serve 2>/dev/null \
+    && ok "grim-rig-serve running" \
+    || warn "systemctl restart failed — run: systemctl --user restart grim-rig-serve"
+}
+
+# ── 12. Smoke test ────────────────────────────────────────────────────────────
 
 _smoke_test() {
   local grimoire_url
@@ -288,6 +346,7 @@ _main() {
   _create_dotlink
   _install_boot_report_service
   _register_host
+  _install_rig_serve_service
   _smoke_test
 
   echo ""

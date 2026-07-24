@@ -1,0 +1,14 @@
+[Unit]
+Description=grim rig serve — resident homelab telemetry agent (/status + /metrics)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/src/me/grimoire
+ExecStart=%h/.nvm/versions/node/v21.7.1/bin/node bin/grim.js rig serve --listen 0.0.0.0
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/data/logs/grimoire/grim-rig.log
+StandardError=append:%h/data/logs/grimoire/grim-rig.log
+
+[Install]
+WantedBy=default.target
