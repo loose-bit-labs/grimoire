@@ -1,6 +1,6 @@
 'use strict'
 
-const { describe, it } = require('node:test')
+const { describe, it, beforeEach, afterEach } = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -272,6 +272,30 @@ describe('buildSnapshot()', () => {
 // ── getFleet() ────────────────────────────────────────────────────────────────
 
 describe('getFleet()', () => {
+  let fleetServer
+
+  beforeEach(async () => {
+    const hostname = os.hostname().toLowerCase()
+    const { server, stop, getSnapshot } = rig.serve({
+      port: 8001,
+      interval: 1,
+      listen: '127.0.0.1',
+      boxes: [{ host: hostname, label: hostname, aliases: [hostname], services: [] }],
+    })
+    await new Promise(r => server.once('listening', r))
+    // Wait for first poll to populate real GPU/mem data (buildSnapshot calls si.graphics, rocm-smi, etc. — can take ~6s)
+    // Poll getSnapshot until lastUpdated is set rather than guessing a fixed delay
+    for (let i = 0; i < 30; i++) {
+      if (getSnapshot().lastUpdated) break
+      await new Promise(r => setTimeout(r, 500))
+    }
+    fleetServer = { server, stop }
+  })
+
+  afterEach(async () => {
+    if (fleetServer) await fleetServer.stop()
+  })
+
   it('returns correct shape with down boxes', async () => {
     const boxes = [{
       host: 'nowhere',
