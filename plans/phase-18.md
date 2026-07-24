@@ -52,18 +52,6 @@ phase closes that gap using the existing systemd-service conventions already in
    `0.0.0.0` if that's the lab norm — state which and why). Verify a *remote* box can
    `curl http://<this-box>:8001/status` before calling this done. Keep the CLI's
    own `127.0.0.1` default unchanged; this is a unit-level argument.
-
-   **2b. Reachability (do not skip).** Phase 12 defaults the agent to `127.0.0.1`.
-   A central Prometheus on another box then scrapes **nothing**, and `/fleet`'s
-   cross-box fan-out fails. The unit must start the agent listening on an interface
-   the other boxes can actually reach (`--listen` with the LAN/tailscale address, or
-   `0.0.0.0` if that's the lab norm — state which and why). Verify a *remote* box can
-   `curl http://<this-box>:8001/status` before calling this done. Keep the CLI's
-   own `127.0.0.1` default unchanged; this is a unit-level argument.
-3. **`grim-update-host.sh` / `setup-client.sh` tie-in.** Wire the install so a box
-   that runs `/update-host` pulls the latest `bin/grim-rig.js` **and restarts the
-   service**, so code changes take effect. Verify restart-on-rerun actually happens
-   rather than assuming it.
 3. **`grim-update-host.sh` gets rig-serve for free** — it already re-runs
    `setup-client.sh` unconditionally (idempotent), so once the new step lands there,
    running `/update-host` on any box: pulls the latest `bin/grim-rig.js`, then
