@@ -6,6 +6,33 @@ central scrape stack, and the cockpit; nothing runs persistently anywhere yet. T
 phase closes that gap using the existing systemd-service conventions already in
 `deploy/` (`grim-boot-report.service` + its install step in `setup-client.sh`).
 
+## Amendment (hierophant, 2026-07-24): rig agent port is `18081`, not `8001`
+
+New standing convention — see ROADMAP "Ruling on port numbers" (2026-07-24):
+grimoire-authored services use mirror/palindrome ports (`:3663`, `:3773`, `:11311`,
+`:17071`, `:13031`); third-party services (ollama, a1111, comfyui) keep their
+upstream default. The rig agent's `:8001` was the lone defector — reassigned to
+**`:18081`** (abcba).
+
+This lifts phase 18's "no changes to `bin/grim-rig.js`" restriction **for the port
+constant only** — nothing else in that file changes:
+
+1. `bin/grim-rig.js`: `serve({ port = 8001 })` default → `18081`; the two `:8001`
+   fleet-fetch addresses (~lines 653/656) → `18081`.
+2. The systemd unit's `--listen`/port argument → `18081`.
+3. Record the canonical map in `config/lbl-config.json` as a new top-level `ports`
+   block (e.g. `{"grim_rig": 18081}`) — data/source-of-truth only. The agent may keep
+   `18081` as a hardcoded default for now (graceful degradation, works with no
+   config); wiring it to *read* the config value is a fine later nicety, not required
+   this phase.
+4. **Grep gate before reporting:** `grep -rn 8001` across the repo returns nothing in
+   shipped code/units/docs. (The `/cluster` mockup's `/fleet` fetch is a relative
+   path, not a hardcoded port — leave it.)
+
+Everything else in this phase (user unit, `%h`, linger check, dynamic `which node`
+resolution, `setup-client.sh` wiring, `/update-host` restart) stands unchanged — just
+re-verify the remote-reachability check against `:18081` instead of `:8001`.
+
 ## What lands
 
 1. **`deploy/grim-rig-serve.service`** — a systemd **user** unit, same tier as
