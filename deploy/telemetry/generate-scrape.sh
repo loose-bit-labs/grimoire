@@ -31,7 +31,7 @@ const seen = new Set();
 for (const box of rig) {
   if (box.skip) continue;
   const label = box.label || box.host;
-  const addr = box.host + ':8001';
+  const addr = box.host + ':18081';
   if (seen.has(addr)) continue;
   seen.add(addr);
   staticConfigs.push({

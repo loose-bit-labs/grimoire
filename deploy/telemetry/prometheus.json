@@ -9,7 +9,7 @@
       "static_configs": [
         {
           "targets": [
-            "aid:8001"
+            "aid:18081"
           ],
           "labels": {
             "box": "aid"
@@ -17,7 +17,7 @@
         },
         {
           "targets": [
-            "chonko:8001"
+            "chonko:18081"
           ],
           "labels": {
             "box": "chonko"

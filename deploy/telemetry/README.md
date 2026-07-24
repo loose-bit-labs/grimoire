@@ -29,7 +29,7 @@ deploy/setup-telemetry.sh status
 
 Targets are **generated**, not hand-edited. Run `deploy/setup-telemetry.sh generate` to
 regenerate `prometheus.json` from `$GRIMOIRE_ROOT/rig.json`. Boxes with `"skip": true` are
-excluded. Each non-skipped box gets one scrape target on port 8001 (the `grim rig serve`
+excluded. Each non-skipped box gets one scrape target on port 18081 (the `grim rig serve`
 agent).
 
 Regeneration is deterministic — delete and re-run produces byte-identical output.

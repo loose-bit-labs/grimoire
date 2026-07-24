@@ -650,10 +650,10 @@ async function getFleet(boxes) {
     // Find a reachable address for this box
     let addr = null
     if (boxName === LOCAL_HOSTNAME) {
-      addr = 'http://127.0.0.1:8001/status'
+      addr = 'http://127.0.0.1:18081/status'
     } else {
-      // Try box host on port 8001
-      addr = `http://${boxName}:8001/status`
+      // Try box host on port 18081
+      addr = `http://${boxName}:18081/status`
     }
     if (!addr) continue
 
@@ -712,7 +712,7 @@ function serveStatic(filePath, contentType) {
  * @param {object} opts.boxes — loaded rig.json boxes
  * @returns {object} — { server, stop }
  */
-function serve({ port = 8001, interval = 5, listen = '127.0.0.1', boxes }) {
+function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   let snapshot = {
     host: { hostname: os.hostname().toLowerCase(), cpuPercent: 0, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0, gpu: null },
     services: [],
@@ -819,7 +819,7 @@ async function main() {
   Usage: grim rig [status] [--json]
          grim rig up <service> [--box <name>]
          grim rig down <service> [--box <name>]
-         grim rig serve [--port 8001] [--interval 5] [--listen 127.0.0.1]
+         grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
 
   Subcommands:
     status (default)   Show VRAM + service status for all boxes
@@ -830,7 +830,7 @@ async function main() {
   Options:
     --box <name>   Target a specific box (required when service is on multiple boxes)
     --json         Machine-readable status output
-    --port <n>     HTTP port for serve (default: 8001)
+    --port <n>     HTTP port for serve (default: 18081)
     --interval <s> Poll interval in seconds for serve (default: 5)
     --listen <addr> Bind address for serve (default: 127.0.0.1)
 
@@ -851,7 +851,7 @@ async function main() {
   }
 
   if (sub === 'serve') {
-    const port    = parseInt(args.port, 10) || 8001
+    const port    = parseInt(args.port, 10) || 18081
     const interval = parseInt(args.interval, 10) || 5
     const listen  = args.listen || '127.0.0.1'
     const boxes   = loadBoxes()

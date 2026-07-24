@@ -313,7 +313,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=%h/src/me/grimoire
-ExecStart=${NODE_BIN} bin/grim.js rig serve --listen 0.0.0.0
+ExecStart=${NODE_BIN} bin/grim.js rig serve --listen 0.0.0.0 --port 18081
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/data/logs/grimoire/grim-rig.log
