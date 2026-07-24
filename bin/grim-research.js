@@ -1,0 +1,421 @@
+#!/usr/bin/env node
+'use strict'
+
+/**
+ * grim-research.js — The link-backlog brain
+ *
+ * Given one drop (a URL, a bare term, or a short note), it:
+ *   1. Classify → url | reddit | term
+ *   2. Dedup via oracle search — if already known, short-circuit
+ *   3. Acquire — fetch + extract text
+ *   4. Judge via THE ARCHIVIST (Ollama) — what it is, why it matters, target project
+ *   5. File one KB entity
+ *   6. Return a one-paragraph digest
+ *
+ * CLI:
+ *   grim research https://github.com/...          Research a URL
+ *   grim research https://reddit.com/r/...        Research a Reddit post
+ *   grim research "ZLUDA"                         Research a term
+ *   grim research "some note" --project foo       Force project route
+ *   grim research --dry-run https://...           Classify+acquire+judge, no write
+ *   grim research --json https://...              JSON output
+ *   grim research --timeout 30000 "term"          Custom timeout
+ */
+
+const path    = require('node:path')
+const http    = require('node:http')
+const https   = require('node:https')
+const minimist = require('minimist')
+const { askJSON }       = require('./model-ask')
+const { loadGraph }     = require('../lib/graph')
+const { writeEntity }   = require('../lib/entities')
+const { search }        = require('./grim-oracle')
+const { config, isLocal, resolveGoogleCseKeys } = require('../lib/env')
+
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
+
+function httpGet(url, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http
+    const req = mod.get(url, { signal: AbortSignal.timeout(timeout) }, res => {
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // Follow single redirect
+          httpGet(res.headers.location, timeout).then(resolve).catch(reject)
+        } else if (res.statusCode !== 200) {
+          resolve(null)
+        } else {
+          resolve(body)
+        }
+      })
+    })
+    req.on('error', () => resolve(null))
+    req.on('timeout', () => { req.destroy(); resolve(null) })
+  })
+}
+
+// ── Lightweight HTML text extractor ───────────────────────────────────────────
+//
+// Strips script/style/nav/header/footer, extracts main content heuristically,
+// converts to plain text. No headless browser, no external deps.
+
+function extractText(html) {
+  if (!html) return ''
+
+  // Strip script and style tags
+  let text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+
+  // Remove HTML tags but keep newlines for readability
+  text = text.replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:p|div|section|article|li|tr)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+
+  // Decode common HTML entities
+  text = text.replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '-')
+
+  // Collapse whitespace
+  text = text.replace(/\s+/g, ' ').trim()
+
+  // Remove very short fragments (likely navigation artifacts)
+  const paragraphs = text.split('\n').map(p => p.trim()).filter(p => p.length > 50)
+  return paragraphs.join('\n\n')
+}
+
+// ── Classify ──────────────────────────────────────────────────────────────────
+
+function classify(drop) {
+  const url = drop.trim()
+
+  // Reddit shortlink or full URL
+  if (/^https?:\/\/(www\.)?reddit\.com\//i.test(url) || /^https?:\/\/(www\.)?redd\.it\//i.test(url)) {
+    return { type: 'reddit', url }
+  }
+
+  // Any URL
+  if (/^https?:\/\//i.test(url)) {
+    return { type: 'url', url }
+  }
+
+  // Bare term or short note
+  return { type: 'term', term: url }
+}
+
+// ── Dedup ─────────────────────────────────────────────────────────────────────
+
+async function checkDedup(query) {
+  try {
+    const graph = await loadGraph()
+    const results = search(graph, { query, limit: 5 })
+    // Only consider it a dedup if the best match has a meaningful score (≥ 40 = desc/phrase match)
+    if (results.length > 0 && results[0].score >= 40) {
+      const best = results[0]
+      return {
+        deduped: true,
+        entityId: best.entity['@id'],
+        digest: `Already known: [${best.entity['@id']}] ${best.entity.name} — ${best.entity.description?.slice(0, 200) || 'no description'}`,
+      }
+    }
+  } catch (e) { /* oracle unavailable, proceed */ }
+  return { deduped: false }
+}
+
+// Export for testing
+module.exports = { classify, checkDedup, acquire, acquireUrl, researchDrop }
+
+// ── Acquire ───────────────────────────────────────────────────────────────────
+
+async function acquireUrl(info) {
+  const html = await httpGet(info.url, 15000)
+  if (!html) return { title: info.url, text: '[fetch failed]' }
+
+  // Try to extract title
+  let title = info.url
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+  if (titleMatch) title = titleMatch[1].trim()
+
+  const text = extractText(html)
+  return { title, text }
+}
+
+async function acquireReddit(info) {
+  // Convert Reddit URL to JSON API endpoint
+  let apiUrl = info.url
+  if (/redd\.it\//i.test(apiUrl)) {
+    // Shortlink — resolve redirect first
+    const resolved = await httpGet(apiUrl, 5000)
+    if (resolved) {
+      // Redirect response body won't have the URL, use the original
+      // We need to follow redirects manually to get the final URL
+      const mod = https
+      const req = mod.get(apiUrl, { maxRedirects: 5 }, res => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          apiUrl = res.headers.location
+        }
+      })
+      await new Promise(r => { req.on('close', r) })
+    }
+  }
+  // Append .json for Reddit API
+  apiUrl = apiUrl.replace(/\/?$/, '/.json')
+
+  const json = await httpGet(apiUrl, 15000)
+  if (!json) return { title: 'Reddit post', text: '[fetch failed]' }
+
+  try {
+    const data = JSON.parse(json)
+    const post = data[0]?.data?.children?.[0]?.data
+    if (!post) return { title: 'Reddit post', text: '[parse failed]' }
+
+    const title = post.title || 'Untitled Reddit post'
+    const selftext = post.selftext || ''
+    const comments = (data[1]?.data?.children || [])
+      .slice(0, 20)
+      .map(c => c.data?.body?.trim())
+      .filter(Boolean)
+      .slice(0, 10)
+      .map(c => `> ${c}`)
+      .join('\n\n')
+
+    return { title, text: [selftext, comments].filter(Boolean).join('\n\n') }
+  } catch {
+    return { title: 'Reddit post', text: '[parse failed]' }
+  }
+}
+
+async function acquireTerm(info) {
+  const keys = resolveGoogleCseKeys()
+
+  if (keys && keys.key && keys.cx) {
+    // Google Custom Search JSON API
+    const cseUrl = `https://www.googleapis.com/customsearch/v1?key=${keys.key}&cx=${keys.cx}&q=${encodeURIComponent(info.term)}&num=1`
+    const json = await httpGet(cseUrl, 15000)
+    if (json) {
+      try {
+        const data = JSON.parse(json)
+        const items = data.items || []
+        if (items.length > 0) {
+          // Fetch the top result's text
+          const topUrl = items[0].link
+          const html = await httpGet(topUrl, 15000)
+          const text = html ? extractText(html) : '[no content]'
+          const title = items[0].title || info.term
+          return { title, text }
+        }
+      } catch { /* CSE parse failed, fall through to DDG */ }
+    }
+  }
+
+  // DuckDuckGo HTML scrape fallback
+  const ddgHtml = await httpGet(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(info.term)}`, 15000)
+  if (!ddgHtml) return { title: info.term, text: '[search failed]' }
+
+  // Extract first result URL from DDG HTML
+  // DDG wraps URLs in redirect links: //duckduckgo.com/l/?uddg=...
+  const urlMatch = ddgHtml.match(/class="result__a"[^>]*href="([^"]+)"/)
+  if (!urlMatch) return { title: info.term, text: '[no results]' }
+
+  let topUrl = urlMatch[1]
+  // Handle protocol-relative redirect URLs
+  if (topUrl.startsWith('//')) {
+    const uddgMatch = topUrl.match(/uddg=([^&]+)/)
+    if (uddgMatch) {
+      topUrl = decodeURIComponent(uddgMatch[1])
+    } else {
+      topUrl = 'https:' + topUrl
+    }
+  }
+  const html = await httpGet(topUrl, 15000)
+  const text = html ? extractText(html) : '[no content]'
+  return { title: info.term, text }
+}
+
+async function acquire(classification, projectOverride) {
+  if (classification.type === 'url') return acquireUrl(classification)
+  if (classification.type === 'reddit') return acquireReddit(classification)
+  if (classification.type === 'term') return acquireTerm(classification)
+  return { title: classification.term || classification.url, text: '[unknown type]' }
+}
+
+// ── Judge (THE ARCHIVIST) ─────────────────────────────────────────────────────
+
+const RESEARCH_JUDGE_SYSTEM = `You are THE ARCHIVIST. You judge acquired research material and decide how to file it in a knowledge graph.
+
+Given the original drop and acquired text, output a JSON object with:
+- "type": "SoftwareApplication" (for tools/repos/frameworks) or "DefinedTerm" (for concepts/ideas)
+- "name": concise display name
+- "description": 1-2 sentences — what this IS, written for a reader with no prior context
+- "project": the best-matching project entity ID from this list, or null if no match:
+{projects}
+- "tags": string array (domain/X, research/YYYY-MM-DD)
+- "digest": a one-paragraph summary of why this matters and what it is
+
+Return ONLY valid JSON. No markdown, no commentary.`
+
+async function judge(drop, classification, acquired, timeout) {
+  // Get existing project entities for context
+  let projectList = ''
+  try {
+    const graph = await loadGraph()
+    const projects = Object.values(graph.entities || {}).filter(e => e['@type'] === 'Project')
+    projectList = projects.map(p => `  - ${p['@id']}: ${p.name} — ${p.description?.slice(0, 120) || ''}`).join('\n')
+    if (!projectList) projectList = '  (none)'
+  } catch { projectList = '(unavailable)' }
+
+  const prompt = RESEARCH_JUDGE_SYSTEM
+    .replace('{projects}', projectList)
+    .replace('{projects}', projectList) // double-replace for safety
+
+  const fullText = [
+    `DROP: ${drop}`,
+    `TYPE: ${classification.type}`,
+    `TITLE: ${acquired.title}`,
+    `TEXT:\n${acquired.text?.slice(0, 8000) || '[empty]'}`,
+  ].join('\n\n')
+
+  try {
+    const result = await askJSON({
+      prompt: fullText,
+      system: prompt,
+      task: 'extraction',
+      timeout,
+    })
+    return result
+  } catch (e) {
+    // Fallback: produce a minimal judgment without Ollama
+    return {
+      type: 'DefinedTerm',
+      name: classification.type === 'term' ? drop : acquired.title,
+      description: `Research drop: ${drop} (${classification.type}). Acquired text from ${acquired.title}.`,
+      project: null,
+      tags: ['domain/research', `research/${new Date().toISOString().slice(0, 10)}`],
+      digest: `Research on "${drop}" — ${classification.type} source. ${acquired.text?.slice(0, 200) || 'No content acquired.'}`,
+    }
+  }
+}
+
+// ── File ──────────────────────────────────────────────────────────────────────
+
+function fileEntity(judgment, drop, classification, acquired) {
+  const entity = {
+    '@type': judgment.type || 'DefinedTerm',
+    name: judgment.name,
+    description: judgment.description,
+    tags: judgment.tags || [],
+    relationships: {},
+    metadata: {
+      source: 'research',
+      drop,
+      dropType: classification.type,
+      dropUrl: classification.url || null,
+      dateAcquired: new Date().toISOString().slice(0, 10),
+      title: acquired.title,
+    },
+  }
+
+  // Route to project if confident
+  if (judgment.project) {
+    entity.relationships = { works_on: [judgment.project] }
+  }
+
+  return writeEntity(entity)
+}
+
+// ── Main pipeline ─────────────────────────────────────────────────────────────
+
+async function researchDrop(drop, opts = {}) {
+  const { json, dryRun, project: projectOverride, timeout = 60000 } = opts
+
+  // 1. Classify
+  const classification = classify(drop)
+
+  // 2. Dedup
+  const dedupQuery = classification.type === 'term' ? classification.term : classification.url
+  const dedup = await checkDedup(dedupQuery)
+  if (dedup.deduped) {
+    const output = { drop, deduped: true, entityId: dedup.entityId, digest: dedup.digest }
+    if (json) console.log(JSON.stringify(output, null, 2))
+    else console.log(`\n  Already known: ${dedup.digest}`)
+    return output
+  }
+
+  // 3. Acquire
+  const acquired = await acquire(classification, projectOverride)
+
+  // 4. Judge
+  const judgment = await judge(drop, classification, acquired, timeout)
+
+  // 5. File (unless dry-run)
+  let result = {
+    drop,
+    type: classification.type,
+    title: acquired.title,
+    project: judgment.project || null,
+    digest: judgment.digest || '',
+    deduped: false,
+  }
+
+  if (!dryRun && isLocal) {
+    const { id, file, created } = fileEntity(judgment, drop, classification, acquired)
+    result.entityId = id
+    result.file = file
+    result.created = created
+  } else if (dryRun) {
+    result.dryRun = true
+  }
+
+  // 6. Output
+  if (json) console.log(JSON.stringify(result, null, 2))
+  else {
+    console.log(`\n  ${judgment.digest || result.digest}`)
+    if (result.entityId) console.log(`  Filed: ${result.entityId}`)
+    if (dryRun) console.log(`  (dry-run, not written)`)
+  }
+
+  return result
+}
+
+// ── CLI ───────────────────────────────────────────────────────────────────────
+
+if (require.main === module) {
+  // grim.js dispatcher passes cmd as argv[2]; skip it if present
+  const argvStart = (process.argv[2] === 'research') ? 3 : 2
+  const args = minimist(process.argv.slice(argvStart), {
+    string: ['project', 'timeout'],
+    boolean: ['json', 'dry-run'],
+    alias: { j: 'json', d: 'dry-run', p: 'project', t: 'timeout' },
+    unknown: [() => true], // allow positional args
+  })
+
+  const drop = args._[0]
+  if (!drop) {
+    console.error('Usage: grim research <drop> [--json] [--dry-run] [--project <id>] [--timeout <ms>]')
+    console.error('  drop: a URL, a Reddit link, or a bare term to research')
+    process.exit(1)
+  }
+
+  researchDrop(drop, {
+    json: args.json,
+    dryRun: args['dry-run'],
+    project: args.project,
+    timeout: parseInt(args.timeout, 10) || 60000,
+  }).catch(e => {
+    console.error(`grim research: ${e.message}`)
+    process.exit(1)
+  })
+}
