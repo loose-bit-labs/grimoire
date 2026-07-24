@@ -140,6 +140,8 @@ These apply to every task unless explicitly overridden. Bias: caution over speed
 
 **Rule 13 — Prefer code over prompting (the standing SOP).** Deterministic mechanics — file sequencing, path math, parsing, chunking, multi-step shell flows, state machines — belong in a script the skill *calls*, not in SKILL.md prose the model re-derives every invocation. A skill carries judgment and tone; a script carries procedure. The test: if a skill walks the model through numbered shell steps, or the bots keep getting the same mechanics wrong, that's a script waiting to be written (see `grim mm` — the `.mm/` pact mechanics, incl. who-owes-the-next-message, moved out of three skills into one command). Every step encoded in code is cognitive load the model doesn't re-pay each run. Reach for the model only at the judgment seams; let code answer everything code can.
 
+**Rule 14 — `locate` before `find`; `$PATH` before either.** These boxes are long-running with a warm `plocate.db`, thousands of files, and ~100GB of GGUFs. `locate -b foo` answers in milliseconds; `find /` is minutes of disk thrash. **If the user *ran* a command, it is on `$PATH`** — use `command -v` or scan `$PATH`, never `find` over directories you guessed at. Safe idiom that costs nothing on a cold/absent db: `locate -b foo || find …`. Reach for `find` only to walk a *known* tree. Models skip `locate` because training data favors `find`/`rg` (portable in containers/CI where no db exists) — that heuristic is wrong here. Related: `~/bin` is a symlink into the **nixe** repo (~153 personal scripts, `_name_main` style) — check what already exists before offering to write a utility.
+
 ---
 
 ## Environment
