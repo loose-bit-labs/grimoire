@@ -201,6 +201,31 @@ describe('serve()', () => {
       await stop()
     }
   })
+
+  it('scrubs DISPLAY and XAUTHORITY from process.env at startup', async () => {
+    const origDisplay = process.env.DISPLAY
+    const origXauth = process.env.XAUTHORITY
+    try {
+      process.env.DISPLAY = 'localhost:99.0'
+      process.env.XAUTHORITY = '/nonexistent/.Xauthority'
+      const port = 19879
+      const { server, stop } = rig.serve({
+        port,
+        interval: 10,
+        listen: '127.0.0.1',
+        boxes: [{ host: 'x', label: 'x', aliases: ['x'], services: [] }],
+      })
+      await new Promise(r => server.once('listening', r))
+      assert.strictEqual(process.env.DISPLAY, undefined, 'DISPLAY should be scrubbed')
+      assert.strictEqual(process.env.XAUTHORITY, undefined, 'XAUTHORITY should be scrubbed')
+      await stop()
+    } finally {
+      if (origDisplay !== undefined) process.env.DISPLAY = origDisplay
+      else delete process.env.DISPLAY
+      if (origXauth !== undefined) process.env.XAUTHORITY = origXauth
+      else delete process.env.XAUTHORITY
+    }
+  })
 })
 
 // ── buildSnapshot() ──────────────────────────────────────────────────────────
