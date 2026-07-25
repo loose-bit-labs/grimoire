@@ -63,6 +63,30 @@ function loadBoxes() {
   }
 }
 
+/**
+ * Load box config gracefully — returns [] instead of exiting when missing.
+ * Used by serve() so the agent boots without rig.json (client boxes).
+ */
+function loadBoxesGraceful() {
+  const configPath = config.root ? path.join(config.root, 'rig.json') : null
+
+  if (!configPath || !fs.existsSync(configPath)) {
+    if (configPath) {
+      process.stderr.write(`grim rig: no box config at ${configPath} — running with empty service list\n`)
+    } else {
+      process.stderr.write('grim rig: $GRIMOIRE_ROOT not set — running with empty service list\n')
+    }
+    return []
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf8'))
+  } catch (e) {
+    process.stderr.write(`grim rig: failed to parse rig.json — ${e.message} — running with empty service list\n`)
+    return []
+  }
+}
+
 // ── Script execution — local or SSH ──────────────────────────────────────────
 //
 // If we're on the target box (hostname matches aliases), run bash locally.
@@ -806,7 +830,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -859,7 +883,7 @@ async function main() {
     const port    = parseInt(args.port, 10) || 18081
     const interval = parseInt(args.interval, 10) || 5
     const listen  = args.listen || '127.0.0.1'
-    const boxes   = loadBoxes()
+    const boxes   = loadBoxesGraceful()
     serve({ port, interval, listen, boxes })
     return
   }

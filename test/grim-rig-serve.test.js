@@ -226,6 +226,20 @@ describe('serve()', () => {
       else delete process.env.XAUTHORITY
     }
   })
+
+  it('loadBoxesGraceful returns [] when rig.json is absent', () => {
+    const { config } = require('../lib/env')
+    const origRoot = config.root
+    try {
+      // Mutate config.root to a dir without rig.json
+      config.root = os.tmpdir()
+      const boxes = rig.loadBoxesGraceful()
+      assert.ok(Array.isArray(boxes), 'should return an array')
+      assert.strictEqual(boxes.length, 0, 'should be empty when rig.json absent')
+    } finally {
+      config.root = origRoot
+    }
+  })
 })
 
 // ── buildSnapshot() ──────────────────────────────────────────────────────────
