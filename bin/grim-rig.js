@@ -713,6 +713,11 @@ function serveStatic(filePath, contentType) {
  * @returns {object} — { server, stop }
  */
 function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
+  // Scrub X11 env vars so si.graphics() → xrandr fails instantly/silently
+  // instead of spamming "X11 connection rejected" on every poll.
+  delete process.env.DISPLAY
+  delete process.env.XAUTHORITY
+
   let snapshot = {
     host: { hostname: os.hostname().toLowerCase(), cpuPercent: 0, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0, gpu: null },
     services: [],
