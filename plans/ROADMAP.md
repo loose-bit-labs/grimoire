@@ -143,6 +143,7 @@ and a glanceable automotive cockpit.
 | 19 | plans/phase-19.md | stop `grim-rig.js`'s `si.graphics()` from shelling `xrandr` every poll on headless boxes — drop it for the existing nvidia-smi/rocm-smi/amd-smi paths, or scrub `DISPLAY`/`XAUTHORITY` at startup | queued (hierophant, 2026-07-23; independent of 18, either order, low urgency) |
 | 20 | plans/phase-20.md | plink (macOS): launchd LaunchAgent (`com.grimoire.rig-serve.plist`) + `setup-client.sh` Darwin branch — same `:18081` agent, no systemd. **Acceptance must run on plink, not the Linux loop host.** | queued (hierophant, 2026-07-24) |
 | 21 | plans/phase-21.md | fleet dashboard front-door on `:3003` — hub box serves existing `/cluster`+`/fleet` as a bookmarkable all-hosts view; agent stays `:18081` (role split, not a port move); hub-only deploy | queued (hierophant, 2026-07-24) — Track F complete after 19+20+21 |
+| 22 | plans/phase-22.md | Grafana provisioning — auto-load Prometheus datasource + hotspots dashboard from files (fixes phase-13 blank-Grafana + host-net networking gap) | queued (hierophant, 2026-07-24) |
 
 ## Track G — the research brain (phases 14–15)
 
