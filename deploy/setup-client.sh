@@ -260,6 +260,45 @@ _register_host() {
   fi
 }
 
+# ── 10.5. Ensure ~/.grimoire/bin/node pin (pinned-node convention) ──────────
+
+_ensure_node_pin() {
+  step "Ensuring pinned Node.js at ~/.grimoire/bin/node..."
+
+  local pin_dir="$HOME/.grimoire/bin"
+  local pin="$pin_dir/node"
+  local target="$HOME/.nvm/versions/node/v21.7.1/bin/node"
+
+  if [[ -L "$pin" && "$(readlink "$pin")" == "$target" ]]; then
+    ok "pinned node already at ~/.grimoire/bin/node → v21.7.1"
+    return
+  fi
+
+  # Ensure nvm has the pinned version
+  if [[ ! -x "$target" ]]; then
+    if command -v nvm &>/dev/null; then
+      nvm install 21.7.1 2>/dev/null \
+        || fail "nvm install 21.7.1 failed — run it manually, then re-run setup-client.sh"
+    else
+      # nvm not in PATH — try sourcing it
+      local nvm_sh
+      nvm_sh=$(find "$HOME/.nvm" -name "nvm.sh" 2>/dev/null | head -1)
+      if [[ -n "$nvm_sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$nvm_sh"
+        nvm install 21.7.1 2>/dev/null \
+          || fail "nvm install 21.7.1 failed — run it manually, then re-run setup-client.sh"
+      else
+        fail "nvm not found and v21.7.1 not installed — install Node.js v21.7.1 via nvm first"
+      fi
+    fi
+  fi
+
+  mkdir -p "$pin_dir"
+  ln -sf "$target" "$pin"
+  ok "pinned: ~/.grimoire/bin/node → v21.7.1"
+}
+
 # ── 11. grim-rig-serve persistent userspace service ───────────────────────────
 
 _install_rig_serve_service() {
@@ -292,12 +331,10 @@ _install_rig_serve_service() {
   local was_enabled=false
   systemctl --user is-enabled grim-rig-serve &>/dev/null && was_enabled=true
 
-  # Resolve node binary at install time (mirrors install-service.sh:_resolve_node)
-  # so the installed unit works on any box regardless of nvm version.
-  local NODE_BIN
-  NODE_BIN=$(which node)
-  if [[ -z "$NODE_BIN" ]]; then
-    warn "node not found — grim-rig-serve cannot start"
+  # Verify the pinned node exists (created by _ensure_node_pin)
+  local pin="$HOME/.grimoire/bin/node"
+  if [[ ! -x "$pin" ]]; then
+    warn "~/.grimoire/bin/node not found — run _ensure_node_pin first"
     return
   fi
 
@@ -305,15 +342,15 @@ _install_rig_serve_service() {
   local service_dst="$service_dir/grim-rig-serve.service"
   mkdir -p "$service_dir"
 
-  # Write unit dynamically — node path is box-specific, not static.
+  # Use the pinned-node convention — no per-box node path.
   cat > "$service_dst" <<EOF
 [Unit]
 Description=grim rig serve — resident homelab telemetry agent (/status + /metrics)
 After=network.target
 
 [Service]
-WorkingDirectory=%h/src/me/grimoire
-ExecStart=${NODE_BIN} bin/grim.js rig serve --listen 0.0.0.0 --port 18081
+WorkingDirectory=%h/.grimoire
+ExecStart=%h/.grimoire/bin/node bin/grim.js rig serve --listen 0.0.0.0 --port 18081
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/data/logs/grimoire/grim-rig.log
@@ -367,6 +404,7 @@ _main() {
   _create_dotlink
   _install_boot_report_service
   _register_host
+  _ensure_node_pin
   _install_rig_serve_service
   _smoke_test
 

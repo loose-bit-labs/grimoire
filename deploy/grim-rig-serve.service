@@ -3,8 +3,8 @@ Description=grim rig serve — resident homelab telemetry agent (/status + /metr
 After=network.target
 
 [Service]
-WorkingDirectory=%h/src/me/grimoire
-ExecStart=%h/.nvm/versions/node/v21.7.1/bin/node bin/grim.js rig serve --listen 0.0.0.0 --port 18081
+WorkingDirectory=%h/.grimoire
+ExecStart=%h/.grimoire/bin/node bin/grim.js rig serve --listen 0.0.0.0 --port 18081
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/data/logs/grimoire/grim-rig.log
