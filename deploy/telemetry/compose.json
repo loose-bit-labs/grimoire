@@ -23,9 +23,7 @@
       "image": "grafana/grafana:11.3.0",
       "container_name": "grim-grafana",
       "restart": "unless-stopped",
-      "ports": [
-        "3000:3000"
-      ],
+      "network_mode": "host",
       "volumes": [
         "grafana-data:/var/lib/grafana"
       ],
