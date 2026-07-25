@@ -30,7 +30,9 @@ $ARGUMENTS
 ## Config: rig.json
 
 Box inventory lives at `$GRIMOIRE_ROOT/rig.json` — NOT in the engine code.
-If rig.json is missing, the command will print the expected path and exit.
+
+- `grim rig status` / `up` / `down`: requires rig.json — exits with error if missing.
+- `grim rig serve`: graceful degradation — logs a warning and runs with empty service list if rig.json is absent. Client boxes intentionally have no rig.json.
 
 To set up on a new machine:
 ```bash
