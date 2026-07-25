@@ -22,36 +22,54 @@
           "thresholds": {
             "mode": "percentage",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "custom": {
             "displayMode": "gradient-slash",
             "minVizWidth": 8,
             "fillOpacity": 80,
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "title": "VRAM Hotspots",
       "type": "bargauge",
       "targets": [
         {
           "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
-          "legendFormat": "{{box}} — {{service}}",
+          "legendFormat": "{{box}} \u2014 {{service}}",
           "refId": "A"
         }
       ],
       "options": {
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         }
       }
@@ -63,11 +81,16 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              {
+                "color": "blue",
+                "value": null
+              }
             ]
           },
           "custom": {
@@ -76,7 +99,12 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "id": 2,
       "title": "Models Loaded",
       "type": "stat",
@@ -90,7 +118,9 @@
       "options": {
         "reduceOptions": {
           "values": false,
-          "calcs": ["count"],
+          "calcs": [
+            "count"
+          ],
           "fields": ""
         },
         "orientation": "auto"
@@ -103,12 +133,20 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 8 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
             ]
           },
           "custom": {
@@ -121,16 +159,28 @@
             "gradientMode": "none",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "stack" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "stack"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "id": 3,
       "title": "Queue / Running",
       "type": "timeseries",
@@ -147,7 +197,11 @@
         }
       ],
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": [] }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": []
+        }
       }
     },
     {
@@ -157,13 +211,24 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "mappings": [
@@ -172,7 +237,10 @@
               "options": {
                 "from": 90,
                 "to": 100,
-                "result": { "text": "ALERT", "color": "dark-red" }
+                "result": {
+                  "text": "ALERT",
+                  "color": "dark-red"
+                }
               }
             },
             {
@@ -180,23 +248,32 @@
               "options": {
                 "from": 0,
                 "to": 89.99,
-                "result": { "text": "OK", "color": "green" }
+                "result": {
+                  "text": "OK",
+                  "color": "green"
+                }
               }
             }
           ],
           "custom": {
             "filterable": false
-          }
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "id": 4,
       "title": "VRAM > 90% Alert",
-      "type": "state-color",
+      "type": "stat",
       "targets": [
         {
-          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} > 0.9",
+          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
           "legendFormat": "{{box}}/{{service}}",
           "refId": "A"
         }
@@ -204,16 +281,25 @@
       "options": {
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
-        "showHeader": true
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name"
       }
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["grimoire", "telemetry", "rig"],
+  "tags": [
+    "grimoire",
+    "telemetry",
+    "rig"
+  ],
   "templating": {
     "list": []
   },
