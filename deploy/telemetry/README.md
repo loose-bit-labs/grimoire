@@ -36,8 +36,8 @@ Regeneration is deterministic — delete and re-run produces byte-identical outp
 
 ## Dashboard
 
-Import `deploy/telemetry/dashboard-hotspots.json` in Grafana (Settings → Dashboards →
-Import). It provides:
+The hotspots dashboard is auto-loaded via Grafana provisioning (no manual import needed).
+It provides:
 
 1. **VRAM Hotspots** — bar gauges of VRAM usage % per node (green → yellow → red at 70/90%)
 2. **Models Loaded** — count of currently loaded models
@@ -56,6 +56,10 @@ deploy/telemetry/
   compose.json                    # Docker Compose (Prometheus + Grafana)
   generate-scrape.sh              # Generator: rig.json → prometheus.json
   prometheus.json                 # Generated Prometheus scrape config
-  dashboard-hotspots.json         # Grafana dashboard
+  dashboard-hotspots.json         # Grafana dashboard (source)
   README.md                       # This file
+  provisioning/
+    datasources/prometheus.yml    # Grafana datasource provisioning
+    dashboards/grimoire.yml       # Dashboard provider config
+    dashboards/dashboard-hotspots.json  # Dashboard (copied for mounting)
 ```

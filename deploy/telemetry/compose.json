@@ -25,7 +25,9 @@
       "restart": "unless-stopped",
       "network_mode": "host",
       "volumes": [
-        "grafana-data:/var/lib/grafana"
+        "grafana-data:/var/lib/grafana",
+        "./provisioning:/etc/grafana/provisioning:ro",
+        "./provisioning/dashboards:/var/lib/grafana/dashboards:ro"
       ],
       "environment": [
         "GF_SECURITY_ADMIN_USER=admin",
