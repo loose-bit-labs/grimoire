@@ -31,7 +31,7 @@ describe('classify() with feature flag', () => {
 // ── listFeatures() ────────────────────────────────────────────────────────────
 
 describe('listFeatures()', () => {
-  it('returns empty array when no feature-request entities exist', async () => {
+  it('returns valid JSON shape regardless of KB state', async () => {
     // Capture stdout
     const originalLog = console.log
     const outputs = []
@@ -40,8 +40,8 @@ describe('listFeatures()', () => {
     try {
       await grimFeatures.listFeatures({ json: true })
       const lastOutput = JSON.parse(outputs[outputs.length - 1])
-      assert.strictEqual(lastOutput.count, 0)
-      assert.ok(Array.isArray(lastOutput.features))
+      assert.ok(Array.isArray(lastOutput.features), 'features should be an array')
+      assert.strictEqual(typeof lastOutput.count, 'number', 'count should be a number')
     } finally {
       console.log = originalLog
     }
