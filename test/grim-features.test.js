@@ -31,14 +31,14 @@ describe('classify() with feature flag', () => {
 // ── listFeatures() ────────────────────────────────────────────────────────────
 
 describe('listFeatures()', () => {
-  it('returns empty array when no feature-request entities exist', () => {
+  it('returns empty array when no feature-request entities exist', async () => {
     // Capture stdout
     const originalLog = console.log
     const outputs = []
     console.log = (...args) => { outputs.push(args.join(' ')) }
 
     try {
-      grimFeatures.listFeatures({ json: true })
+      await grimFeatures.listFeatures({ json: true })
       const lastOutput = JSON.parse(outputs[outputs.length - 1])
       assert.strictEqual(lastOutput.count, 0)
       assert.ok(Array.isArray(lastOutput.features))

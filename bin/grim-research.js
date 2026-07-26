@@ -289,7 +289,7 @@ async function acquire(classification, projectOverride) {
 const RESEARCH_JUDGE_SYSTEM = `You are THE ARCHIVIST. You judge acquired research material and decide how to file it in a knowledge graph.
 
 Given the original drop and acquired text, output a JSON object with:
-- "type": "SoftwareApplication" (for tools/repos/frameworks), "DefinedTerm" (for concepts/ideas), or "feature-request" (for an intent/idea for a project — e.g. "NPC system needs gossip mechanism")
+- "type": "SoftwareApplication" (for tools/repos/frameworks) or "DefinedTerm" (for concepts/ideas, including feature-requests)
 - "name": concise display name
 - "description": 1-2 sentences — what this IS, written for a reader with no prior context
 - "project": the best-matching project entity ID from this list, or null if no match:

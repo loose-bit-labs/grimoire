@@ -18,12 +18,12 @@ const minimist = require('minimist')
 const { loadGraph } = require('../lib/graph')
 const { search } = require('./grim-oracle')
 
-function listFeatures(opts = {}) {
+async function listFeatures(opts = {}) {
   const { project, json } = opts
 
   let graph
   try {
-    graph = loadGraph()
+    graph = await loadGraph()
   } catch (e) {
     console.error(`grim features: cannot load graph — ${e.message}`)
     process.exit(1)
@@ -122,7 +122,7 @@ if (require.main === module) {
 
   const project = args.project || (args._[0] && !args._[0].startsWith('-') ? args._[0] : null)
 
-  listFeatures({ project, json: args.json })
+  listFeatures({ project, json: args.json }).catch(e => { console.error(e); process.exit(1) })
 }
 
 module.exports = { listFeatures }
