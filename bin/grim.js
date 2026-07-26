@@ -35,6 +35,7 @@ const COMMANDS = {
   'host':          { script: 'grim-host.js',          desc: 'Host inventory, /etc/hosts gen, config sync'                    },
   'mm':            { script: 'grim-mm.js',            desc: 'Read/write the .mm pact thread        (The Postbox)'       },
   'research':      { script: 'grim-research.js',      desc: 'Research a URL, term, or post         (The Researcher)'    },
+  'features':      { script: 'grim-features.js',      desc: 'List feature requests by project      (The Features)'    },
   'serve':     { script: 'grim-server.js',   desc: 'Start the Grimoire HTTP+MCP server'                },
 }
 

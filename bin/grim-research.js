@@ -102,8 +102,13 @@ function extractText(html) {
 
 // ── Classify ──────────────────────────────────────────────────────────────────
 
-function classify(drop) {
+function classify(drop, forceFeature = false) {
   const url = drop.trim()
+
+  // --feature flag forces feature-request type
+  if (forceFeature) {
+    return { type: 'feature-request', term: url }
+  }
 
   // Reddit shortlink or full URL
   if (/^https?:\/\/(www\.)?reddit\.com\//i.test(url) || /^https?:\/\/(www\.)?redd\.it\//i.test(url)) {
@@ -269,6 +274,10 @@ async function acquireTerm(info) {
 }
 
 async function acquire(classification, projectOverride) {
+  if (classification.type === 'feature-request') {
+    // No web acquisition — the note text IS the content
+    return { title: classification.term, text: classification.term }
+  }
   if (classification.type === 'url') return acquireUrl(classification)
   if (classification.type === 'reddit') return acquireReddit(classification)
   if (classification.type === 'term') return acquireTerm(classification)
@@ -280,7 +289,7 @@ async function acquire(classification, projectOverride) {
 const RESEARCH_JUDGE_SYSTEM = `You are THE ARCHIVIST. You judge acquired research material and decide how to file it in a knowledge graph.
 
 Given the original drop and acquired text, output a JSON object with:
-- "type": "SoftwareApplication" (for tools/repos/frameworks) or "DefinedTerm" (for concepts/ideas)
+- "type": "SoftwareApplication" (for tools/repos/frameworks), "DefinedTerm" (for concepts/ideas), or "feature-request" (for an intent/idea for a project — e.g. "NPC system needs gossip mechanism")
 - "name": concise display name
 - "description": 1-2 sentences — what this IS, written for a reader with no prior context
 - "project": the best-matching project entity ID from this list, or null if no match:
@@ -355,11 +364,21 @@ async function judge(drop, classification, acquired, timeout) {
 // ── File ──────────────────────────────────────────────────────────────────────
 
 function fileEntity(judgment, drop, classification, acquired) {
+  const tags = [...(judgment.tags || [])]
+
+  // Feature-request entities get needs-triage tag
+  if (classification.type === 'feature-request') {
+    const today = new Date().toISOString().slice(0, 10)
+    if (!tags.includes('research/feature-request')) tags.push('research/feature-request')
+    if (!tags.includes('needs-triage')) tags.push('needs-triage')
+    if (!tags.includes(`research/${today}`)) tags.push(`research/${today}`)
+  }
+
   const entity = {
     '@type': judgment.type || 'DefinedTerm',
     name: judgment.name,
     description: judgment.description,
-    tags: judgment.tags || [],
+    tags,
     relationships: {},
     metadata: {
       source: 'research',
@@ -382,10 +401,10 @@ function fileEntity(judgment, drop, classification, acquired) {
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async function researchDrop(drop, opts = {}) {
-  const { json, dryRun, project: projectOverride, timeout = 60000 } = opts
+  const { json, dryRun, project: projectOverride, timeout = 60000, feature } = opts
 
   // 1. Classify
-  const classification = classify(drop)
+  const classification = classify(drop, feature)
 
   // 2. Dedup
   const dedupQuery = classification.type === 'term' ? classification.term : classification.url
@@ -447,8 +466,8 @@ if (require.main === module) {
   const argvStart = (process.argv[2] === 'research') ? 3 : 2
   const args = minimist(process.argv.slice(argvStart), {
     string: ['project', 'timeout'],
-    boolean: ['json', 'dry-run'],
-    alias: { j: 'json', d: 'dry-run', p: 'project', t: 'timeout' },
+    boolean: ['json', 'dry-run', 'feature'],
+    alias: { j: 'json', d: 'dry-run', p: 'project', t: 'timeout', f: 'feature' },
     unknown: [() => true], // allow positional args
   })
 
@@ -464,6 +483,7 @@ if (require.main === module) {
     dryRun: args['dry-run'],
     project: args.project,
     timeout: parseInt(args.timeout, 10) || 60000,
+    feature: args.feature,
   }).catch(e => {
     console.error(`grim research: ${e.message}`)
     process.exit(1)
