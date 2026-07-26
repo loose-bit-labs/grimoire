@@ -155,7 +155,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | queued |
+| 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | queued (blocked on 14) |
 
 ## Track H — the capture doorbell (phase 16)
