@@ -113,7 +113,8 @@ function printFeatures(byProject, json, filterProject) {
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 if (require.main === module) {
-  const args = minimist(process.argv.slice(2), {
+  const argvStart = (process.argv[2] === 'features') ? 3 : 2
+  const args = minimist(process.argv.slice(argvStart), {
     string: ['project'],
     boolean: ['json', 'all'],
     alias: { j: 'json', a: 'all' },
