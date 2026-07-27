@@ -730,6 +730,65 @@ function serveStatic(filePath, contentType) {
 }
 
 /**
+ * Serve a dashboard-only HTTP server (no poller, no local metrics).
+ * Only exposes /cluster (HTML) and /fleet (JSON aggregate).
+ * @param {object} opts
+ * @param {number} opts.port — HTTP listen port
+ * @param {string} opts.listen — bind address
+ * @param {object} opts.boxes — loaded rig.json boxes
+ * @returns {object} — { server, stop }
+ */
+function serveDashboard({ port = 3003, listen = '0.0.0.0', boxes }) {
+  // HTTP server — no poller, no local snapshot
+  const server = http.createServer(async (req, res) => {
+    if (req.url === '/cluster' && req.method === 'GET') {
+      const htmlPath = path.join(__dirname, '..', 'deploy', 'rig-cluster.html')
+      const result = serveStatic(htmlPath, 'text/html; charset=utf-8')
+      if (result) {
+        res.writeHead(result.status, { 'Content-Type': result.contentType })
+        res.end(result.body)
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('cluster page not found\n')
+      }
+      return
+    }
+
+    if (req.url === '/fleet' && req.method === 'GET') {
+      try {
+        const fleet = await getFleet(boxes)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(fleet))
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: e.message }))
+      }
+      return
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('not found\n')
+  })
+
+  server.on('error', (e) => {
+    process.stderr.write(`grim rig serve --dashboard: server error: ${e.message}\n`)
+  })
+
+  server.listen(port, listen, () => {
+    console.log(`grim rig serve --dashboard: listening on ${listen}:${port}`)
+    console.log(`  /cluster — instrument cluster (HTML)`)
+    console.log(`  /fleet   — aggregate fleet status (JSON)`)
+  })
+
+  return {
+    server,
+    stop() {
+      return new Promise(resolve => server.close(resolve))
+    },
+  }
+}
+
+/**
  * @param {number} opts.port — HTTP listen port
  * @param {number} opts.interval — poll interval in seconds
  * @param {string} opts.listen — bind address
@@ -830,13 +889,13 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = minimist(process.argv.slice(3), {
-    boolean: ['json', 'help'],
+    boolean: ['json', 'help', 'dashboard'],
     string:  ['box'],
     alias:   { j: 'json', h: 'help', b: 'box' },
   })
@@ -849,19 +908,22 @@ async function main() {
          grim rig up <service> [--box <name>]
          grim rig down <service> [--box <name>]
          grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
+         grim rig serve --dashboard [--port 3003] [--listen 0.0.0.0]
 
   Subcommands:
     status (default)   Show VRAM + service status for all boxes
     up <service>       systemctl start <service>
     down <service>     systemctl stop <service>
     serve              Start resident telemetry agent (/status + /metrics)
+    serve --dashboard  Fleet dashboard front-door (/cluster + /fleet)
 
   Options:
     --box <name>   Target a specific box (required when service is on multiple boxes)
     --json         Machine-readable status output
-    --port <n>     HTTP port for serve (default: 18081)
+    --port <n>     HTTP port for serve (default: 18081) or --dashboard (default: 3003)
     --interval <s> Poll interval in seconds for serve (default: 5)
-    --listen <addr> Bind address for serve (default: 127.0.0.1)
+    --listen <addr> Bind address for serve (default: 127.0.0.1) or --dashboard (default: 0.0.0.0)
+    --dashboard    Dashboard mode: no poller, only /cluster + /fleet
 
   Config:
     $GRIMOIRE_ROOT/rig.json — box inventory (copy from rig.example.json)
@@ -880,10 +942,16 @@ async function main() {
   }
 
   if (sub === 'serve') {
+    const boxes   = loadBoxesGraceful()
+    if (args.dashboard) {
+      const port    = parseInt(args.port, 10) || 3003
+      const listen  = args.listen || '0.0.0.0'
+      serveDashboard({ port, listen, boxes })
+      return
+    }
     const port    = parseInt(args.port, 10) || 18081
     const interval = parseInt(args.interval, 10) || 5
     const listen  = args.listen || '127.0.0.1'
-    const boxes   = loadBoxesGraceful()
     serve({ port, interval, listen, boxes })
     return
   }

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.grimoire.rig-dashboard</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__NODE_BIN__</string>
+        <string>__ENGINE_ROOT__/bin/grim.js</string>
+        <string>rig</string>
+        <string>serve</string>
+        <string>--dashboard</string>
+        <string>--listen</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>3003</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__ENGINE_ROOT__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/data/logs/grimoire/grim-rig-dashboard.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/data/logs/grimoire/grim-rig-dashboard.log</string>
+</dict>
+</plist>

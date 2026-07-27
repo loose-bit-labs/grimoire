@@ -405,6 +405,118 @@ _install_rig_serve_launchd() {
     || warn "launchctl load failed — run: launchctl load -w $plist_dst"
 }
 
+# ── 11.5. Dashboard service (hub-only, conditional) ──────────────────────────
+
+_install_dashboard_service() {
+  step "Checking for dashboard hub role..."
+
+  local pin="$HOME/.grimoire/bin/node"
+  if [[ ! -x "$pin" ]]; then
+    warn "~/.grimoire/bin/node not found — skipping dashboard install"
+    return
+  fi
+
+  # Check if this box is flagged as a dashboard hub in rig.json
+  local rig_json="$HOME/.grimoire/rig.json"
+  if [[ ! -f "$rig_json" ]]; then
+    ok "no rig.json — skipping dashboard install"
+    return
+  fi
+
+  local is_hub
+  is_hub=$(node -e "
+    const boxes = JSON.parse(require('fs').readFileSync('$rig_json', 'utf8'));
+    const hostname = require('os').hostname().toLowerCase();
+    const box = (Array.isArray(boxes) ? boxes : Object.values(boxes)).find(b =>
+      (b.aliases || []).includes(hostname) || b.host === hostname || b.label === hostname
+    );
+    process.stdout.write(box && box.dashboard ? 'true' : 'false');
+  " 2>/dev/null || echo "false")
+
+  if [[ "$is_hub" != "true" ]]; then
+    ok "this box is not a dashboard hub — skipping"
+    return
+  fi
+
+  ok "this box is a dashboard hub — installing dashboard service"
+
+  if command -v systemctl &>/dev/null; then
+    _install_dashboard_systemd "$pin"
+  elif command -v launchctl &>/dev/null; then
+    _install_dashboard_launchd "$pin"
+  else
+    warn "no init system found — skipping dashboard service"
+  fi
+}
+
+_install_dashboard_systemd() {
+  local pin="$1"
+  step "Installing grim-rig-dashboard systemd user service..."
+
+  local was_enabled=false
+  systemctl --user is-enabled grim-rig-dashboard &>/dev/null && was_enabled=true
+
+  local service_dir="$HOME/.config/systemd/user"
+  local service_dst="$service_dir/grim-rig-dashboard.service"
+  mkdir -p "$service_dir"
+
+  cat > "$service_dst" <<EOF
+[Unit]
+Description=grim rig dashboard — fleet cockpit front-door (/cluster + /fleet)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/.grimoire
+ExecStart=%h/.grimoire/bin/node bin/grim.js rig serve --dashboard --listen 0.0.0.0 --port 3003
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/data/logs/grimoire/grim-rig-dashboard.log
+StandardError=append:%h/data/logs/grimoire/grim-rig-dashboard.log
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+
+  if $was_enabled; then
+    ok "grim-rig-dashboard already enabled"
+  else
+    systemctl --user enable grim-rig-dashboard 2>/dev/null \
+      && ok "grim-rig-dashboard enabled" \
+      || warn "systemctl enable failed — run: systemctl --user enable grim-rig-dashboard"
+  fi
+
+  systemctl --user restart grim-rig-dashboard 2>/dev/null \
+    && ok "grim-rig-dashboard running" \
+    || warn "systemctl restart failed — run: systemctl --user restart grim-rig-dashboard"
+}
+
+_install_dashboard_launchd() {
+  local pin="$1"
+  step "Installing grim-rig-dashboard launchd LaunchAgent..."
+
+  local plist_src="$ENGINE_ROOT/deploy/com.grimoire.rig-dashboard.plist"
+  local plist_dst="$HOME/Library/LaunchAgents/com.grimoire.rig-dashboard.plist"
+
+  if [[ ! -f "$plist_src" ]]; then
+    warn "com.grimoire.rig-dashboard.plist not found in deploy/ — skipping"
+    return
+  fi
+
+  local engine_root
+  engine_root="$(cd "$ENGINE_ROOT" && pwd)"
+  sed -e "s|__NODE_BIN__|${pin}|g" \
+      -e "s|__ENGINE_ROOT__|${engine_root}|g" \
+      -e "s|__HOME__|${HOME}|g" \
+      "$plist_src" > "$plist_dst"
+
+  launchctl unload "$plist_dst" 2>/dev/null || true
+  launchctl load -w "$plist_dst" \
+    && ok "grim-rig-dashboard LaunchAgent loaded" \
+    || warn "launchctl load failed — run: launchctl load -w $plist_dst"
+}
+
 # ── 12. Smoke test ────────────────────────────────────────────────────────────
 
 _smoke_test() {
@@ -436,6 +548,7 @@ _main() {
   _register_host
   _ensure_node_pin
   _install_rig_serve_service
+  _install_dashboard_service
   _smoke_test
 
   echo ""

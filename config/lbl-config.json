@@ -22,6 +22,10 @@
 	"ollama":    "chonko_ollama",
 	"coding":    "chonko"
   },
+  "ports": {
+    "grim_rig": 18081,
+    "dashboard": 3003
+  },
   "endpoints": {
     "mh_llama": "http://meinherz:11311",
     "chonko": "http://chonko:11311",

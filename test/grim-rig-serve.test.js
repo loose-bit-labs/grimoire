@@ -242,6 +242,45 @@ describe('serve()', () => {
   })
 })
 
+// ── serveDashboard() ─────────────────────────────────────────────────────────
+
+describe('serveDashboard()', () => {
+  it('/cluster returns HTML, /fleet returns JSON, /status and /metrics return 404', async () => {
+    const port = 19880
+    const { server, stop } = rig.serveDashboard({
+      port,
+      listen: '127.0.0.1',
+      boxes: [{ host: 'x', label: 'x', aliases: ['x'], services: [] }],
+    })
+
+    try {
+      await new Promise(r => server.once('listening', r))
+
+      // /cluster — HTML
+      const clusterRes = await httpGet(`http://127.0.0.1:${port}/cluster`)
+      assert.strictEqual(clusterRes.status, 200)
+      assert.ok(clusterRes.headers['content-type']?.includes('text/html'))
+
+      // /fleet — JSON
+      const fleetRes = await httpGet(`http://127.0.0.1:${port}/fleet`)
+      assert.strictEqual(fleetRes.status, 200)
+      const fleetJson = JSON.parse(fleetRes.body)
+      assert.ok(fleetJson.boxes)
+      assert.ok(Array.isArray(fleetJson.boxes))
+
+      // /status — 404 (dashboard has no local snapshot)
+      const statusRes = await httpGet(`http://127.0.0.1:${port}/status`)
+      assert.strictEqual(statusRes.status, 404)
+
+      // /metrics — 404 (dashboard has no poller)
+      const metricsRes = await httpGet(`http://127.0.0.1:${port}/metrics`)
+      assert.strictEqual(metricsRes.status, 404)
+    } finally {
+      await stop()
+    }
+  })
+})
+
 // ── buildSnapshot() ──────────────────────────────────────────────────────────
 
 describe('buildSnapshot()', () => {
