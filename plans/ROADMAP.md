@@ -167,6 +167,23 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 |-------|-------|-----------|--------|
 | 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | queued (blocked on 14+15) |
 
+## Track I — Autopact: the pact runs itself (phases 25–27)
+
+**Goal:** the mage/minion/hierophant loop self-drives and stops only on a **code**
+verdict — a decision, a permission, an empty roadmap, a deadlock, or a budget breach —
+never re-judged by the model each wake. Design dialogue: 2026-07-26. **Rope ruling
+(binding):** the pact commits locally after each accepted phase and **never pushes**;
+outward/irreversible actions (deploy, router/DNS, ufw, external/paid) carry `requires:
+permission` in the brief header and HALT the router. Notification: terminal only.
+Hierophant auto-decides architecture within existing tracks; new scope/track/product/
+money HALTs to the user.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 25 | plans/phase-25.md | `grim mm next` — deterministic router: `ACT`/`WAIT`/`HALT <reason>` + exit codes; halt predicate (budget/deadlock/decision/permission/roadmap-empty); `escalate --scope` tag; brief `requires: permission` tag; ROADMAP phase-queue reader | queued (hierophant, 2026-07-26) |
+| 26 | plans/phase-26.md | `grim mm drive` + `/loop` wiring for mage+minion — self-driving, commit-local/no-push, budget guard, compaction-survival; terminal-only halt | queued (blocked on 25) |
+| 27 | plans/phase-27.md | hierophant auto-authority within tracks — escalate-woken (no polling), rules architecture, HALTs to user on scope/product/external; `drive` guard against ruling on reserved decisions | queued (blocked on 25+26) — Track I complete |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
