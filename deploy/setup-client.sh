@@ -302,14 +302,27 @@ _ensure_node_pin() {
 # ── 11. grim-rig-serve persistent userspace service ───────────────────────────
 
 _install_rig_serve_service() {
-  step "Installing grim-rig-serve systemd user service..."
+  mkdir -p "$HOME/data/logs/grimoire"
 
-  if ! command -v systemctl &>/dev/null; then
-    warn "systemctl not found (not a systemd host, e.g. macOS) — skipping grim-rig-serve service"
+  # Verify the pinned node exists (created by _ensure_node_pin)
+  local pin="$HOME/.grimoire/bin/node"
+  if [[ ! -x "$pin" ]]; then
+    warn "~/.grimoire/bin/node not found — run _ensure_node_pin first"
     return
   fi
 
-  mkdir -p "$HOME/data/logs/grimoire"
+  if command -v systemctl &>/dev/null; then
+    _install_rig_serve_systemd "$pin"
+  elif command -v launchctl &>/dev/null; then
+    _install_rig_serve_launchd "$pin"
+  else
+    warn "no init system found (systemctl/launchctl) — skipping grim-rig-serve service"
+  fi
+}
+
+_install_rig_serve_systemd() {
+  local pin="$1"
+  step "Installing grim-rig-serve systemd user service..."
 
   # Lingering — a user unit dies at logout unless linger is on. Check first,
   # don't assume; don't fail the install if the check itself is unavailable.
@@ -325,24 +338,13 @@ _install_rig_serve_service() {
     warn "loginctl not found — cannot verify/enable lingering; service may not survive logout"
   fi
 
-  # Unlike grim-boot-report (fire-once), this is a persistent service: always
-  # reinstall + restart so a re-run (e.g. via /update-host after a code
-  # change) actually picks up the latest unit file and code.
   local was_enabled=false
   systemctl --user is-enabled grim-rig-serve &>/dev/null && was_enabled=true
-
-  # Verify the pinned node exists (created by _ensure_node_pin)
-  local pin="$HOME/.grimoire/bin/node"
-  if [[ ! -x "$pin" ]]; then
-    warn "~/.grimoire/bin/node not found — run _ensure_node_pin first"
-    return
-  fi
 
   local service_dir="$HOME/.config/systemd/user"
   local service_dst="$service_dir/grim-rig-serve.service"
   mkdir -p "$service_dir"
 
-  # Use the pinned-node convention — no per-box node path.
   cat > "$service_dst" <<EOF
 [Unit]
 Description=grim rig serve — resident homelab telemetry agent (/status + /metrics)
@@ -373,6 +375,34 @@ EOF
   systemctl --user restart grim-rig-serve 2>/dev/null \
     && ok "grim-rig-serve running" \
     || warn "systemctl restart failed — run: systemctl --user restart grim-rig-serve"
+}
+
+_install_rig_serve_launchd() {
+  local pin="$1"
+  step "Installing grim-rig-serve launchd LaunchAgent..."
+
+  local plist_src="$ENGINE_ROOT/deploy/com.grimoire.rig-serve.plist"
+  local plist_dst="$HOME/Library/LaunchAgents/com.grimoire.rig-serve.plist"
+
+  if [[ ! -f "$plist_src" ]]; then
+    warn "com.grimoire.rig-serve.plist not found in deploy/ — skipping"
+    return
+  fi
+
+  # Template paths into the plist
+  local engine_root
+  engine_root="$(cd "$ENGINE_ROOT" && pwd)"
+  sed -e "s|__NODE_BIN__|${pin}|g" \
+      -e "s|__ENGINE_ROOT__|${engine_root}|g" \
+      -e "s|__HOME__|${HOME}|g" \
+      "$plist_src" > "$plist_dst"
+
+  # Unload if previously loaded (ignore "not found" errors)
+  launchctl unload "$plist_dst" 2>/dev/null || true
+
+  launchctl load -w "$plist_dst" \
+    && ok "grim-rig-serve LaunchAgent loaded" \
+    || warn "launchctl load failed — run: launchctl load -w $plist_dst"
 }
 
 # ── 12. Smoke test ────────────────────────────────────────────────────────────
