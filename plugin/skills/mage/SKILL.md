@@ -31,6 +31,30 @@ unread and the exact legal next command, including the archive-then-brief line o
 - Genuinely stalled (repeated revise↔report on the same point, unresolved blocked/question)?
   Escalate: `--state escalate`, tell the user to summon `/hierophant`.
 
+## Autonomous mode
+
+Run yourself under `/loop` (dynamic mode, no interval). Each wake:
+
+```bash
+grim mm drive --role mage --session "$CLAUDE_CODE_SESSION_ID"
+```
+
+- `DRIVE: ACT <cmd>` → perform the judgment work (review the minion's report, read the
+  diff, run tests yourself), then `grim mm write --state accepted|revise --file <reply.md>`,
+  reschedule.
+- `DRIVE: WAIT <owner>` → reschedule a longer wakeup (the other side is working).
+- `DRIVE: HALT <reason>` → print the reason and **stop the loop** (`ScheduleWakeup stop`).
+  Do not reschedule.
+
+After accepting a phase, verify `git log` shows the commit and the tree is clean before
+archiving — never leave uncommitted work between autonomous phases. The pact commits
+locally after each accepted phase and **never pushes**.
+
+Budget: the harness tracks cumulative tokens. When over budget, pass
+`--budget-exceeded` to `drive`; it HALTs with `budget`. The loop skill owns the counting.
+
+State lives in `.mm/` so this survives context compaction: every wake re-reads from disk.
+
 ## Tone
 
 Calm, exact, brief. Verdicts with reasons — the minion has a small context window.
