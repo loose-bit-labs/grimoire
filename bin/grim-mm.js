@@ -7,20 +7,36 @@
  * The mage/minion/hierophant pact converses through `.mm/` — an append-only
  * thread of message files. This script owns every fiddly bit those skills kept
  * getting wrong: making `.mm/`, gitignoring it, stamping the session's role for
- * the HUD, sequencing the NNNN counter, the `phase · state` header, and working
+ * the HUD, sequencing the NNNN counter, the structured header, and working
  * out what's unread. The skills supply judgment; this supplies plumbing.
  *
- * Messages: `.mm/NNNN-<role>.md`. First line: `phase: <N> · state: <state>`.
- * Roles: mage | minion | hierophant.   `.mm/` is gitignored — history is sacred.
+ * Messages: `.mm/NNNN-from-<from>-to-<to>.md`.
+ *   <from> = single role (sender). <to> = single role or hyphenated combo (recipients).
+ *   Roles: mage | minion | hierophant | user.
+ *   `.mm/` is gitignored — history is sacred.
+ *
+ * Message format (YAML frontmatter + body):
+ *   ---
+ *   id: <content-hash>
+ *   ts: <ISO timestamp>
+ *   from: <role>
+ *   to: <role>[,<role>...]
+ *   phase: <N>
+ *   state: <state>
+ *   scope: <optional>
+ *   ---
+ *
+ *   <body>
  *
  * CLI (called directly by the skills, or via `grim mm`):
  *   grim mm read  --role mage --session "$CLAUDE_CODE_SESSION_ID"
  *   grim mm read  --role hierophant --session "$ID" --all      # whole thread, cold start
  *   grim mm write --role minion --session "$ID" --state report --file /tmp/report.md
  *   echo "body" | grim mm write --role mage --session "$ID" --state revise --phase 3
+ *   grim mm write --role mage --session "$ID" --state direction --file f.md --to minion,hierophant
  *
  * read  → stamps role, prints unread inbox (messages above your last) + waiting status.
- * write → stamps role, prepends the header, appends the next NNNN-<role>.md.
+ * write → stamps from/to, writes YAML header, appends the next NNNN-from-<from>-to-<to>.md.
  */
 
 const fs       = require('node:fs')
@@ -28,12 +44,12 @@ const path     = require('node:path')
 const minimist = require('minimist')
 const { execFileSync } = require('node:child_process')
 
-const ROLES  = ['mage', 'minion', 'hierophant']
+const ROLES  = ['mage', 'minion', 'hierophant', 'user']
 const STATES = ['brief', 'report', 'revise', 'accepted', 'question', 'blocked', 'direction', 'escalate']
 // Who each role listens to, so a role's inbox stays on its own layer of the pact:
 // the minion hears only the mage; the mage hears the minion below and the
 // hierophant above; the hierophant reads the whole thread (use --all).
-const LISTENS = { minion: ['mage'], mage: ['minion', 'hierophant'], hierophant: ['mage', 'minion', 'hierophant'] }
+const LISTENS = { minion: ['mage'], mage: ['minion', 'hierophant'], hierophant: ['mage', 'minion', 'hierophant', 'user'], user: ['mage', 'minion', 'hierophant'] }
 // Terminal states close a phase and owe NO reply. If your own terminal message is
 // the latest you are not waiting on anyone — the loop is idle and it's your move
 // to advance (next brief) or end. Without this the mage's `accepted` reads as
@@ -47,21 +63,70 @@ const PAD     = 4
 // Legacy role names found in older threads, normalized to the current ones.
 const ROLE_ALIASES = { overseer: 'hierophant' }
 
-// One parsed message file: { num, role, file, phase, state, body, raw }.
-// `role` is normalized (overseer → hierophant); `file` keeps the original name.
+// Parse filename → { num, from, to }. Supports both new and legacy formats.
+// New: NNNN-from-<from>-to-<to>.md  (to can be hyphenated: mage-minion)
+// Legacy: NNNN-<role>.md  (treated as from=role, to=role)
 function parseName(file) {
-  const m = /^(\d+)-([a-z]+)\.md$/.exec(file)
-  if (!m) return null
-  return { num: parseInt(m[1], 10), role: ROLE_ALIASES[m[2]] || m[2], file }
+  // Try new format first
+  const m = /^(\d+)-from-([a-z]+)-to-([a-z0-9-]+)\.md$/.exec(file)
+  if (m) {
+    const from = ROLE_ALIASES[m[2]] || m[2]
+    const tos = m[3].split('-').map(r => ROLE_ALIASES[r] || r)
+    return { num: parseInt(m[1], 10), from, to: tos, file }
+  }
+  // Legacy fallback
+  const lm = /^(\d+)-([a-z]+)\.md$/.exec(file)
+  if (lm) {
+    const role = ROLE_ALIASES[lm[2]] || lm[2]
+    return { num: parseInt(lm[1], 10), from: role, to: [role], file }
+  }
+  return null
 }
 
+// Parse YAML frontmatter + legacy first-line header from raw message body.
+// Returns { id, ts, from, to, phase, state, scope }.
 function parseHeader(raw) {
+  const result = { id: null, ts: null, from: null, to: null, phase: null, state: null, scope: null }
+
+  // Check for YAML frontmatter (--- delimited)
+  const fmStart = raw.indexOf('---\n')
+  const fmEnd = raw.indexOf('\n---', fmStart + 3)
+
+  if (fmStart >= 0 && fmEnd > fmStart) {
+    const fmBody = raw.slice(fmStart + 4, fmEnd)
+    fmBody.split('\n').forEach(line => {
+      const kv = /^(\w+):\s*(.*)$/.exec(line)
+      if (kv) {
+        const key = kv[1].toLowerCase()
+        const val = kv[2].trim()
+        if (key === 'id') result.id = val
+        else if (key === 'ts') result.ts = val
+        else if (key === 'from') result.from = ROLE_ALIASES[val] || val
+        else if (key === 'to') result.to = val.split(',').map(v => ROLE_ALIASES[v.trim()] || v.trim())
+        else if (key === 'phase') result.phase = val
+        else if (key === 'state') result.state = val
+        else if (key === 'scope') result.scope = val
+      }
+    })
+    return result
+  }
+
+  // Legacy: first line is `phase: N · state: S`
   const first = (raw.split('\n', 1)[0] || '')
   const phase = (/phase:\s*([^\s·]+)/i.exec(first) || [])[1] || null
   const state = (/state:\s*([a-z]+)/i.exec(first) || [])[1] || null
-  // scope: line in the header block (used by escalate --scope)
   const scope = (/^scope:\s*(\S+)/m.exec(raw) || [])[1] || null
   return { phase, state, scope }
+}
+
+// Extract body (everything after YAML frontmatter, or everything if no frontmatter).
+function extractBody(raw) {
+  const fmStart = raw.indexOf('---\n')
+  const fmEnd = raw.indexOf('\n---', fmStart + 4)
+  if (fmStart >= 0 && fmEnd > fmStart) {
+    return raw.slice(fmEnd + 4)
+  }
+  return raw
 }
 
 function readThread(dir) {
@@ -72,7 +137,8 @@ function readThread(dir) {
     .filter(Boolean)
     .map(m => {
       const raw = fs.readFileSync(path.join(dir, m.file), 'utf8')
-      return { ...m, raw, ...parseHeader(raw) }
+      const hdr = parseHeader(raw)
+      return { ...m, raw, body: extractBody(raw), ...hdr }
     })
     .sort((a, b) => a.num - b.num)
 }
@@ -131,10 +197,10 @@ function computeNextMove({ role, latest, waiting, phaseComplete }) {
     }
   }
   if (waiting) return { note: 'waiting on reply; nothing to send' }
-  if (latest.role !== role && TERMINAL.includes(latest.state)) {
+  if (latest.from !== role && TERMINAL.includes(latest.state)) {
     return { note: 'phase accepted by another role; idle until next brief' }
   }
-  const states = legalReplyStates(role, latest.role, latest.state)
+  const states = legalReplyStates(role, latest.from, latest.state)
   if (!states) return { note: 'no defined reply for this situation' }
   return {
     states,
@@ -157,13 +223,13 @@ function printFooter(nextMove) {
 function read({ dir, role, all, json }) {
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
-  const myLast = thread.filter(m => m.role === role).reduce((n, m) => Math.max(n, m.num), 0)
-  const waiting = !!latest && latest.role === role
+  const myLast = thread.filter(m => m.from === role).reduce((n, m) => Math.max(n, m.num), 0)
+  const waiting = !!latest && latest.from === role
   // Inbox: messages above my last one from a role I listen to. --all dumps the
   // entire thread verbatim (the hierophant arrives cold and reads everything).
   const inbox = all
     ? thread
-    : thread.filter(m => m.num > myLast && m.role !== role && LISTENS[role].includes(m.role))
+    : thread.filter(m => m.num > myLast && m.from !== role && LISTENS[role].includes(m.from))
 
   const phaseComplete = waiting && TERMINAL.includes(latest.state)
   const nextMove      = computeNextMove({ role, latest, waiting, phaseComplete })
@@ -171,8 +237,8 @@ function read({ dir, role, all, json }) {
   if (json) {
     console.log(JSON.stringify({
       role, count: thread.length, waiting, phaseComplete,
-      latest: latest && { num: latest.num, role: latest.role, state: latest.state, phase: latest.phase },
-      inbox: inbox.map(m => ({ num: m.num, role: m.role, state: m.state, phase: m.phase, body: m.raw })),
+      latest: latest && { num: latest.num, from: latest.from, to: latest.to, state: latest.state, phase: latest.phase },
+      inbox: inbox.map(m => ({ num: m.num, from: m.from, to: m.to, state: m.state, phase: m.phase, body: m.raw })),
       nextMove,
     }, null, 2))
     return
@@ -196,23 +262,23 @@ function read({ dir, role, all, json }) {
   // A terminal message from someone else (the mage's `accepted`) closes the phase
   // and is NOT a task. You're idle until the next brief lands — don't go reading
   // .mm/ by hand to "check"; just re-run this when nudged.
-  if (latest && latest.role !== role && TERMINAL.includes(latest.state) && !all) {
-    console.log(`PHASE ACCEPTED by ${latest.role} — #${String(latest.num).padStart(PAD, '0')} (phase ${latest.phase}). Nothing for you to do.`)
-    console.log(`\n${'─'.repeat(72)}\n${latest.file}  (from ${latest.role}, state: ${latest.state}, phase: ${latest.phase})\n${'─'.repeat(72)}`)
+  if (latest && latest.from !== role && TERMINAL.includes(latest.state) && !all) {
+    console.log(`PHASE ACCEPTED by ${latest.from} — #${String(latest.num).padStart(PAD, '0')} (phase ${latest.phase}). Nothing for you to do.`)
+    console.log(`\n${'─'.repeat(72)}\n${latest.file}  (from ${latest.from} → ${latest.to.join(',')}, state: ${latest.state}, phase: ${latest.phase})\n${'─'.repeat(72)}`)
     console.log(latest.raw.trimEnd())
     console.log(`\nIDLE — the phase is closed; the next brief is the mage's move. Wait, then re-run \`grim mm read\` when nudged. Do NOT read .mm/ files by hand.`)
     return
   }
   console.log(`UNREAD: ${inbox.length} message(s)` +
-    (latest ? ` — latest is #${String(latest.num).padStart(PAD, '0')}-${latest.role} (state: ${latest.state}, phase: ${latest.phase})` : ''))
+    (latest ? ` — latest is #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')} (state: ${latest.state}, phase: ${latest.phase})` : ''))
   for (const m of inbox) {
-    console.log(`\n${'─'.repeat(72)}\n${m.file}  (from ${m.role}, state: ${m.state}, phase: ${m.phase})\n${'─'.repeat(72)}`)
+    console.log(`\n${'─'.repeat(72)}\n${m.file}  (from ${m.from} → ${m.to.join(',')}, state: ${m.state}, phase: ${m.phase})\n${'─'.repeat(72)}`)
     console.log(m.raw.trimEnd())
   }
   if (!all) printFooter(nextMove)
 }
 
-function write({ dir, role, state, phase, body, force, json, scope }) {
+function write({ dir, role, state, phase, body, force, json, scope, to }) {
   if (!STATES.includes(state)) {
     throw new Error(`invalid --state '${state}'. One of: ${STATES.join(', ')}`)
   }
@@ -228,6 +294,9 @@ function write({ dir, role, state, phase, body, force, json, scope }) {
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
 
+  // Resolve recipients: --to flag overrides; defaults to sender (single-role reply).
+  const tos = to ? to.split(',').map(t => t.trim()) : [role]
+
   // Don't fire a second message while your own is the latest unanswered one
   // (the don't-double-send rule the skills keep tripping on). --force overrides.
   // Exception: if your own latest is TERMINAL (accepted), no reply is owed — so a
@@ -235,7 +304,7 @@ function write({ dir, role, state, phase, body, force, json, scope }) {
   // then briefing the next phase: two mage messages in a row. Don't make that
   // require --force, or the mage hand-writes .mm/ files and the thread rots.
   const latestTerminal = latest && TERMINAL.includes(latest.state)
-  if (latest && latest.role === role && !force && !latestTerminal) {
+  if (latest && latest.from === role && !force && !latestTerminal) {
     throw new Error(
       `your message #${String(latest.num).padStart(PAD, '0')} is already the latest unanswered one.\n` +
       `  Wait for a reply, or pass --force if the user told you to send anyway.`)
@@ -243,37 +312,49 @@ function write({ dir, role, state, phase, body, force, json, scope }) {
 
   const nextNum  = (latest ? latest.num : 0) + 1
   const usePhase = phase != null ? phase : (latest && latest.phase != null ? latest.phase : '0')
-  const file     = `${String(nextNum).padStart(PAD, '0')}-${role}.md`
-  const header   = `phase: ${usePhase} · state: ${state}`
+  const file     = `${String(nextNum).padStart(PAD, '0')}-from-${role}-to-${tos.join('-')}.md`
+  const d = new Date()
+  const ts = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
+  const id       = String(nextNum).padStart(PAD, '0')
+  const toLine   = tos.join(',')
   const scopeLine = scope ? `scope: ${scope}` : ''
-  const content  = `${header}\n${scopeLine ? scopeLine + '\n' : ''}${body.trim()}\n`
+  const content  = `---
+id: ${id}
+ts: ${ts}
+from: ${role}
+to: ${toLine}
+phase: ${usePhase}
+state: ${state}
+${scopeLine ? scopeLine + '\n' : ''}---
+
+${body.trim()}\n`
 
   fs.writeFileSync(path.join(dir, file), content, 'utf8')
 
   if (json) {
-    console.log(JSON.stringify({ file, num: nextNum, role, state, phase: usePhase, scope }, null, 2))
+    console.log(JSON.stringify({ file, num: nextNum, from: role, to: tos, state, phase: usePhase, scope, id, ts }, null, 2))
   } else {
     console.log(`[grim-mm] wrote ${dir}/${file}`)
-    console.log(`  ${header}${scopeLine ? '\n  ' + scopeLine : ''}`)
+    console.log(`  from: ${role} → ${toLine}  phase: ${usePhase}  state: ${state}${scope ? '  scope: ' + scope : ''}`)
   }
 }
 
 function status({ dir, json }) {
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
-  const owner  = latest ? (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role]) : null
+  const owner  = latest ? (TERMINAL.includes(latest.state) ? latest.from : NEXT_OWNER[latest.from]) : null
 
   if (json) {
     console.log(JSON.stringify({
       count: thread.length,
-      latest: latest && { num: latest.num, role: latest.role, state: latest.state, phase: latest.phase },
+      latest: latest && { num: latest.num, from: latest.from, to: latest.to, state: latest.state, phase: latest.phase },
       owner,
     }, null, 2))
     return
   }
 
   if (!latest) { console.log(`[grim-mm] status: EMPTY — no messages yet.`); return }
-  console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.role} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
+  console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
 }
 
 // Concatenate messages to plans/reviews/<name>.md and commit it.
@@ -294,7 +375,7 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
 
     const latest = selected[selected.length - 1]
     if (!TERMINAL.includes(latest.state)) {
-      throw new Error(`phase ${phase} is not accepted yet (latest: #${String(latest.num).padStart(PAD, '0')}-${latest.role}, state: ${latest.state}) — refusing to archive an open phase`)
+      throw new Error(`phase ${phase} is not accepted yet (latest: #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')}, state: ${latest.state}) — refusing to archive an open phase`)
     }
 
     const outPath = path.join(cwd, 'plans', 'reviews', `phase-${phase}.md`)
@@ -303,7 +384,7 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
     }
 
     const content = selected
-      .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.role} (${m.state})\n\n${m.raw.trim()}\n`)
+      .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.from}→${m.to.join(',')} (${m.state})\n\n${m.raw.trim()}\n`)
       .join('\n')
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true })
@@ -334,7 +415,7 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
 
   const latest = selected[selected.length - 1]
   if (!TERMINAL.includes(latest.state)) {
-    throw new Error(`message #${String(latest.num).padStart(PAD, '0')}-${latest.role} (state: ${latest.state}) is not accepted — refusing to archive an open range`)
+    throw new Error(`message #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')} (state: ${latest.state}) is not accepted — refusing to archive an open range`)
   }
 
   const outPath = path.join(cwd, 'plans', 'reviews', `${out}.md`)
@@ -343,7 +424,7 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
   }
 
   const content = selected
-    .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.role} (${m.state})\n\n${m.raw.trim()}\n`)
+    .map(m => `## ${String(m.num).padStart(PAD, '0')}-${m.from}→${m.to.join(',')} (${m.state})\n\n${m.raw.trim()}\n`)
     .join('\n')
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
@@ -429,8 +510,8 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   }
 
   const currentPhase = latest.phase
-  const owner = latest.role === (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role])
-    ? (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role])
+  const owner = latest.from === (TERMINAL.includes(latest.state) ? latest.from : NEXT_OWNER[latest.from])
+    ? (TERMINAL.includes(latest.state) ? latest.from : NEXT_OWNER[latest.from])
     : null
 
   // Halt predicate 1: budget (stub — caller passes flag)
@@ -475,13 +556,13 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
     }
     // architecture scope → route to hierophant (not a halt)
     // If the current role sent the escalate, they should ACT to route to hierophant
-    if (latest.role === role) {
+    if (latest.from === role) {
       if (json) {
         console.log(JSON.stringify({
           verdict: 'ACT',
           reason: `escalate with scope:${latest.scope} — route to hierophant`,
           command: `grim mm write --role hierophant --session "${session}" --state direction --file <reply.md>`,
-          owner: latest.role,
+          owner: latest.from,
           phase: currentPhase,
           state: latest.state,
         }, null, 2))
@@ -525,8 +606,8 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   }
 
   // Fall through to computeNextMove
-  const myLast = thread.filter(m => m.role === role).reduce((n, m) => Math.max(n, m.num), 0)
-  const waiting = !!latest && latest.role === role
+  const myLast = thread.filter(m => m.from === role).reduce((n, m) => Math.max(n, m.num), 0)
+  const waiting = !!latest && latest.from === role
   const phaseComplete = waiting && TERMINAL.includes(latest.state)
   const nextMove = computeNextMove({ role, latest, waiting, phaseComplete })
 
@@ -609,7 +690,7 @@ function main() {
     if (body == null || !String(body).trim()) {
       fail('write needs a body — pass --body "…", --file <path>, or pipe it on stdin')
     }
-    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json, scope: args.scope })
+    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json, scope: args.scope, to: args.to })
     return
   }
 
