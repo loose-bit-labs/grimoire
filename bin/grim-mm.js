@@ -59,7 +59,9 @@ function parseHeader(raw) {
   const first = (raw.split('\n', 1)[0] || '')
   const phase = (/phase:\s*([^\s·]+)/i.exec(first) || [])[1] || null
   const state = (/state:\s*([a-z]+)/i.exec(first) || [])[1] || null
-  return { phase, state }
+  // scope: line in the header block (used by escalate --scope)
+  const scope = (/^scope:\s*(\S+)/m.exec(raw) || [])[1] || null
+  return { phase, state, scope }
 }
 
 function readThread(dir) {
@@ -210,7 +212,7 @@ function read({ dir, role, all, json }) {
   if (!all) printFooter(nextMove)
 }
 
-function write({ dir, role, state, phase, body, force, json }) {
+function write({ dir, role, state, phase, body, force, json, scope }) {
   if (!STATES.includes(state)) {
     throw new Error(`invalid --state '${state}'. One of: ${STATES.join(', ')}`)
   }
@@ -218,6 +220,10 @@ function write({ dir, role, state, phase, body, force, json }) {
   // of the previous phase (the root cause of the phase-label drift bug).
   if (state === 'brief' && phase == null) {
     throw new Error('grim mm write: --state brief requires an explicit --phase')
+  }
+  // --scope is only valid with --state escalate
+  if (scope != null && state !== 'escalate') {
+    throw new Error('grim mm write: --scope is only valid with --state escalate')
   }
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
@@ -239,15 +245,16 @@ function write({ dir, role, state, phase, body, force, json }) {
   const usePhase = phase != null ? phase : (latest && latest.phase != null ? latest.phase : '0')
   const file     = `${String(nextNum).padStart(PAD, '0')}-${role}.md`
   const header   = `phase: ${usePhase} · state: ${state}`
-  const content  = `${header}\n\n${body.trim()}\n`
+  const scopeLine = scope ? `scope: ${scope}` : ''
+  const content  = `${header}\n${scopeLine ? scopeLine + '\n' : ''}${body.trim()}\n`
 
   fs.writeFileSync(path.join(dir, file), content, 'utf8')
 
   if (json) {
-    console.log(JSON.stringify({ file, num: nextNum, role, state, phase: usePhase }, null, 2))
+    console.log(JSON.stringify({ file, num: nextNum, role, state, phase: usePhase, scope }, null, 2))
   } else {
     console.log(`[grim-mm] wrote ${dir}/${file}`)
-    console.log(`  ${header}`)
+    console.log(`  ${header}${scopeLine ? '\n  ' + scopeLine : ''}`)
   }
 }
 
@@ -348,6 +355,208 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
   return { file: outPath, messageCount: selected.length }
 }
 
+// ── Halt predicates ──────────────────────────────────────────────────────
+
+/**
+ * Check if a brief file declares requires: permission.
+ * @param {string} cwd - working directory
+ * @param {string} phase - phase number
+ * @returns {boolean}
+ */
+function briefRequiresPermission(cwd, phase) {
+  const briefPath = path.join(cwd, 'plans', `phase-${phase}.md`)
+  try {
+    const body = fs.readFileSync(briefPath, 'utf8')
+    return /^requires:\s*permission/im.test(body)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Find the lowest-numbered non-accepted phase in ROADMAP.md.
+ * Returns the phase number or null if nothing queued.
+ * @param {string} cwd - working directory
+ * @returns {string|null}
+ */
+function nextQueuedPhase(cwd) {
+  const roadmapPath = path.join(cwd, 'plans', 'ROADMAP.md')
+  try {
+    const body = fs.readFileSync(roadmapPath, 'utf8')
+    const lines = body.split('\n')
+    // Match table rows: | N | plans/phase-N.md | ... | ✅ accepted | ...
+    // Also match non-table entries
+    for (const line of lines) {
+      // Table rows
+      const tableMatch = /^\|\s*(\d+)\s*\|/.exec(line)
+      if (tableMatch) {
+        const num = tableMatch[1]
+        if (!line.includes('✅ accepted') && !line.includes('archived')) {
+          return num
+        }
+      }
+    }
+  } catch {}
+  return null
+}
+
+/**
+ * grim mm next — deterministic pact router.
+ * Evaluates halt predicates in order; falls through to computeNextMove.
+ * @param {object} opts
+ * @param {string} opts.dir - thread directory
+ * @param {string} opts.role - role to evaluate for
+ * @param {string} opts.session - session id (for stamping)
+ * @param {boolean} opts.json - JSON output
+ * @param {boolean} opts.budgetExceeded - stub flag for budget halt
+ * @param {string} opts.cwd - working directory (defaults to process.cwd())
+ */
+function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
+  const thread = readThread(dir)
+  const latest = thread[thread.length - 1] || null
+  const cwd = cwdOpt || process.cwd()
+
+  if (!latest) {
+    // No messages — nothing to do
+    if (json) {
+      console.log(JSON.stringify({ verdict: 'WAIT', reason: 'no messages yet', command: null, owner: null, phase: null, state: null }, null, 2))
+    } else {
+      console.log('WAIT')
+      console.log('no messages yet')
+    }
+    process.exit(3)
+    return
+  }
+
+  const currentPhase = latest.phase
+  const owner = latest.role === (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role])
+    ? (TERMINAL.includes(latest.state) ? latest.role : NEXT_OWNER[latest.role])
+    : null
+
+  // Halt predicate 1: budget (stub — caller passes flag)
+  if (budgetExceeded) {
+    if (json) {
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'budget', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+    } else {
+      console.log('HALT budget')
+      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+    }
+    process.exit(4)
+    return
+  }
+
+  // Halt predicate 2: deadlock — ≥3 revise messages on current phase
+  const reviseCount = thread.filter(m => m.phase === currentPhase && m.state === 'revise').length
+  if (reviseCount >= 3) {
+    if (json) {
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'deadlock', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+    } else {
+      console.log('HALT deadlock')
+      console.log(`${reviseCount} revise messages on phase ${currentPhase} — thrash guard`)
+      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+    }
+    process.exit(4)
+    return
+  }
+
+  // Halt predicate 3: decision — latest is escalate with scope tag
+  if (latest.state === 'escalate' && latest.scope) {
+    const decisionScopes = ['scope', 'product', 'external']
+    if (decisionScopes.includes(latest.scope)) {
+      if (json) {
+        console.log(JSON.stringify({ verdict: 'HALT', reason: 'decision', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+      } else {
+        console.log('HALT decision')
+        console.log(`Escalate with scope:${latest.scope} — requires human input`)
+        console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+      }
+      process.exit(4)
+      return
+    }
+    // architecture scope → route to hierophant (not a halt)
+    // If the current role sent the escalate, they should ACT to route to hierophant
+    if (latest.role === role) {
+      if (json) {
+        console.log(JSON.stringify({
+          verdict: 'ACT',
+          reason: `escalate with scope:${latest.scope} — route to hierophant`,
+          command: `grim mm write --role hierophant --session "${session}" --state direction --file <reply.md>`,
+          owner: latest.role,
+          phase: currentPhase,
+          state: latest.state,
+        }, null, 2))
+      } else {
+        console.log('ACT')
+        console.log(`Escalate scope:${latest.scope} — route to hierophant`)
+        console.log(`grim mm write --role hierophant --session "${session}" --state direction --file <reply.md>`)
+      }
+      process.exit(0)
+      return
+    }
+  }
+
+  // Halt predicate 4: permission — next brief requires permission
+  const nextPhase = nextQueuedPhase(cwd)
+  if (nextPhase && briefRequiresPermission(cwd, nextPhase)) {
+    if (json) {
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'permission', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+    } else {
+      console.log('HALT permission')
+      console.log(`Phase ${nextPhase} brief requires permission — commit locally but do not push`)
+      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+    }
+    process.exit(4)
+    return
+  }
+
+  // Halt predicate 5: roadmap-empty — latest accepted/archived, nothing queued
+  if (TERMINAL.includes(latest.state)) {
+    if (!nextPhase) {
+      if (json) {
+        console.log(JSON.stringify({ verdict: 'HALT', reason: 'roadmap-empty', command: null, owner, phase: currentPhase, state: latest.state }, null, 2))
+      } else {
+        console.log('HALT roadmap-empty')
+        console.log('No queued phases in ROADMAP.md — nothing left to brief')
+        console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+      }
+      process.exit(4)
+      return
+    }
+  }
+
+  // Fall through to computeNextMove
+  const myLast = thread.filter(m => m.role === role).reduce((n, m) => Math.max(n, m.num), 0)
+  const waiting = !!latest && latest.role === role
+  const phaseComplete = waiting && TERMINAL.includes(latest.state)
+  const nextMove = computeNextMove({ role, latest, waiting, phaseComplete })
+
+  if (json) {
+    const verdict = (waiting || !nextMove.states && !nextMove.action) ? 'WAIT' : 'ACT'
+    console.log(JSON.stringify({
+      verdict,
+      reason: nextMove.note || null,
+      command: nextMove.command || null,
+      owner,
+      phase: currentPhase,
+      state: latest.state,
+      nextMove,
+    }, null, 2))
+    process.exit(verdict === 'ACT' ? 0 : 3)
+    return
+  }
+
+  if (waiting || (!nextMove.states && !nextMove.action)) {
+    console.log('WAIT')
+    console.log(nextMove.note || 'nothing to do')
+    process.exit(3)
+  } else {
+    console.log('ACT')
+    if (nextMove.command) console.log(nextMove.command)
+    if (nextMove.note) console.log(nextMove.note)
+    process.exit(0)
+  }
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 function main() {
@@ -359,7 +568,8 @@ function main() {
 
   const args = minimist(argv.slice(1), {
     boolean: ['all', 'json', 'force', 'force-overwrite'],
-    string:  ['role', 'session', 'state', 'phase', 'file', 'body', 'from', 'to', 'out'],
+    string:  ['role', 'session', 'state', 'phase', 'file', 'body', 'from', 'to', 'out', 'scope', 'dir'],
+    alias:   { d: 'dir' },
   })
 
   const cwd = process.cwd()
@@ -399,11 +609,19 @@ function main() {
     if (body == null || !String(body).trim()) {
       fail('write needs a body — pass --body "…", --file <path>, or pipe it on stdin')
     }
-    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json })
+    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json, scope: args.scope })
     return
   }
 
-  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive`)
+  if (verb === 'next') {
+    if (!args.role) fail('--role is required for next')
+    if (!args.session) fail('--session is required for next')
+    const nextDir = args.dir ? path.resolve(args.dir) : dir
+    next({ dir: nextDir, role, session: args.session, json: args.json, budgetExceeded: args['budget-exceeded'], cwd })
+    return
+  }
+
+  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next`)
 }
 
 function fail(msg) {
@@ -416,4 +634,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase }

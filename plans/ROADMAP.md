@@ -190,3 +190,5 @@ money HALTs to the user.
 - `git diff --stat` in **both** repos matches the brief's declared footprint exactly.
 - Moved code matches grimoire lib style (`'use strict'`, doc-block header — see
   `lib/a1111-client.js`); shims stay under ~20 lines each.
+- Briefs may declare `requires: permission` in a header line; `grim mm next` will
+  halt with `HALT permission` for such phases (commit locally, never push).
