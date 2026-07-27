@@ -180,7 +180,7 @@ money HALTs to the user.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 25 | plans/phase-25.md | `grim mm next` — deterministic router: `ACT`/`WAIT`/`HALT <reason>` + exit codes; halt predicate (budget/deadlock/decision/permission/roadmap-empty); `escalate --scope` tag; brief `requires: permission` tag; ROADMAP phase-queue reader | queued (hierophant, 2026-07-26) |
+| 25 | plans/phase-25.md | `grim mm next` — deterministic router: `ACT`/`WAIT`/`HALT <reason>` + exit codes; halt predicate (budget/deadlock/decision/permission/roadmap-empty); `escalate --scope` tag; brief `requires: permission` tag; ROADMAP phase-queue reader | ✅ accepted (`plans/reviews/phase-25.md`) |
 | 26 | plans/phase-26.md | `grim mm drive` + `/loop` wiring for mage+minion — self-driving, commit-local/no-push, budget guard, compaction-survival; terminal-only halt | queued (blocked on 25) |
 | 27 | plans/phase-27.md | hierophant auto-authority within tracks — escalate-woken (no polling), rules architecture, HALTs to user on scope/product/external; `drive` guard against ruling on reserved decisions | queued (blocked on 25+26) — Track I complete |
 
