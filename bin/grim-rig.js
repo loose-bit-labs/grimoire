@@ -42,6 +42,25 @@ const { config } = require('../lib/env')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
 
+/**
+ * Fetch a JSON endpoint with timeout. Returns parsed object or throws.
+ */
+function fetchJson(url, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs)
+    http.get(url, { signal: AbortSignal.timeout(timeoutMs) }, res => {
+      clearTimeout(timer)
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)) }
+        catch (e) { reject(new Error(`invalid JSON: ${e.message}`)) }
+      })
+    }).on('error', e => { clearTimeout(timer); reject(e) })
+  })
+}
+
 // ── Load box config ───────────────────────────────────────────────────────────
 
 function loadBoxes() {
@@ -1051,6 +1070,40 @@ async function main() {
 
   if (sub === 'status') {
     await status({ json: args.json })
+    return
+  }
+
+  if (sub === 'gpu') {
+    // Fetch GPU snapshot from a box's rig-serve endpoint.
+    // `grim rig gpu`          — local box (localhost:18081)
+    // `grim rig gpu --box superack` — remote box (superack:18081)
+    // `grim rig gpu --json`    — raw JSON (includes computeApps)
+    const boxName = args.box
+    const host = boxName ? `${boxName}:18081` : 'localhost:18081'
+    const url = `http://${host}/status`
+    try {
+      const data = await fetchJson(url, 5000)
+      const gpu = data.host?.gpu
+      if (args.json) {
+        console.log(JSON.stringify({ box: boxName || 'localhost', ...data.host, lastUpdated: data.lastUpdated }, null, 2))
+      } else if (gpu) {
+        console.log(`[${boxName || 'localhost'}] ${gpu.vendor} ${gpu.model}`)
+        console.log(`  VRAM   ${gpu.vramUsedMb ?? '?'} / ${gpu.vramTotalMb} MiB${gpu.gpuPercent != null ? `  ${gpu.gpuPercent}%` : ''}`)
+        console.log(`  Temp   ${gpu.tempC ?? '?'} °C`)
+        if (gpu.computeApps && gpu.computeApps.length) {
+          for (const a of gpu.computeApps) {
+            console.log(`  App    pid ${a.pid}  ${a.usedMiB} MiB  ${a.name}`)
+          }
+        } else {
+          console.log(`  Apps   none`)
+        }
+      } else {
+        console.log(`[${boxName || 'localhost'}] no GPU detected`)
+      }
+    } catch (e) {
+      console.error(`grim rig gpu: cannot reach ${url}: ${e.message}`)
+      process.exit(1)
+    }
     return
   }
 
