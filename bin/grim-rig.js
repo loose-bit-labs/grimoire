@@ -390,6 +390,26 @@ async function getGpuMetricsFallbackNvidia() {
 }
 
 /**
+ * Query nvidia-smi for per-process GPU memory usage.
+ * Returns [{ pid, usedMiB, name }] or [] on failure / no NVIDIA GPU.
+ * Graceful degradation: missing nvidia-smi or non-NVIDIA GPU → [].
+ */
+async function getComputeApps() {
+  return new Promise(resolve => {
+    const { exec } = require('node:child_process')
+    exec('nvidia-smi --query-compute-apps=pid,used_memory,name --format=csv,noheader 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout || !stdout.trim()) return resolve([])
+      const apps = []
+      for (const line of stdout.trim().split('\n')) {
+        const m = /^(\d+),\s*(\d+)\s*MiB,\s*(.+)$/.exec(line.trim())
+        if (m) apps.push({ pid: parseInt(m[1], 10), usedMiB: parseInt(m[2], 10), name: m[3].trim() })
+      }
+      resolve(apps)
+    })
+  })
+}
+
+/**
  * Poll a single service's metrics endpoint.
  * Returns { up, models, vram, queue, running } or null on failure.
  */
@@ -606,6 +626,9 @@ async function buildSnapshot(boxes) {
     gpuFallback = await getGpuMetricsFallbackNvidia()
   }
 
+  // Per-process GPU memory consumers (NVIDIA only; [] on AMD / no nvidia-smi)
+  const computeApps = await getComputeApps().catch(() => [])
+
   let diskUsedPct = 0
   try {
     const fs = await si.fsSize().catch(() => [])
@@ -629,6 +652,7 @@ async function buildSnapshot(boxes) {
         vramUsedMb: gpuFallback?.gpuPct ? Math.round(gpuInfo.vram * gpuFallback.gpuPct / 100) : null,
         gpuPercent: gpuFallback?.gpuPct || null,
         tempC: gpuFallback?.temp || null,
+        computeApps,
       } : null,
     },
     services,
