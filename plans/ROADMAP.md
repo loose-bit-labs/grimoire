@@ -47,6 +47,23 @@ canonical service→port map is recorded in `config/lbl-config.json` (the config
 authority, Track B) as the single source of truth; do not hardcode a port anywhere a
 config lookup can answer.
 
+## Ruling on containerization (2026-07-28)
+
+**A service runs as a pinned user-space systemd unit unless it clears a specific bar for
+a container.** The whole lab — grimoire, grim-bridge, grim-rig-serve, grim-seer,
+grim-world ×2, flimsflams, comfyui, and the pyenv-based NER service — is native
+user-space; telemetry's docker prometheus+grafana was the lone exception and is migrated
+to native units in phase 31. Docker earns its keep only when **both** hold: (1) the thing
+genuinely can't run native — image-only, or a dependency tree you refuse to put on the
+host (a real DB with extensions, a pinned-JVM app); **and** (2) you actually need its
+isolation (untrusted code, ephemeral/CI, throwaway teardown). On a trusted single-user
+LAN box running Go/Node/single-binary services that bar is almost never met — today it is
+met by nothing (vectra is embedded, there is no separate DB). **Default: native
+user-space unit + pinned binary + palindrome port for grimoire-authored services /
+upstream port for third-party.** Reach for a container only after clearing the bar above,
+and say which clause. The convention that tempts next is piper (TTS, ships a Dockerfile) —
+if stood up as a service, native unit, not the vendored image.
+
 ## Ruling on tmp/other.md (2026-07-17)
 
 The spec describes what grimoire largely already is: entity files + index (scribe),
