@@ -133,6 +133,32 @@ describe('toPrometheusText()', () => {
     assert.ok(text.includes('gen_service_up{node="box",service="a1111"} 0'))
     assert.ok(text.includes('gen_queue_pending{node="box",service="a1111"} 0'))
   })
+
+  it('includes llama_cpp slot telemetry', () => {
+    const snapshot = {
+      host: { hostname: 'chonko', cpuPercent: 0, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0, gpu: null },
+      services: [
+        { name: 'llama-server', up: true, type: 'llama_cpp', models: [], queue: 0, running: 1, activeSlots: 1, totalPromptTokens: 286274, totalDecoded: 2082 },
+      ],
+      lastUpdated: null,
+    }
+    const text = rig.toPrometheusText(snapshot)
+    assert.ok(text.includes('gen_llama_active_slots{node="chonko",service="llama-server"} 1'))
+    assert.ok(text.includes('gen_llama_prompt_tokens{node="chonko",service="llama-server"} 286274'))
+    assert.ok(text.includes('gen_llama_decoded_tokens{node="chonko",service="llama-server"} 2082'))
+  })
+
+  it('does not emit llama metrics for non-llama services', () => {
+    const snapshot = {
+      host: { hostname: 'box', cpuPercent: 0, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0, gpu: null },
+      services: [
+        { name: 'ollama', up: true, type: 'ollama', models: [], queue: 0, running: 1 },
+      ],
+      lastUpdated: null,
+    }
+    const text = rig.toPrometheusText(snapshot)
+    assert.ok(!text.includes('gen_llama'))
+  })
 })
 
 // ── serve() HTTP server ──────────────────────────────────────────────────────

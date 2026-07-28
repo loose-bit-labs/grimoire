@@ -502,6 +502,9 @@ function parseServiceMetrics(data, type) {
       const models = []
       let running = 0
       let queue = 0
+      let activeSlots = 0
+      let totalPromptTokens = 0
+      let totalDecoded = 0
       for (const s of slots) {
         if (s.prompt) {
           models.push({ name: s.prompt?.slice(0, 60) || 'unknown', vram: 0, loaded: true })
@@ -512,8 +515,11 @@ function parseServiceMetrics(data, type) {
             models.push({ name: s.model_path.split('/').pop() || 'unknown', vram: 0, loaded: true })
           }
         }
+        if (s.is_processing) activeSlots++
+        totalPromptTokens += s.n_prompt_tokens || 0
+        totalDecoded += s.next_token?.[0]?.n_decoded || 0
       }
-      return { models, queue, running }
+      return { models, queue, running, activeSlots, totalPromptTokens, totalDecoded }
     }
     default:
       return { models: [], queue: 0, running: 0 }
@@ -614,6 +620,9 @@ async function buildSnapshot(boxes) {
       vramTotal: svcMetrics?.vramTotal,
       queue: svcMetrics?.queue || 0,
       running: svcMetrics?.running || 0,
+      activeSlots: svcMetrics?.activeSlots || 0,
+      totalPromptTokens: svcMetrics?.totalPromptTokens || 0,
+      totalDecoded: svcMetrics?.totalDecoded || 0,
     })
   }
 
@@ -751,6 +760,21 @@ function toPrometheusText(snapshot) {
     lines.push(`# HELP gen_requests_running Currently running jobs`)
     lines.push(`# TYPE gen_requests_running gauge`)
     lines.push(`gen_requests_running{node="${svcNode}",service="${label}"} ${svc.running}`)
+
+    // Llama-cpp slot telemetry
+    if (svc.type === 'llama_cpp') {
+      lines.push(`# HELP gen_llama_active_slots Actively processing slots`)
+      lines.push(`# TYPE gen_llama_active_slots gauge`)
+      lines.push(`gen_llama_active_slots{node="${svcNode}",service="${label}"} ${svc.activeSlots}`)
+
+      lines.push(`# HELP gen_llama_prompt_tokens Total prompt tokens across all slots`)
+      lines.push(`# TYPE gen_llama_prompt_tokens gauge`)
+      lines.push(`gen_llama_prompt_tokens{node="${svcNode}",service="${label}"} ${svc.totalPromptTokens}`)
+
+      lines.push(`# HELP gen_llama_decoded_tokens Total decoded tokens across all slots`)
+      lines.push(`# TYPE gen_llama_decoded_tokens gauge`)
+      lines.push(`gen_llama_decoded_tokens{node="${svcNode}",service="${label}"} ${svc.totalDecoded}`)
+    }
 
     // Per-model metrics
     for (const m of svc.models) {
