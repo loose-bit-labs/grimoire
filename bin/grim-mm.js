@@ -202,9 +202,12 @@ function computeNextMove({ role, latest, waiting, phaseComplete }) {
   }
   const states = legalReplyStates(role, latest.from, latest.state)
   if (!states) return { note: 'no defined reply for this situation' }
+  // Default recipient is the latest message's sender — you're replying to them.
+  // Override with --to if broadcasting (e.g. mage → minion,hierophant).
+  const defaultTo = latest.from !== role ? latest.from : role
   return {
     states,
-    command: `grim mm write --role ${role} --session "$CLAUDE_CODE_SESSION_ID" --state <${states.join('|')}> --file <reply.md>`,
+    command: `grim mm write --role ${role} --session "$CLAUDE_CODE_SESSION_ID" --to ${defaultTo} --state <${states.join('|')}> --file <reply.md>`,
   }
 }
 
