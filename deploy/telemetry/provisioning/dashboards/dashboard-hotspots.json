@@ -60,7 +60,7 @@
       "targets": [
         {
           "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
-          "legendFormat": "{{box}} \u2014 {{service}}",
+          "legendFormat": "{{node}}",
           "refId": "A"
         }
       ],
@@ -111,7 +111,7 @@
       "targets": [
         {
           "expr": "gen_model_loaded{job!=\"grafana\"} == 1",
-          "legendFormat": "{{box}}/{{service}}/{{model}}",
+          "legendFormat": "{{node}}/{{service}}/{{model}}",
           "refId": "A"
         }
       ],
@@ -187,12 +187,12 @@
       "targets": [
         {
           "expr": "gen_queue_pending{job!=\"grafana\"}",
-          "legendFormat": "{{box}}/{{service}} queue",
+          "legendFormat": "{{node}}/{{service}} queue",
           "refId": "A"
         },
         {
           "expr": "gen_requests_running{job!=\"grafana\"}",
-          "legendFormat": "{{box}}/{{service}} running",
+          "legendFormat": "{{node}}/{{service}} running",
           "refId": "B"
         }
       ],
@@ -274,7 +274,7 @@
       "targets": [
         {
           "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
-          "legendFormat": "{{box}}/{{service}}",
+          "legendFormat": "{{node}}",
           "refId": "A"
         }
       ],
@@ -290,6 +290,156 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "value_and_name"
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "max": 100,
+          "min": 0,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "title": "Host Resources \u2014 CPU / Mem / Disk",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "gen_host_cpu_percent{job!=\"grafana\"}",
+          "legendFormat": "{{node}} cpu",
+          "refId": "A"
+        },
+        {
+          "expr": "gen_host_mem_used_mb{job!=\"grafana\"} / gen_host_mem_total_mb{job!=\"grafana\"} * 100",
+          "legendFormat": "{{node}} mem",
+          "refId": "B"
+        },
+        {
+          "expr": "gen_host_disk_used_percent{job!=\"grafana\"}",
+          "legendFormat": "{{node}} disk",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "custom": {
+            "displayMode": "gradient-slash",
+            "minVizWidth": 8,
+            "fillOpacity": 80,
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 6,
+      "title": "GPU Temp",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "gen_gpu_temp_c{job!=\"grafana\"}",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
       }
     }
   ],
@@ -311,5 +461,5 @@
   "timezone": "browser",
   "title": "Grimoire Rig Hotspots",
   "uid": "grimoire-rig-hotspots",
-  "version": 1
+  "version": 3
 }

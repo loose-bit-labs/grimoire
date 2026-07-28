@@ -300,11 +300,11 @@ const WELL_KNOWN_PORT = { ollama: 11434, llama_cpp: 8080, a1111: 7860, comfyui: 
  */
 function serviceType(name) {
   const n = name.toLowerCase().replace(/[-_]/g, '')
-  if (n === 'comfyui' || n === 'comfy' || n === 'comfy') return 'comfyui'
+  if (n === 'comfyui' || n === 'comfy') return 'comfyui'
   if (n === 'a1111' || n === 'automatic1111' || n === 'auto1111') return 'a1111'
   if (n === 'ollama') return 'ollama'
-  if (n === 'llamacpp' || n === 'llamacpp' || n === 'llamacpp') return 'llama_cpp'
-  return null // unknown type — can't build metrics endpoint
+  if (n === 'llamacpp' || n === 'llamaserver') return 'llama_cpp'
+  return null // unknown type — falls back to generic up/down discovery
 }
 
 /**
@@ -354,6 +354,37 @@ async function getGpuMetricsFallback() {
     exec('rocm-smi 2>&1', { timeout: 5000 }, (err, stdout) => {
       if (err || !stdout) return resolve(null)
       resolve(parseRocmSmi(stdout))
+    })
+  })
+}
+
+/**
+ * Parse `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits`
+ * output — a single "util, temp" CSV line, e.g. "12, 45".
+ */
+function parseNvidiaSmi(text) {
+  try {
+    const line = text.split('\n')[0].trim()
+    const parts = line.split(',').map(s => s.trim())
+    if (parts.length < 2) return null
+    const gpuPct = parseFloat(parts[0])
+    const temp = parseFloat(parts[1])
+    if (isNaN(gpuPct)) return null
+    return { gpuPct, temp: isNaN(temp) ? null : temp }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Run nvidia-smi and parse GPU metrics. Graceful degradation.
+ */
+async function getGpuMetricsFallbackNvidia() {
+  return new Promise(resolve => {
+    const { exec } = require('node:child_process')
+    exec('nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout) return resolve(null)
+      resolve(parseNvidiaSmi(stdout))
     })
   })
 }
@@ -451,6 +482,61 @@ function parseServiceMetrics(data, type) {
 }
 
 /**
+ * Discover running systemd --user services locally, no rig.json config needed.
+ * Mirrors ~/bin/all-my-user-services.sh (unit list) + `ss -ltnp` (port lookup).
+ * Graceful degradation: any failure (no systemctl, no ss, timeout) → [].
+ */
+function discoverLocalServices() {
+  const { execSync } = require('node:child_process')
+  let unitLines
+  try {
+    unitLines = execSync('systemctl --user list-units --type=service --state=running --no-legend --plain', { timeout: 3000 }).toString().split('\n')
+  } catch {
+    return []
+  }
+
+  let ssOut = ''
+  try {
+    ssOut = execSync('ss -ltnp', { timeout: 3000 }).toString()
+  } catch { /* graceful degradation — services still reported, just no port */ }
+
+  const services = []
+  for (const line of unitLines) {
+    const m = line.trim().match(/^(\S+)\.service\s/)
+    if (!m) continue
+    const name = m[1]
+    // Only report units that map to a known generation-service type —
+    // Discord bots, world servers, etc. aren't gen-hotspots signal.
+    if (!serviceType(name)) continue
+
+    const pid = _mainPid(name)
+    if (!pid) continue
+    const port = _listeningPort(ssOut, pid)
+    if (!port) continue
+
+    services.push({ name, port })
+  }
+  return services
+}
+
+function _mainPid(unitName) {
+  const { execSync } = require('node:child_process')
+  try {
+    const pid = execSync(`systemctl --user show ${unitName}.service -p MainPID --value`, { timeout: 2000 }).toString().trim()
+    return pid && pid !== '0' ? pid : null
+  } catch {
+    return null
+  }
+}
+
+function _listeningPort(ssOut, pid) {
+  const line = ssOut.split('\n').find(l => l.includes(`pid=${pid},`))
+  if (!line) return null
+  const m = line.match(/:(\d+)\s+\S+:\*/)
+  return m ? parseInt(m[1], 10) : null
+}
+
+/**
  * Build the snapshot of host + service metrics.
  * Called by the poller loop; never blocks HTTP responses.
  */
@@ -463,34 +549,33 @@ async function buildSnapshot(boxes) {
     return (b.aliases || []).includes(hostname) || b.host === hostname || b.label === hostname
   })
 
+  // rig.json service lists are optional — no config means auto-discover
+  // whatever's actually running via systemd, so boxes never go stale.
+  const declared = localBox?.services || []
+  const svcList = declared.length > 0 ? declared : (localBox ? discoverLocalServices() : [])
+
   const services = []
-  if (localBox) {
-    for (const svc of localBox.services || []) {
-      const type = serviceType(svc.name)
-      if (!type) continue // unknown service type — skip metrics
+  for (const svc of svcList) {
+    const type = serviceType(svc.name)
+    if (!type) continue // unknown service type — skip metrics
 
-      const port = svc.port || WELL_KNOWN_PORT[type] || 0
-      if (!port) continue
+    const port = svc.port || WELL_KNOWN_PORT[type] || 0
+    if (!port) continue
 
-      const base = `http://127.0.0.1:${port}`
-      const endpoint = metricsUrl(base, type)
-      if (!endpoint) continue
+    const endpoint = metricsUrl(`http://127.0.0.1:${port}`, type)
+    if (!endpoint) continue
 
-      const [svcMetrics] = await Promise.all([
-        pollService(endpoint, type, 200),
-      ])
-
-      services.push({
-        name: svc.name,
-        up: svcMetrics !== null,
-        type,
-        models: svcMetrics?.models || [],
-        vramUsed: svcMetrics?.vramUsed,
-        vramTotal: svcMetrics?.vramTotal,
-        queue: svcMetrics?.queue || 0,
-        running: svcMetrics?.running || 0,
-      })
-    }
+    const svcMetrics = await pollService(endpoint, type, 200)
+    services.push({
+      name: svc.name,
+      up: svcMetrics !== null,
+      type,
+      models: svcMetrics?.models || [],
+      vramUsed: svcMetrics?.vramUsed,
+      vramTotal: svcMetrics?.vramTotal,
+      queue: svcMetrics?.queue || 0,
+      running: svcMetrics?.running || 0,
+    })
   }
 
   // Host metrics
@@ -514,9 +599,11 @@ async function buildSnapshot(boxes) {
     }
   } catch { /* graceful degradation — host metrics may be partial */ }
 
-  // AMD GPU fallback for utilization/temp
+  // GPU fallback for utilization/temp — si.graphics() only reliably gives vendor/model/VRAM total
   if (gpuInfo && (gpuInfo.vendor || '').includes('AMD')) {
     gpuFallback = await getGpuMetricsFallback()
+  } else if (gpuInfo && (gpuInfo.vendor || '').includes('NVIDIA')) {
+    gpuFallback = await getGpuMetricsFallbackNvidia()
   }
 
   let diskUsedPct = 0
@@ -889,7 +976,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

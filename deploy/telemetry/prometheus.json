@@ -22,6 +22,22 @@
           "labels": {
             "box": "chonko"
           }
+        },
+        {
+          "targets": [
+            "meinherz:18081"
+          ],
+          "labels": {
+            "box": "meinherz"
+          }
+        },
+        {
+          "targets": [
+            "superack:18081"
+          ],
+          "labels": {
+            "box": "superack"
+          }
         }
       ]
     }

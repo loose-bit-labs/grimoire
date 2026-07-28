@@ -31,6 +31,7 @@ describe('serviceType()', () => {
     assert.strictEqual(rig.serviceType('a1111'), 'a1111')
     assert.strictEqual(rig.serviceType('automatic1111'), 'a1111')
     assert.strictEqual(rig.serviceType('llamacpp'), 'llama_cpp')
+    assert.strictEqual(rig.serviceType('llama-server'), 'llama_cpp')
   })
 
   it('returns null for unknown service types', () => {
@@ -281,6 +282,35 @@ describe('serveDashboard()', () => {
   })
 })
 
+// ── discoverLocalServices() ──────────────────────────────────────────────────
+// Integration, not mocked — matches this repo's "real system calls over
+// mocks" testing style (buildSnapshot() below does the same for si/rocm-smi).
+
+// ── parseNvidiaSmi() ─────────────────────────────────────────────────────────
+
+describe('parseNvidiaSmi()', () => {
+  it('parses "util, temp" CSV output', () => {
+    assert.deepStrictEqual(rig.parseNvidiaSmi('12, 45\n'), { gpuPct: 12, temp: 45 })
+  })
+
+  it('returns null on garbage input', () => {
+    assert.strictEqual(rig.parseNvidiaSmi(''), null)
+    assert.strictEqual(rig.parseNvidiaSmi('not,a,number'), null)
+  })
+})
+
+describe('discoverLocalServices()', () => {
+  it('returns only known generation-service types, never infra like itself', () => {
+    const services = rig.discoverLocalServices()
+    assert.ok(Array.isArray(services))
+    for (const s of services) {
+      assert.strictEqual(typeof s.name, 'string')
+      assert.strictEqual(typeof s.port, 'number')
+      assert.ok(rig.serviceType(s.name), `${s.name} must map to a known type — infra units aren't gen-hotspots signal`)
+    }
+  })
+})
+
 // ── buildSnapshot() ──────────────────────────────────────────────────────────
 
 describe('buildSnapshot()', () => {
@@ -310,6 +340,16 @@ describe('buildSnapshot()', () => {
     assert.ok(ollamaSvc, 'ollama service should be in snapshot')
     assert.strictEqual(ollamaSvc.up, false, 'dead service should be down')
     assert.strictEqual(ollamaSvc.type, 'ollama')
+  })
+
+  it('auto-discovers services when rig.json declares none for the local box', async () => {
+    const hostname = os.hostname().toLowerCase()
+    const boxes = [{ host: hostname, label: hostname, aliases: [hostname], services: [] }]
+    const snapshot = await rig.buildSnapshot(boxes)
+    // Whatever's actually running on this box — just must not throw, and
+    // must never report the poller's own unit as a monitored service.
+    assert.ok(Array.isArray(snapshot.services))
+    assert.ok(!snapshot.services.some(s => s.name === 'grim-rig-serve'))
   })
 
   it('returns empty services when no local box matches', async () => {

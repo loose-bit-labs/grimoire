@@ -375,6 +375,23 @@ EOF
   systemctl --user restart grim-rig-serve 2>/dev/null \
     && ok "grim-rig-serve running" \
     || warn "systemctl restart failed — run: systemctl --user restart grim-rig-serve"
+
+  _verify_rig_serve
+}
+
+_verify_rig_serve() {
+  # Poll localhost:18081/status up to 5×/5s after restart. Trusting
+  # systemctl restart's exit code is not enough — a clean TERM (deploy-adjacent,
+  # never confirmed exactly what) leaves Restart=on-failure doing nothing.
+  # Closes the "deploy silently ships a dead service" gap.
+  for i in $(seq 1 5); do
+    if curl -sf --max-time 3 http://localhost:18081/status -o /dev/null 2>/dev/null; then
+      ok "grim-rig-serve responding on :18081 (check ${i}/5)"
+      return
+    fi
+    sleep 1
+  done
+  warn "grim-rig-serve did not come up on :18081 after 5s — check: systemctl --user status grim-rig-serve"
 }
 
 _install_rig_serve_launchd() {
@@ -403,6 +420,8 @@ _install_rig_serve_launchd() {
   launchctl load -w "$plist_dst" \
     && ok "grim-rig-serve LaunchAgent loaded" \
     || warn "launchctl load failed — run: launchctl load -w $plist_dst"
+
+  _verify_rig_serve
 }
 
 # ── 11.5. Dashboard service (hub-only, conditional) ──────────────────────────

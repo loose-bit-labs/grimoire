@@ -702,7 +702,18 @@ function main() {
     return
   }
 
-  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next`)
+  if (verb === 'drive') {
+    // Delegate to the standalone drive script — keeps grim-mm.js lean and
+    // lets the drive verb be tested/evolved independently.
+    const driveArgs = ['bin/grim-mm-drive.js', ...argv.slice(1)]
+    const child = require('node:child_process').spawnSync(process.execPath, driveArgs, {
+      cwd,
+      stdio: 'inherit',
+    })
+    process.exit(child.status ?? 1)
+  }
+
+  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next | drive`)
 }
 
 function fail(msg) {
