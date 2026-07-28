@@ -649,9 +649,9 @@ async function buildSnapshot(boxes) {
         vendor: gpuInfo.vendor,
         model: gpuInfo.model,
         vramTotalMb: gpuInfo.vram,
-        vramUsedMb: gpuFallback?.gpuPct ? Math.round(gpuInfo.vram * gpuFallback.gpuPct / 100) : null,
+        vramUsedMb: gpuInfo.memoryUsed || null,
         gpuPercent: gpuFallback?.gpuPct || null,
-        tempC: gpuFallback?.temp || null,
+        tempC: gpuInfo.temperatureGpu || gpuFallback?.temp || null,
         computeApps,
       } : null,
     },
@@ -1000,7 +1000,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
