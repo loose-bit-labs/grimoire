@@ -650,7 +650,9 @@ async function buildSnapshot(boxes) {
         model: gpuInfo.model,
         vramTotalMb: gpuInfo.vram,
         vramUsedMb: gpuInfo.memoryUsed || null,
-        gpuPercent: gpuFallback?.gpuPct || null,
+        gpuPercent: gpuFallback?.gpuPct ?? (computeApps.length > 0 && gpuInfo.vram
+          ? Math.round(computeApps.reduce((s, a) => s + a.usedMiB, 0) / gpuInfo.vram * 100)
+          : null),
         tempC: gpuInfo.temperatureGpu || gpuFallback?.temp || null,
         computeApps,
       } : null,
