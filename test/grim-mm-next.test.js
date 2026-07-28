@@ -155,8 +155,8 @@ test('HALT roadmap-empty — accepted with no queued phases', () => {
     // Use a line-level approach to avoid issues with | in descriptions
     const patched = original.split('\n').map(line => {
       const match = /^\| (\d+) \| plans\/phase-\d+\.md/.exec(line)
-      if (match && (line.includes('queued') || line.includes('blocked')) && !line.includes('✅ accepted')) {
-        return line.replace(/(queued|blocked)/i, '✅ accepted')
+      if (match && (line.includes('queued') || line.includes('blocked') || line.includes('reserved')) && !line.includes('✅ accepted')) {
+        return line.replace(/(queued|blocked|reserved)/i, '✅ accepted')
       }
       return line
     }).join('\n')

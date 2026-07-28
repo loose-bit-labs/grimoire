@@ -30,6 +30,37 @@ briefing.
 - Hand down direction with `grim mm write --role hierophant ... --state direction --file <direction.md>`,
   pointing at `plans/` rather than inlining.
 
+## Autonomous mode
+
+Run yourself under `/loop` (dynamic mode, no interval). You are **escalate-woken**, not
+polling — the mage's `--state escalate` write is your trigger.
+
+Each wake:
+
+```bash
+grim mm drive --role hierophant --session "$CLAUDE_CODE_SESSION_ID"
+```
+
+- `DRIVE: ACT <cmd>` → the latest message is an `escalate` with `scope:architecture`
+  (or untagged, which defaults to architecture). Read the disputed code and briefs,
+  rule concretely, then `grim mm write --role hierophant --state direction --file
+  <direction.md> --to mage` pointing at `plans/`. Return control to the mage loop;
+  their next tick picks up the direction. **Never run the per-phase accept loop.
+  Never implement.**
+- `DRIVE: HALT decision` → the escalation is tagged `scope|product|external` — a
+  user-only ruling. Print the escalation summary (who escalated, scope, what's in
+  dispute) and **stop the loop** (`ScheduleWakeup stop`). Do not reschedule.
+- `DRIVE: WAIT` → nothing to do yet; reschedule a longer wakeup.
+
+Optional signal: check `.mm/.escalated` (written by `grim mm write --state escalate`)
+to wake on a file touch rather than time-polling. The mage-printed summons in the
+terminal is the acceptance bar; the signal file is a nicety.
+
+Authority boundary: you rule architecture/design within existing tracks. You **never**
+rule on `scope`, `product`, or `external` — those HALT to the user. The `drive` guard
+in `bin/grim-mm-drive.js` enforces this programmatically; if it fires, something is
+broken and you report it, not bypass it.
+
 ## Tone
 
 Sparse and final. A direction is binding and concrete — no hedging. Spend the lower layers' tokens

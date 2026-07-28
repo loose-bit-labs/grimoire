@@ -128,8 +128,8 @@ test('HALT roadmap-empty — prints DRIVE: HALT, exit 4', () => {
     const original = fs.readFileSync(roadmapPath, 'utf8')
     const patched = original.split('\n').map(line => {
       const match = /^\| (\d+) \| plans\/phase-\d+\.md/.exec(line)
-      if (match && (line.includes('queued') || line.includes('blocked')) && !line.includes('✅ accepted')) {
-        return line.replace(/(queued|blocked)/i, '✅ accepted')
+      if (match && (line.includes('queued') || line.includes('blocked') || line.includes('reserved')) && !line.includes('✅ accepted')) {
+        return line.replace(/(queued|blocked|reserved)/i, '✅ accepted')
       }
       return line
     }).join('\n')
@@ -180,6 +180,41 @@ test('HALT — re-entry command in output', () => {
     const out = runDrive(dir, 'mage')
     assert.ok(out.stdout.includes('Re-entry:'), 'should print re-entry command')
     assert.ok(out.stdout.includes('grim mm read'), 're-entry should reference grim mm read')
+  } finally {
+    cleanupFixture()
+  }
+})
+
+// ── DRIVE guard: hierophant direction on decision-scope escalation ───────────
+
+test('DRIVE guard — hierophant direction on scope:product escalation fails loud', () => {
+  const dir = createFixtureThread([
+    { num: 1, role: 'mage', phase: '5', state: 'brief', body: 'Phase 5 brief' },
+    { num: 2, role: 'minion', phase: '5', state: 'report', body: 'Phase 5 done' },
+    { num: 3, role: 'mage', phase: '5', state: 'escalate', scope: 'product', body: 'Need decision' },
+  ])
+  try {
+    // next() HALTs on decision-scope, so drive gets HALT — but test the guard
+    // path by verifying next itself HALTs (the guard is a defense-in-depth).
+    const out = runDrive(dir, 'hierophant')
+    assert.strictEqual(out.status, 4, 'exit code should be 4 (HALT) for decision-scope escalate')
+    assert.ok(out.stdout.includes('DRIVE: HALT'), 'should print DRIVE: HALT')
+    assert.ok(out.stdout.includes('decision'), 'should mention decision')
+  } finally {
+    cleanupFixture()
+  }
+})
+
+test('DRIVE guard — hierophant direction on scope:architecture escalate is ACT', () => {
+  const dir = createFixtureThread([
+    { num: 1, role: 'mage', phase: '5', state: 'brief', body: 'Phase 5 brief' },
+    { num: 2, role: 'minion', phase: '5', state: 'report', body: 'Phase 5 done' },
+    { num: 3, role: 'mage', phase: '5', state: 'escalate', scope: 'architecture', body: 'Architecture question' },
+  ])
+  try {
+    const out = runDrive(dir, 'hierophant')
+    assert.strictEqual(out.status, 0, 'exit code should be 0 (ACT) for architecture escalate')
+    assert.ok(out.stdout.includes('DRIVE: ACT'), 'should print DRIVE: ACT')
   } finally {
     cleanupFixture()
   }

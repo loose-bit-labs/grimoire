@@ -335,6 +335,15 @@ ${body.trim()}\n`
 
   fs.writeFileSync(path.join(dir, file), content, 'utf8')
 
+  // Touch the escalate signal so a watching hierophant /loop can wake on it
+  // rather than time-polling. The mage-printed summons is the acceptance bar;
+  // the signal file is a nicety.
+  if (state === 'escalate') {
+    const sig = path.join(dir, '.escalated')
+    const now = String(Date.now())
+    try { fs.writeFileSync(sig, `${role}\n${now}\n`, 'utf8') } catch {}
+  }
+
   if (json) {
     console.log(JSON.stringify({ file, num: nextNum, from: role, to: tos, state, phase: usePhase, scope, id, ts }, null, 2))
   } else {
@@ -521,7 +530,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   // Halt predicate 1: budget (stub — caller passes flag)
   if (budgetExceeded) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'budget', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'budget', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT budget')
       console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
@@ -534,7 +543,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   const reviseCount = thread.filter(m => m.phase === currentPhase && m.state === 'revise').length
   if (reviseCount >= 3) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'deadlock', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'deadlock', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT deadlock')
       console.log(`${reviseCount} revise messages on phase ${currentPhase} — thrash guard`)
@@ -549,7 +558,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
     const decisionScopes = ['scope', 'product', 'external']
     if (decisionScopes.includes(latest.scope)) {
       if (json) {
-        console.log(JSON.stringify({ verdict: 'HALT', reason: 'decision', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+        console.log(JSON.stringify({ verdict: 'HALT', reason: 'decision', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
       } else {
         console.log('HALT decision')
         console.log(`Escalate with scope:${latest.scope} — requires human input`)
@@ -569,6 +578,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
           owner: latest.from,
           phase: currentPhase,
           state: latest.state,
+          scope: latest.scope,
         }, null, 2))
       } else {
         console.log('ACT')
@@ -584,7 +594,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   const nextPhase = nextQueuedPhase(cwd)
   if (nextPhase && briefRequiresPermission(cwd, nextPhase)) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'permission', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'permission', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT permission')
       console.log(`Phase ${nextPhase} brief requires permission — commit locally but do not push`)
@@ -598,7 +608,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   if (TERMINAL.includes(latest.state)) {
     if (!nextPhase) {
       if (json) {
-        console.log(JSON.stringify({ verdict: 'HALT', reason: 'roadmap-empty', command: null, owner, phase: currentPhase, state: latest.state }, null, 2))
+        console.log(JSON.stringify({ verdict: 'HALT', reason: 'roadmap-empty', command: null, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
       } else {
         console.log('HALT roadmap-empty')
         console.log('No queued phases in ROADMAP.md — nothing left to brief')
@@ -624,6 +634,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
       owner,
       phase: currentPhase,
       state: latest.state,
+      scope: latest.scope,
       nextMove,
     }, null, 2))
     process.exit(verdict === 'ACT' ? 0 : 3)

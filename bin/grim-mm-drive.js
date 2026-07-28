@@ -24,7 +24,14 @@
  */
 
 const { spawnSync } = require('node:child_process')
+const fs = require('node:fs')
 const path = require('node:path')
+
+// Decision-scope tags the hierophant must never rule on — those belong to the
+// user. If drive sees an ACT with a direction command while the thread's latest
+// message is an escalate tagged with one of these, something bypassed next()'s
+// halt predicate and we fail loud.
+const DECISION_SCOPES = new Set(['scope', 'product', 'external'])
 
 function drive({ role, session, budgetExceeded, cwd, dir }) {
   const args = ['bin/grim-mm.js', 'next', '--role', role, '--session', session, '--json']
@@ -52,9 +59,19 @@ function drive({ role, session, budgetExceeded, cwd, dir }) {
     process.exit(1)
   }
 
-  const { verdict, reason, command, owner, phase, state } = data
+  const { verdict, reason, command, owner, phase, state, scope } = data
 
   if (verdict === 'ACT') {
+    // Authority guard: hierophant must never write a direction answering a
+    // decision-scope escalation — that's a user-only ruling.
+    if (role === 'hierophant' && command && command.includes('--state direction')
+        && state === 'escalate' && scope && DECISION_SCOPES.has(scope)) {
+      console.error(
+        `grim mm drive: guard — hierophant direction on scope:${scope} escalation ` +
+        `is reserved for the user. next should have HALTed.`
+      )
+      process.exit(1)
+    }
     console.log(`DRIVE: ACT ${command || ''}`)
     process.exit(0)
   }
