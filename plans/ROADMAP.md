@@ -146,6 +146,8 @@ and a glanceable automotive cockpit.
 | 22 | plans/phase-22.md | Grafana provisioning — auto-load Prometheus datasource + hotspots dashboard from files (fixes phase-13 blank-Grafana + host-net networking gap) | ✅ accepted (`plans/reviews/phase-22.md`) |
 | 23 | plans/phase-23.md | **PRIORITY incident** — agent serves host+GPU without rig.json (graceful); fixes chonko/meinherz/superack crash-loop (no GRIMOIRE_ROOT on clients) | ✅ accepted (`plans/reviews/phase-23.md`) |
 | 24 | plans/phase-24.md | grim-rig unit follows house convention — `%h/.grimoire/bin/node` pinned v21.7.1 + `~/.grimoire` symlink; setup-client.sh ensures it; kills fleet node-drift | ✅ accepted (`plans/reviews/phase-24.md`) |
+| 28 | plans/phase-28.md | agent picks the real compute GPU — filter BMC/integrated (chonko's Matrox G200 → 16MB/270463% bug); smi wins over si.graphics for VRAM total; guard percent math. Multi-GPU reporting deferred to phase 30 | queued (hierophant, 2026-07-28) |
+| 29 | plans/phase-29.md | client boxes self-report `services[]` — ungate `discoverLocalServices()` from the rig.json box-match (line ~600); the other half of phase 23's graceful degradation | queued (hierophant, 2026-07-28) |
 
 ## Track G — the research brain (phases 14–15)
 
@@ -158,10 +160,11 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | queued (blocked on 14) |
 
-## Track H — the capture doorbell (phase 16)
+## Track H — grim-tavern: the capture doorbell (phase 16)
 
-**Goal:** drop-to-Discord. A thin `researcher` persona on flimflam forwards drops to
-`grim research`; grimoire owns the brain, flimflam owns the mouth.
+**Goal:** drop-to-Discord. **grim-tavern** — a thin `researcher` persona on flimflam
+forwards drops to `grim research`; grimoire owns the brain, flimflam owns the mouth. The
+tavern is where rumors/notes/links get dropped off and turned into filed KB entities.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
