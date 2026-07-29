@@ -12,7 +12,10 @@ may be pulled forward if an earlier one blocks.
 - **Track E (phases 10–11):** typed clients + registry generators (spec: `tmp/hi/SERVICE-MESH-LITE.md`).
 - **Track F (phases 12–13):** rig telemetry — agent mode + central scrape stack (spec: `tmp/hi/telementry-Full-PoC-Markdown-hand-this-to-your-agent.md`).
 
-**Status: Tracks A–D complete (phases 1–9 accepted). Tracks E–F queued 2026-07-22.**
+**Status (reconciled 2026-07-29): all tracks A–I complete — phases 1–31 accepted in the
+`.mm` thread. Queue drained (`grim mm next` → roadmap-empty). Remaining open items are not
+numbered phases: phase-20 macOS acceptance is on-trust (spot-check on real hardware), and
+the grim-tavern/grim-npc "character memory" design phase is offered but not yet briefed.**
 
 ## Ruling on tmp/hi/SERVICE-MESH-LITE.md (2026-07-22)
 
@@ -158,15 +161,15 @@ and a glanceable automotive cockpit.
 | 17 | plans/phase-17.md | `grim rig serve /cluster` — automotive instrument cluster (VRAM=fuel, compute=speedo, load=revs, temp=coolant) + `/fleet` aggregate; live off `/status`, built from approved mockup `plans/assets/rig-cluster-mockup.html` | ✅ accepted (`plans/reviews/phase-17.md`) |
 | 18 | plans/phase-18.md | deploy `grim rig serve` as a persistent user systemd service, tied into `setup-client.sh` right after `grim-register-host.sh`; `/update-host` restarts it on every catch-up run; remote-reachability + logout-survival checks; amended to canonical port `:18081` (mirror-port ruling) | ✅ accepted (`plans/reviews/phase-18.md`) |
 | 19 | plans/phase-19.md | stop `grim-rig.js`'s `si.graphics()` from shelling `xrandr` every poll on headless boxes — drop it for the existing nvidia-smi/rocm-smi/amd-smi paths, or scrub `DISPLAY`/`XAUTHORITY` at startup | ✅ accepted (`plans/reviews/phase-19.md`) — option (b), DISPLAY/XAUTHORITY scrub chosen |
-| 20 | plans/phase-20.md | plink (macOS): launchd LaunchAgent (`com.grimoire.rig-serve.plist`) + `setup-client.sh` Darwin branch — same `:18081` agent, no systemd. **Acceptance must run on plink, not the Linux loop host.** | queued (hierophant, 2026-07-24) |
-| 21 | plans/phase-21.md | fleet dashboard front-door on `:3003` — hub box serves existing `/cluster`+`/fleet` as a bookmarkable all-hosts view; agent stays `:18081` (role split, not a port move); hub-only deploy | queued (hierophant, 2026-07-24) — Track F complete after 19+20+21 |
+| 20 | plans/phase-20.md | plink (macOS): launchd LaunchAgent (`com.grimoire.rig-serve.plist`) + `setup-client.sh` Darwin branch — same `:18081` agent, no systemd. **Acceptance must run on plink, not the Linux loop host.** | ✅ accepted (#0128 in thread) — acceptance on-trust; spot-check on real macOS hardware |
+| 21 | plans/phase-21.md | fleet dashboard front-door on `:3003` — hub box serves existing `/cluster`+`/fleet` as a bookmarkable all-hosts view; agent stays `:18081` (role split, not a port move); hub-only deploy | ✅ accepted (#0131 in thread) — Track F core complete |
 | 22 | plans/phase-22.md | Grafana provisioning — auto-load Prometheus datasource + hotspots dashboard from files (fixes phase-13 blank-Grafana + host-net networking gap) | ✅ accepted (`plans/reviews/phase-22.md`) |
 | 23 | plans/phase-23.md | **PRIORITY incident** — agent serves host+GPU without rig.json (graceful); fixes chonko/meinherz/superack crash-loop (no GRIMOIRE_ROOT on clients) | ✅ accepted (`plans/reviews/phase-23.md`) |
 | 24 | plans/phase-24.md | grim-rig unit follows house convention — `%h/.grimoire/bin/node` pinned v21.7.1 + `~/.grimoire` symlink; setup-client.sh ensures it; kills fleet node-drift | ✅ accepted (`plans/reviews/phase-24.md`) |
-| 28 | plans/phase-28.md | agent picks the real compute GPU — filter BMC/integrated (chonko's Matrox G200 → 16MB/270463% bug); smi wins over si.graphics for VRAM total; guard percent math. Multi-GPU reporting deferred to phase 30 | queued (hierophant, 2026-07-28) |
-| 29 | plans/phase-29.md | client boxes self-report `services[]` — ungate `discoverLocalServices()` from the rig.json box-match (line ~600); the other half of phase 23's graceful degradation | queued (hierophant, 2026-07-28) |
-| 30 | plans/phase-30.md | multi-GPU reporting — snapshot carries all real compute GPUs (chonko's two P40s), per-GPU Prometheus labels + dashboard repeat (deferred from 28) | reserved (hierophant, 2026-07-28) — brief when 28 lands |
-| 31 | plans/phase-31.md | telemetry off docker → pinned user-space systemd units (grim-prometheus/grim-grafana); kills the lab's lone container + the split-brain networking special-case | queued (hierophant, 2026-07-28) |
+| 28 | plans/phase-28.md | agent picks the real compute GPU — filter BMC/integrated (chonko's Matrox G200 → 16MB/270463% bug); smi wins over si.graphics for VRAM total; guard percent math. Multi-GPU reporting deferred to phase 30 | ✅ accepted (#0149 in thread) |
+| 29 | plans/phase-29.md | client boxes self-report `services[]` — ungate `discoverLocalServices()` from the rig.json box-match (line ~600); the other half of phase 23's graceful degradation | ✅ accepted (#0152 in thread) |
+| 30 | plans/phase-30.md | multi-GPU reporting — snapshot carries all real compute GPUs (chonko's two P40s), per-GPU Prometheus labels + dashboard repeat (deferred from 28) | ✅ accepted (#0158 in thread) |
+| 31 | plans/phase-31.md | telemetry off docker → pinned user-space systemd units (grim-prometheus/grim-grafana); kills the lab's lone container + the split-brain networking special-case | ✅ accepted (#0155 in thread) — Track F complete |
 
 ## Track G — the research brain (phases 14–15)
 
@@ -177,7 +180,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
-| 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | queued (blocked on 14) |
+| 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | ✅ accepted (#0120 in thread) — Track G complete |
 
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
@@ -187,7 +190,7 @@ tavern is where rumors/notes/links get dropped off and turned into filed KB enti
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | queued (blocked on 14+15) |
+| 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | ✅ accepted (#0123 in thread) — Track H (grim-tavern) core complete |
 
 ## Track I — Autopact: the pact runs itself (phases 25–27)
 
@@ -203,8 +206,8 @@ money HALTs to the user.
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 25 | plans/phase-25.md | `grim mm next` — deterministic router: `ACT`/`WAIT`/`HALT <reason>` + exit codes; halt predicate (budget/deadlock/decision/permission/roadmap-empty); `escalate --scope` tag; brief `requires: permission` tag; ROADMAP phase-queue reader | ✅ accepted (`plans/reviews/phase-25.md`) |
-| 26 | plans/phase-26.md | `grim mm drive` + `/loop` wiring for mage+minion — self-driving, commit-local/no-push, budget guard, compaction-survival; terminal-only halt | queued (blocked on 25) |
-| 27 | plans/phase-27.md | hierophant auto-authority within tracks — escalate-woken (no polling), rules architecture, HALTs to user on scope/product/external; `drive` guard against ruling on reserved decisions | queued (blocked on 25+26) — Track I complete |
+| 26 | plans/phase-26.md | `grim mm drive` + `/loop` wiring for mage+minion — self-driving, commit-local/no-push, budget guard, compaction-survival; terminal-only halt | ✅ accepted (#0141 in thread) |
+| 27 | plans/phase-27.md | hierophant auto-authority within tracks — escalate-woken (no polling), rules architecture, HALTs to user on scope/product/external; `drive` guard against ruling on reserved decisions | ✅ accepted (#0146 in thread) — Track I complete |
 
 ## Acceptance bar (mage enforces per phase)
 
