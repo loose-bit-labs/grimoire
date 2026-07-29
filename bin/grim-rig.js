@@ -365,6 +365,37 @@ function parseRocmSmi(text) {
 }
 
 /**
+ * Pick the real compute GPU from systeminformation's controller list, dropping
+ * BMC / integrated display chips (Matrox, ASPEED, small-VRAM Intel iGPUs).
+ *
+ * Heuristics (combine, don't rely on one):
+ *   - vendor is NVIDIA or AMD → keep
+ *   - vram < 256 MB → drop (BMC chips are ~16–64 MB)
+ *   - if smiVram is set, trust it for vramTotalMb over si.graphics()
+ *
+ * Returns the selected controller or null.
+ */
+function selectComputeGpu(graphics, smiVram) {
+  if (!graphics || !graphics.controllers || !graphics.controllers.length) return null
+  // Prefer NVIDIA/AMD vendors; drop BMC display chips
+  const discrete = graphics.controllers.filter(c => {
+    const vendor = (c.vendor || '').toLowerCase()
+    const isDiscreteVendor = vendor.includes('nvidia') || vendor.includes('amd')
+    const hasRealVram = (c.vram || 0) >= 256 * 1024 * 1024 // 256 MB in KB
+    return isDiscreteVendor || hasRealVram
+  })
+  // Fallback: pick highest-VRAM controller if none matched discrete heuristics
+  const candidates = discrete.length > 0 ? discrete : graphics.controllers.slice().sort((a, b) => (b.vram || 0) - (a.vram || 0))
+  const chosen = candidates[0]
+  if (!chosen) return null
+  // When smi reports a real compute GPU VRAM, trust it over si.graphics()
+  if (smiVram && smiVram > 0) {
+    return { ...chosen, vram: smiVram }
+  }
+  return chosen
+}
+
+/**
  * Run rocm-smi and parse GPU metrics. Graceful degradation.
  */
 async function getGpuMetricsFallback() {
@@ -404,6 +435,22 @@ async function getGpuMetricsFallbackNvidia() {
     exec('nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
       if (err || !stdout) return resolve(null)
       resolve(parseNvidiaSmi(stdout))
+    })
+  })
+}
+
+/**
+ * Query nvidia-smi for total GPU VRAM in MB. Returns null on failure / no NVIDIA GPU.
+ * Graceful degradation: missing nvidia-smi → null.
+ */
+async function getSmiVram() {
+  return new Promise(resolve => {
+    const { exec } = require('node:child_process')
+    exec('nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout || !stdout.trim()) return resolve(null)
+      const line = stdout.trim().split('\n')[0].trim()
+      const m = /^(\d+)\s*MiB$/.exec(line)
+      resolve(m ? parseInt(m[1], 10) : null)
     })
   })
 }
@@ -642,9 +689,9 @@ async function buildSnapshot(boxes) {
 
     if (load) cpuLoad = load.currentLoad
     if (mem) { memUsed = mem.used; memTotal = mem.total }
-    if (graphics && graphics.controllers && graphics.controllers.length > 0) {
-      gpuInfo = graphics.controllers[0]
-    }
+    // Pick real compute GPU, not BMC display chip
+    const smiVram = await getSmiVram().catch(() => null)
+    gpuInfo = selectComputeGpu(graphics, smiVram)
   } catch { /* graceful degradation — host metrics may be partial */ }
 
   // GPU fallback for utilization/temp — si.graphics() only reliably gives vendor/model/VRAM total
@@ -678,9 +725,14 @@ async function buildSnapshot(boxes) {
         model: gpuInfo.model,
         vramTotalMb: gpuInfo.vram,
         vramUsedMb: gpuInfo.memoryUsed || null,
-        gpuPercent: gpuFallback?.gpuPct ?? (computeApps.length > 0 && gpuInfo.vram
-          ? Math.round(computeApps.reduce((s, a) => s + a.usedMiB, 0) / gpuInfo.vram * 100)
-          : null),
+        gpuPercent: gpuFallback?.gpuPct ?? (() => {
+          const total = gpuInfo.vram
+          if (!total || total < 256) return null // guard: absurd denominator
+          const used = computeApps.reduce((s, a) => s + a.usedMiB, 0)
+          if (used === 0) return null
+          const pct = Math.round(used / total * 100)
+          return pct > 100 ? null : pct // guard: >100% is bogus
+        })(),
         tempC: gpuInfo.temperatureGpu || gpuFallback?.temp || null,
         computeApps,
       } : null,
@@ -1045,7 +1097,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, getSmiVram, selectComputeGpu, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

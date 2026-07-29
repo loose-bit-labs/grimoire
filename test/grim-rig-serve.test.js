@@ -483,3 +483,45 @@ describe('getFleet()', () => {
     assert.strictEqual(remote.up, false, 'nonexistent box should be down')
   })
 })
+
+// ── selectComputeGpu() ───────────────────────────────────────────────────────
+
+describe('selectComputeGpu()', () => {
+  it('picks NVIDIA over Matrox BMC chip', () => {
+    const graphics = {
+      controllers: [
+        { vendor: 'Matrox Electronics', model: 'G200eW3', vram: 16777216 },
+        { vendor: 'NVIDIA', model: 'Tesla P40', vram: 24576 * 1024 * 1024 },
+      ],
+    }
+    const chosen = rig.selectComputeGpu(graphics, null)
+    assert.strictEqual(chosen.vendor, 'NVIDIA')
+    assert.strictEqual(chosen.model, 'Tesla P40')
+  })
+
+  it('picks highest-VRAM when no discrete vendor', () => {
+    const graphics = {
+      controllers: [
+        { vendor: 'Intel', model: 'UHD 630', vram: 32 * 1024 * 1024 },
+        { vendor: 'Intel', model: 'Iris Xe', vram: 8192 * 1024 * 1024 },
+      ],
+    }
+    const chosen = rig.selectComputeGpu(graphics, null)
+    assert.strictEqual(chosen.model, 'Iris Xe')
+  })
+
+  it('trusts smiVram over si.graphics vram', () => {
+    const graphics = {
+      controllers: [
+        { vendor: 'NVIDIA', model: 'Tesla P40', vram: 20000 * 1024 * 1024 },
+      ],
+    }
+    const chosen = rig.selectComputeGpu(graphics, 24576)
+    assert.strictEqual(chosen.vram, 24576)
+  })
+
+  it('returns null for empty controllers', () => {
+    assert.strictEqual(rig.selectComputeGpu({ controllers: [] }, null), null)
+    assert.strictEqual(rig.selectComputeGpu(null, null), null)
+  })
+})
