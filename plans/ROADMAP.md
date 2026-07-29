@@ -15,7 +15,9 @@ may be pulled forward if an earlier one blocks.
 **Status (reconciled 2026-07-29): all tracks A–I complete — phases 1–31 accepted in the
 `.mm` thread. Queue drained (`grim mm next` → roadmap-empty). Remaining open items are not
 numbered phases: phase-20 macOS acceptance is on-trust (spot-check on real hardware), and
-the grim-tavern/grim-npc "character memory" design phase is offered but not yet briefed.**
+the grim-tavern/grim-npc "character memory" design phase is offered but not yet briefed.
+One new phase queued 2026-07-29: phase-32 grim-tavern go-live (fLimfLaMs cutover,
+user-gated `requires: permission` — the router HALTs on it for the user, by design).**
 
 ## Ruling on tmp/hi/SERVICE-MESH-LITE.md (2026-07-22)
 
@@ -190,7 +192,8 @@ tavern is where rumors/notes/links get dropped off and turned into filed KB enti
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | ✅ accepted (#0123 in thread) — Track H (grim-tavern) core complete |
+| 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | ✅ accepted (#0123 in thread) — code-accepted, NOT deployed |
+| 32 | plans/phase-32.md | **grim-tavern go-live** — cut `flimsflams` over to the researcher. NOT a cherry-pick: the bot rides the 78-file `config-reorg-2026-06-25` refactor (deletes old bots, rewires to grim-npc). Staged, reversible cutover; `requires: permission` (live-service restart, user-gated) | queued (hierophant, 2026-07-29) — fLimfLaMs repo |
 
 ## Track I — Autopact: the pact runs itself (phases 25–27)
 
