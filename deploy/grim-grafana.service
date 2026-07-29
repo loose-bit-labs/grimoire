@@ -1,0 +1,21 @@
+[Unit]
+Description=grim grafana — dashboard and visualization
+After=network.target grim-prometheus.service
+
+[Service]
+WorkingDirectory=%h/.grimoire-telemetry
+ExecStart=%h/.grimoire-telemetry/bin/grafana-server \
+  --homepath=%h/.grimoire-telemetry/grafana \
+  --config=%h/.grimoire/deploy/telemetry/grafana.ini \
+  cfg:default.paths.data=%h/data/telemetry/grafana \
+  cfg:default.paths.provisioning=%h/.grimoire/deploy/telemetry/provisioning \
+  cfg:default.paths.logs=%h/data/logs/grimoire/grafana \
+  cfg:default.paths.plugins=%h/data/telemetry/grafana/plugins \
+  cfg:default.paths.provisioning=%h/.grimoire/deploy/telemetry/provisioning
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/data/logs/grimoire/grim-grafana.log
+StandardError=append:%h/data/logs/grimoire/grim-grafana.log
+
+[Install]
+WantedBy=default.target

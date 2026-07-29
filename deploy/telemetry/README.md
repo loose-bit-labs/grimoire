@@ -5,16 +5,16 @@ Prometheus + Grafana for rig agent telemetry.
 ## Quick start
 
 ```bash
-# Bring up the stack (generates scrape config from rig.json)
+# Bring up the stack (generates scrape config from rig.json, installs pinned binaries)
 deploy/setup-telemetry.sh up
 
-# Tear it down (removes containers, volumes, network)
+# Tear it down (stops services, keeps data intact)
 deploy/setup-telemetry.sh down
 
 # Just regenerate scrape targets
 deploy/setup-telemetry.sh generate
 
-# Check container status
+# Check service status
 deploy/setup-telemetry.sh status
 ```
 
@@ -46,20 +46,24 @@ It provides:
 
 ## Retention
 
-Default is 30 days (`--storage.tsdb.retention.time=30d` in the Prometheus command in
-`compose.json`). Change the value and restart to adjust.
+Default is 30 days (`--storage.tsdb.retention.time=30d` in `grim-prometheus.service`).
+Change the value and restart to adjust.
 
 ## Files
 
 ```
-deploy/telemetry/
-  compose.json                    # Docker Compose (Prometheus + Grafana)
-  generate-scrape.sh              # Generator: rig.json → prometheus.json
-  prometheus.json                 # Generated Prometheus scrape config
-  dashboard-hotspots.json         # Grafana dashboard (source)
-  README.md                       # This file
-  provisioning/
-    datasources/prometheus.yml    # Grafana datasource provisioning
-    dashboards/grimoire.yml       # Dashboard provider config
-    dashboards/dashboard-hotspots.json  # Dashboard (copied for mounting)
+deploy/
+  telemetry/
+    generate-scrape.sh              # Generator: rig.json → prometheus.json
+    prometheus.json                 # Generated Prometheus scrape config
+    dashboard-hotspots.json         # Grafana dashboard (source)
+    grafana.ini                     # Grafana config (admin creds, paths)
+    README.md                       # This file
+    provisioning/
+      datasources/prometheus.yml    # Grafana datasource provisioning
+      dashboards/grimoire.yml       # Dashboard provider config
+      dashboards/dashboard-hotspots.json  # Dashboard (copied for mounting)
+  grim-prometheus.service           # systemd user unit
+  grim-grafana.service              # systemd user unit
+  setup-telemetry.sh                # Install + manage stack
 ```

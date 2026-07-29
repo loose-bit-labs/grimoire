@@ -1,0 +1,18 @@
+[Unit]
+Description=grim prometheus — scrape target aggregator
+After=network.target
+
+[Service]
+WorkingDirectory=%h/.grimoire-telemetry
+ExecStart=%h/.grimoire-telemetry/bin/prometheus \
+  --config.file=%h/.grimoire/deploy/telemetry/prometheus.json \
+  --storage.tsdb.path=%h/data/telemetry/prometheus \
+  --storage.tsdb.retention.time=30d \
+  --web.enable-lifecycle
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/data/logs/grimoire/grim-prometheus.log
+StandardError=append:%h/data/logs/grimoire/grim-prometheus.log
+
+[Install]
+WantedBy=default.target
