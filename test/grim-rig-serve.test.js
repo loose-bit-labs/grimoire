@@ -542,3 +542,69 @@ describe('buildSnapshot() self-discovery', () => {
     assert.strictEqual(snapshot.host.hostname, os.hostname().toLowerCase())
   })
 })
+
+// ── selectAllComputeGpus() ───────────────────────────────────────────────────
+
+describe('selectAllComputeGpus()', () => {
+  it('returns two NVIDIA P40s with smi VRAM', () => {
+    const g = { controllers: [
+      { vendor: 'NVIDIA', model: 'Tesla P40', vram: 20000 * 1024 * 1024 },
+      { vendor: 'NVIDIA', model: 'Tesla P40', vram: 20000 * 1024 * 1024 },
+    ]}
+    const smi = [{ index: 0, memoryTotal: 24576, memoryUsed: 4096 }, { index: 1, memoryTotal: 24576, memoryUsed: 2048 }]
+    const result = rig.selectAllComputeGpus(g, smi)
+    assert.strictEqual(result.length, 2)
+    assert.strictEqual(result[0].model, 'Tesla P40')
+    assert.strictEqual(result[0].vram, 24576)
+    assert.strictEqual(result[0].vramUsed, 4096)
+    assert.strictEqual(result[0].index, 0)
+    assert.strictEqual(result[1].vram, 24576)
+    assert.strictEqual(result[1].vramUsed, 2048)
+    assert.strictEqual(result[1].index, 1)
+  })
+
+  it('filters out Matrox BMC, keeps NVIDIA', () => {
+    const g = { controllers: [
+      { vendor: 'Matrox Electronics', model: 'G200eW3', vram: 16777216 },
+      { vendor: 'NVIDIA', model: 'Tesla P40', vram: 24576 * 1024 * 1024 },
+    ]}
+    const result = rig.selectAllComputeGpus(g, [{ index: 0, memoryTotal: 24576, memoryUsed: 0 }])
+    assert.strictEqual(result.length, 1)
+    assert.strictEqual(result[0].model, 'Tesla P40')
+  })
+
+  it('returns empty for null/empty input', () => {
+    assert.strictEqual(rig.selectAllComputeGpus(null, []).length, 0)
+    assert.strictEqual(rig.selectAllComputeGpus({ controllers: [] }, []).length, 0)
+  })
+})
+
+// ── toPrometheusText with multi-GPU ──────────────────────────────────────────
+
+describe('toPrometheusText() multi-GPU', () => {
+  it('emits labeled series for each GPU', () => {
+    const snapshot = {
+      host: {
+        hostname: 'chonko',
+        cpuPercent: 10, memUsedMb: 0, memTotalMb: 0, diskUsedPercent: 0,
+        gpus: [
+          { vendor: 'NVIDIA', model: 'Tesla P40', vramTotalMb: 24576, vramUsedMb: 4096, gpuPercent: 15, tempC: 48, index: 0, computeApps: [] },
+          { vendor: 'NVIDIA', model: 'Tesla P40', vramTotalMb: 24576, vramUsedMb: 2048, gpuPercent: null, tempC: null, index: 1, computeApps: [] },
+        ],
+        gpu: { vendor: 'NVIDIA', model: 'Tesla P40', vramTotalMb: 24576, vramUsedMb: 4096, gpuPercent: 15, tempC: 48, computeApps: [] },
+      },
+      services: [],
+      lastUpdated: null,
+    }
+    const text = rig.toPrometheusText(snapshot)
+    assert.ok(text.includes('gen_gpu_vram_total_mb{node="chonko",gpu="0"} 24576'))
+    assert.ok(text.includes('gen_gpu_vram_total_mb{node="chonko",gpu="1"} 24576'))
+    assert.ok(text.includes('gen_gpu_vram_used_mb{node="chonko",gpu="0"} 4096'))
+    assert.ok(text.includes('gen_gpu_vram_used_mb{node="chonko",gpu="1"} 2048'))
+    assert.ok(text.includes('gen_gpu_util_percent{node="chonko",gpu="0"} 15'))
+    // gpu="1" has no util percent (null)
+    assert.ok(!text.includes('gen_gpu_util_percent{node="chonko",gpu="1"}'))
+    // No unlabeled series
+    assert.ok(!text.match(/gen_gpu_vram_total_mb\{node="chonko"\}/))
+  })
+})

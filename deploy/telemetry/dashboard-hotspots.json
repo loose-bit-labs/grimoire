@@ -11,91 +11,164 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "panels": [],
       "title": "Overview / Alerts",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "percentage",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "custom": {
             "displayMode": "gradient-slash",
             "minVizWidth": 8,
             "fillOpacity": 80,
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "title": "VRAM Hotspots (all boxes)",
       "type": "bargauge",
       "targets": [
         {
-          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
-          "legendFormat": "{{node}}",
+          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",gpu=\"$gpu\"} / gen_gpu_vram_total_mb{job!=\"grafana\",gpu=\"$gpu\"} * 100",
+          "legendFormat": "{{node}} gpu{{gpu}}",
           "refId": "A"
         }
       ],
       "options": {
-        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
       }
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 70 },
-              { "color": "red", "value": 90 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
             ]
           },
           "mappings": [
             {
               "type": "range",
-              "options": { "from": 90, "to": 100, "result": { "text": "ALERT", "color": "dark-red" } }
+              "options": {
+                "from": 90,
+                "to": 100,
+                "result": {
+                  "text": "ALERT",
+                  "color": "dark-red"
+                }
+              }
             },
             {
               "type": "range",
-              "options": { "from": 0, "to": 89.99, "result": { "text": "OK", "color": "green" } }
+              "options": {
+                "from": 0,
+                "to": 89.99,
+                "result": {
+                  "text": "OK",
+                  "color": "green"
+                }
+              }
             }
           ],
-          "custom": { "filterable": false },
+          "custom": {
+            "filterable": false
+          },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
       "title": "VRAM > 90% Alert",
       "type": "stat",
       "targets": [
         {
-          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\"} / gen_gpu_vram_total_mb{job!=\"grafana\"} * 100",
-          "legendFormat": "{{node}}",
+          "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",gpu=\"$gpu\"} / gen_gpu_vram_total_mb{job!=\"grafana\",gpu=\"$gpu\"} * 100",
+          "legendFormat": "{{node}} gpu{{gpu}}",
           "refId": "A"
         }
       ],
       "options": {
-        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -103,16 +176,36 @@
       }
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
-          "custom": { "inspect": false }
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "inspect": false
+          }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 2,
       "title": "Models Loaded",
       "type": "stat",
@@ -124,30 +217,55 @@
         }
       ],
       "options": {
-        "reduceOptions": { "values": false, "calcs": ["count"], "fields": "" },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "count"
+          ],
+          "fields": ""
+        },
         "orientation": "auto"
       }
     },
     {
       "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 200,
       "repeat": "node",
       "repeatDirection": "v",
-      "title": "▸ $node",
+      "title": "\u25b8 $node",
       "type": "row",
       "panels": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 70 },
-                  { "color": "red", "value": 90 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
                 ]
               },
               "min": 0,
@@ -156,7 +274,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 0, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 0,
+            "y": 0
+          },
           "id": 201,
           "title": "CPU %",
           "type": "gauge",
@@ -168,20 +291,40 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 70 },
-                  { "color": "red", "value": 90 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
                 ]
               },
               "min": 0,
@@ -190,7 +333,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 4, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 4,
+            "y": 0
+          },
           "id": 202,
           "title": "Mem %",
           "type": "gauge",
@@ -202,20 +350,40 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 80 },
-                  { "color": "red", "value": 95 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 95
+                  }
                 ]
               },
               "min": 0,
@@ -224,7 +392,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 8, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 8,
+            "y": 0
+          },
           "id": 203,
           "title": "Disk %",
           "type": "gauge",
@@ -236,20 +409,40 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 70 },
-                  { "color": "red", "value": 90 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
                 ]
               },
               "min": 0,
@@ -258,7 +451,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 12, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 12,
+            "y": 0
+          },
           "id": 204,
           "title": "VRAM %",
           "type": "gauge",
@@ -270,27 +468,52 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" }
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
+              "color": {
+                "mode": "thresholds"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 70 },
-                  { "color": "red", "value": 85 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 85
+                  }
                 ]
               },
               "unit": "celsius"
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 16, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 16,
+            "y": 0
+          },
           "id": 205,
           "title": "GPU Temp",
           "type": "stat",
@@ -302,7 +525,13 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
             "colorMode": "background",
             "graphMode": "none",
             "justifyMode": "auto",
@@ -310,16 +539,36 @@
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
-              "custom": { "inspect": false }
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "custom": {
+                "inspect": false
+              }
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 4, "x": 20, "y": 0 },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 20,
+            "y": 0
+          },
           "id": 206,
           "title": "GPU %",
           "type": "stat",
@@ -331,7 +580,13 @@
             }
           ],
           "options": {
-            "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
             "colorMode": "value",
             "graphMode": "area",
             "justifyMode": "auto",
@@ -339,15 +594,26 @@
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "palette-classic" },
+              "color": {
+                "mode": "palette-classic"
+              },
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "red", "value": 8 }
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 8
+                  }
                 ]
               },
               "custom": {
@@ -360,16 +626,28 @@
                 "gradientMode": "none",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": { "type": "linear" },
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": false,
-                "stacking": { "group": "A", "mode": "stack" },
-                "thresholdsStyle": { "mode": "off" }
+                "stacking": {
+                  "group": "A",
+                  "mode": "stack"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               }
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
           "id": 207,
           "title": "Queue / Running",
           "type": "timeseries",
@@ -386,15 +664,32 @@
             }
           ],
           "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": [] }
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": []
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "palette-classic" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "custom": {
                 "axisCenteredZero": false,
                 "axisLabel": "",
@@ -405,11 +700,18 @@
                 "gradientMode": "none",
                 "lineWidth": 2,
                 "pointSize": 5,
-                "scaleDistribution": { "type": "linear" },
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": false,
-                "stacking": { "group": "A", "mode": "none" },
-                "thresholdsStyle": { "mode": "off" }
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "min": 0,
               "max": 100,
@@ -417,7 +719,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
           "id": 208,
           "title": "CPU / Mem over time",
           "type": "timeseries",
@@ -434,15 +741,35 @@
             }
           ],
           "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            }
           }
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "fieldConfig": {
             "defaults": {
-              "color": { "mode": "palette-classic" },
-              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
               "custom": {
                 "axisCenteredZero": false,
                 "axisLabel": "",
@@ -453,11 +780,18 @@
                 "gradientMode": "none",
                 "lineWidth": 2,
                 "pointSize": 5,
-                "scaleDistribution": { "type": "linear" },
+                "scaleDistribution": {
+                  "type": "linear"
+                },
                 "showPoints": "never",
                 "spanNulls": false,
-                "stacking": { "group": "A", "mode": "none" },
-                "thresholdsStyle": { "mode": "off" }
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
               },
               "min": 0,
               "max": 100,
@@ -465,7 +799,12 @@
             },
             "overrides": []
           },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
           "id": 209,
           "title": "VRAM / GPU Compute over time",
           "type": "timeseries",
@@ -482,7 +821,14 @@
             }
           ],
           "options": {
-            "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] }
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            }
           }
         }
       ]
@@ -490,31 +836,31 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["grimoire", "telemetry", "rig"],
+  "tags": [
+    "grimoire",
+    "telemetry",
+    "rig"
+  ],
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(gen_host_cpu_percent, node)",
-        "hide": 0,
+        "name": "gpu",
+        "query": "label_values(gen_gpu_vram_total_mb, gpu)",
+        "type": "query",
+        "refresh": 1,
         "includeAll": true,
         "multi": true,
-        "name": "node",
-        "options": [],
-        "query": {
-          "query": "label_values(gen_host_cpu_percent, node)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
   "title": "Grimoire Rig Hotspots",

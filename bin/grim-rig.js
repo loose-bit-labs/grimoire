@@ -440,18 +440,51 @@ async function getGpuMetricsFallbackNvidia() {
 }
 
 /**
- * Query nvidia-smi for total GPU VRAM in MB. Returns null on failure / no NVIDIA GPU.
- * Graceful degradation: missing nvidia-smi → null.
+ * Query nvidia-smi for per-GPU memory totals and usage.
+ * Returns [{ index, memoryTotal, memoryUsed }] or [] on failure / no NVIDIA GPU.
+ * Graceful degradation: missing nvidia-smi → [].
  */
-async function getSmiVram() {
+async function getSmiGpus() {
   return new Promise(resolve => {
     const { exec } = require('node:child_process')
-    exec('nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
-      if (err || !stdout || !stdout.trim()) return resolve(null)
-      const line = stdout.trim().split('\n')[0].trim()
-      const m = /^(\d+)\s*MiB$/.exec(line)
-      resolve(m ? parseInt(m[1], 10) : null)
+    exec('nvidia-smi --query-gpu=index,memory.total,memory.used --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout || !stdout.trim()) return resolve([])
+      const gpus = []
+      for (const line of stdout.trim().split('\n')) {
+        const m = /^(\d+),\s*(\d+)\s*MiB,\s*(\d+)\s*MiB$/.exec(line.trim())
+        if (m) gpus.push({ index: parseInt(m[1], 10), memoryTotal: parseInt(m[2], 10), memoryUsed: parseInt(m[3], 10) })
+      }
+      resolve(gpus)
     })
+  })
+}
+
+/**
+ * Select all compute GPUs from systeminformation's controller list, dropping BMC
+ * / integrated display chips. Cross-reference with nvidia-smi per-GPU VRAM when
+ * available (smi is the compute-truth source for VRAM totals).
+ *
+ * Returns [{ vendor, model, vram, vramUsed, index }] or [].
+ */
+function selectAllComputeGpus(graphics, smiGpus) {
+  if (!graphics || !graphics.controllers || !graphics.controllers.length) return []
+  // Filter: NVIDIA/AMD vendor, or vram >= 256 MB
+  const discrete = graphics.controllers.filter(c => {
+    const vendor = (c.vendor || '').toLowerCase()
+    const isDiscreteVendor = vendor.includes('nvidia') || vendor.includes('amd')
+    const hasRealVram = (c.vram || 0) >= 256 * 1024 * 1024 // 256 MB in KB
+    return isDiscreteVendor || hasRealVram
+  })
+  const candidates = discrete.length > 0 ? discrete : graphics.controllers.slice().sort((a, b) => (b.vram || 0) - (a.vram || 0))
+  // Cross-reference with nvidia-smi for per-GPU VRAM
+  const smiMap = {}
+  for (const s of (smiGpus || [])) smiMap[s.index] = s
+  return candidates.map((c, i) => {
+    const smi = smiMap[i]
+    if (smi) {
+      return { vendor: c.vendor, model: c.model, vram: smi.memoryTotal, vramUsed: smi.memoryUsed, index: i }
+    }
+    return { vendor: c.vendor, model: c.model, vram: c.vram, vramUsed: c.memoryUsed, index: i }
   })
 }
 
@@ -679,6 +712,7 @@ async function buildSnapshot(boxes) {
   let memTotal = 0
   let gpuInfo = null
   let gpuFallback = null
+  let allGpus = []
 
   try {
     const [load, mem, graphics] = await Promise.all([
@@ -689,17 +723,16 @@ async function buildSnapshot(boxes) {
 
     if (load) cpuLoad = load.currentLoad
     if (mem) { memUsed = mem.used; memTotal = mem.total }
-    // Pick real compute GPU, not BMC display chip
-    const smiVram = await getSmiVram().catch(() => null)
-    gpuInfo = selectComputeGpu(graphics, smiVram)
+    // Collect all real compute GPUs, not just index 0
+    const smiGpus = await getSmiGpus().catch(() => [])
+    allGpus = selectAllComputeGpus(graphics, smiGpus)
+    gpuInfo = allGpus[0] || null
+    gpuFallback = allGpus.length > 0 && (allGpus[0].vendor || '').includes('AMD')
+      ? await getGpuMetricsFallback().catch(() => null)
+      : allGpus.length > 0 && (allGpus[0].vendor || '').includes('NVIDIA')
+      ? await getGpuMetricsFallbackNvidia().catch(() => null)
+      : null
   } catch { /* graceful degradation — host metrics may be partial */ }
-
-  // GPU fallback for utilization/temp — si.graphics() only reliably gives vendor/model/VRAM total
-  if (gpuInfo && (gpuInfo.vendor || '').includes('AMD')) {
-    gpuFallback = await getGpuMetricsFallback()
-  } else if (gpuInfo && (gpuInfo.vendor || '').includes('NVIDIA')) {
-    gpuFallback = await getGpuMetricsFallbackNvidia()
-  }
 
   // Per-process GPU memory consumers (NVIDIA only; [] on AMD / no nvidia-smi)
   const computeApps = await getComputeApps().catch(() => [])
@@ -720,20 +753,37 @@ async function buildSnapshot(boxes) {
       memUsedMb: Math.round(memUsed / 1024 / 1024),
       memTotalMb: Math.round(memTotal / 1024 / 1024),
       diskUsedPercent: Math.round(diskUsedPct * 100) / 100,
-      gpu: gpuInfo ? {
-        vendor: gpuInfo.vendor,
-        model: gpuInfo.model,
-        vramTotalMb: gpuInfo.vram,
-        vramUsedMb: gpuInfo.memoryUsed || null,
-        gpuPercent: gpuFallback?.gpuPct ?? (() => {
-          const total = gpuInfo.vram
-          if (!total || total < 256) return null // guard: absurd denominator
+      gpus: allGpus.map(g => ({
+        vendor: g.vendor,
+        model: g.model,
+        vramTotalMb: g.vram,
+        vramUsedMb: g.vramUsed ?? null,
+        gpuPercent: g.index === 0 ? (gpuFallback?.gpuPct ?? (() => {
+          const total = g.vram
+          if (!total || total < 256) return null
           const used = computeApps.reduce((s, a) => s + a.usedMiB, 0)
           if (used === 0) return null
           const pct = Math.round(used / total * 100)
-          return pct > 100 ? null : pct // guard: >100% is bogus
+          return pct > 100 ? null : pct
+        })()) : null,
+        tempC: g.index === 0 ? (g.temperatureGpu || gpuFallback?.temp || null) : null,
+        computeApps: g.index === 0 ? computeApps : [],
+        index: g.index,
+      })),
+      gpu: allGpus[0] ? {
+        vendor: allGpus[0].vendor,
+        model: allGpus[0].model,
+        vramTotalMb: allGpus[0].vram,
+        vramUsedMb: allGpus[0].vramUsed ?? null,
+        gpuPercent: gpuFallback?.gpuPct ?? (() => {
+          const total = allGpus[0].vram
+          if (!total || total < 256) return null
+          const used = computeApps.reduce((s, a) => s + a.usedMiB, 0)
+          if (used === 0) return null
+          const pct = Math.round(used / total * 100)
+          return pct > 100 ? null : pct
         })(),
-        tempC: gpuInfo.temperatureGpu || gpuFallback?.temp || null,
+        tempC: allGpus[0].temperatureGpu || gpuFallback?.temp || null,
         computeApps,
       } : null,
     },
@@ -767,29 +817,31 @@ function toPrometheusText(snapshot) {
   lines.push(`# TYPE gen_host_disk_used_percent gauge`)
   lines.push(`gen_host_disk_used_percent{node="${node}"} ${h.diskUsedPercent}`)
 
-  // GPU metrics
-  if (h.gpu) {
-    const g = h.gpu
+  // GPU metrics — one series per GPU with {gpu="N"} label
+  // Backward compat: if gpus array is absent but gpu alias exists, emit unlabeled
+  const gpuSeries = h.gpus && h.gpus.length > 0 ? h.gpus : (h.gpu ? [{ ...h.gpu, index: 0 }] : [])
+  for (const g of gpuSeries) {
+    const label = h.gpus && h.gpus.length > 0 ? `,gpu="${g.index}"` : ''
     lines.push(`# HELP gen_gpu_vram_total_mb Total GPU VRAM in megabytes`)
     lines.push(`# TYPE gen_gpu_vram_total_mb gauge`)
-    lines.push(`gen_gpu_vram_total_mb{node="${node}"} ${g.vramTotalMb}`)
+    lines.push(`gen_gpu_vram_total_mb{node="${node}"${label}} ${g.vramTotalMb}`)
 
     if (g.vramUsedMb != null) {
       lines.push(`# HELP gen_gpu_vram_used_mb Used GPU VRAM in megabytes`)
       lines.push(`# TYPE gen_gpu_vram_used_mb gauge`)
-      lines.push(`gen_gpu_vram_used_mb{node="${node}"} ${g.vramUsedMb}`)
+      lines.push(`gen_gpu_vram_used_mb{node="${node}"${label}} ${g.vramUsedMb}`)
     }
 
     if (g.gpuPercent != null) {
       lines.push(`# HELP gen_gpu_util_percent GPU utilization percentage`)
       lines.push(`# TYPE gen_gpu_util_percent gauge`)
-      lines.push(`gen_gpu_util_percent{node="${node}"} ${g.gpuPercent}`)
+      lines.push(`gen_gpu_util_percent{node="${node}"${label}} ${g.gpuPercent}`)
     }
 
     if (g.tempC != null) {
       lines.push(`# HELP gen_gpu_temp_c GPU temperature in Celsius`)
       lines.push(`# TYPE gen_gpu_temp_c gauge`)
-      lines.push(`gen_gpu_temp_c{node="${node}"} ${g.tempC}`)
+      lines.push(`gen_gpu_temp_c{node="${node}"${label}} ${g.tempC}`)
     }
   }
 
@@ -1097,7 +1149,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, getSmiVram, selectComputeGpu, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, getSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -1159,19 +1211,21 @@ async function main() {
     const url = `http://${host}/status`
     try {
       const data = await fetchJson(url, 5000)
-      const gpu = data.host?.gpu
+      const gpus = data.host?.gpus || []
       if (args.json) {
         console.log(JSON.stringify({ box: boxName || 'localhost', ...data.host, lastUpdated: data.lastUpdated }, null, 2))
-      } else if (gpu) {
-        console.log(`[${boxName || 'localhost'}] ${gpu.vendor} ${gpu.model}`)
-        console.log(`  VRAM   ${gpu.vramUsedMb ?? '?'} / ${gpu.vramTotalMb} MiB${gpu.gpuPercent != null ? `  ${gpu.gpuPercent}%` : ''}`)
-        console.log(`  Temp   ${gpu.tempC ?? '?'} °C`)
-        if (gpu.computeApps && gpu.computeApps.length) {
-          for (const a of gpu.computeApps) {
-            console.log(`  App    pid ${a.pid}  ${a.usedMiB} MiB  ${a.name}`)
+      } else if (gpus.length) {
+        for (const g of gpus) {
+          console.log(`[${boxName || 'localhost'}] GPU ${g.index}: ${g.vendor} ${g.model}`)
+          console.log(`  VRAM   ${g.vramUsedMb ?? '?'} / ${g.vramTotalMb} MiB${g.gpuPercent != null ? `  ${g.gpuPercent}%` : ''}`)
+          console.log(`  Temp   ${g.tempC ?? '?'} °C`)
+          if (g.computeApps && g.computeApps.length) {
+            for (const a of g.computeApps) {
+              console.log(`  App    pid ${a.pid}  ${a.usedMiB} MiB  ${a.name}`)
+            }
+          } else {
+            console.log(`  Apps   none`)
           }
-        } else {
-          console.log(`  Apps   none`)
         }
       } else {
         console.log(`[${boxName || 'localhost'}] no GPU detected`)
