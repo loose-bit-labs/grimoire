@@ -644,7 +644,7 @@ async function buildSnapshot(boxes) {
   // rig.json service lists are optional — no config means auto-discover
   // whatever's actually running via systemd, so boxes never go stale.
   const declared = localBox?.services || []
-  const svcList = declared.length > 0 ? declared : (localBox ? discoverLocalServices() : [])
+  const svcList = declared.length > 0 ? declared : discoverLocalServices()
 
   const services = []
   for (const svc of svcList) {

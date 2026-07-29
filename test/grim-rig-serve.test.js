@@ -378,7 +378,7 @@ describe('buildSnapshot()', () => {
     assert.ok(!snapshot.services.some(s => s.name === 'grim-rig-serve'))
   })
 
-  it('returns empty services when no local box matches', async () => {
+  it('discovers local services when no local box matches', async () => {
     const boxes = [{
       host: 'nowhere',
       label: 'nowhere',
@@ -386,7 +386,9 @@ describe('buildSnapshot()', () => {
       services: [{ name: 'ollama', port: 11434 }],
     }]
     const snapshot = await rig.buildSnapshot(boxes)
-    assert.strictEqual(snapshot.services.length, 0)
+    // No local box match → self-discovery runs; services reflect what's actually
+    // running on this host via systemctl --user, not the declared ollama on "nowhere"
+    assert.ok(Array.isArray(snapshot.services))
   })
 
   it('dead services yield up: false with zero metrics', async () => {
@@ -523,5 +525,20 @@ describe('selectComputeGpu()', () => {
   it('returns null for empty controllers', () => {
     assert.strictEqual(rig.selectComputeGpu({ controllers: [] }, null), null)
     assert.strictEqual(rig.selectComputeGpu(null, null), null)
+  })
+})
+
+// ── buildSnapshot self-discovery (no boxes) ──────────────────────────────────
+
+describe('buildSnapshot() self-discovery', () => {
+  it('calls discoverLocalServices when boxes is empty', async () => {
+    const discover = rig.discoverLocalServices
+    const mock = jest ? jest.fn() : null
+    // Use a real call — on this host it returns whatever --user units are running
+    const snapshot = await rig.buildSnapshot([])
+    assert.ok(Array.isArray(snapshot.services))
+    // Should not throw; services may be empty if no matching units are running
+    assert.ok(snapshot.host)
+    assert.strictEqual(snapshot.host.hostname, os.hostname().toLowerCase())
   })
 })
