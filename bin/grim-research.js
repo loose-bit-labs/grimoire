@@ -100,6 +100,82 @@ function extractText(html) {
   return paragraphs.join('\n\n')
 }
 
+// ── Link scan ─────────────────────────────────────────────────────────────────
+//
+// Deterministic regex pass over acquired text to find high-value resources
+// (GitHub repos, arxiv papers, DOIs, docs links). Returns a deduped, capped
+// list of {type, url} objects. Depth-1 only — discovered resources are not
+// re-scanned (that's phase 34/35).
+
+const THIN_YIELD_THRESHOLD = 600 // chars of real text before we call it a SPA shell
+const DISCOVERY_CAP = 4
+
+// Known patterns — order matters for type assignment (first match wins)
+// All regexes use the 'g' flag so exec() advances through all matches.
+const LINK_PATTERNS = [
+  // arxiv abs and pdf
+  { re: /arxiv\.org\/abs\/([\d\.]+)/g, type: 'paper', fix: (m) => `https://arxiv.org/abs/${m[1]}` },
+  { re: /arxiv\.org\/pdf\/([\d\.]+)(?=\.pdf|$)/g, type: 'paper', fix: (m) => `https://arxiv.org/pdf/${m[1]}` },
+  // DOI
+  { re: /doi\.org\/(?:10\.\d{4,}\/[^\s]+)/g, type: 'paper', fix: (m) => m[0].replace(/\s+$/, '') },
+  // GitHub org/repo (full URLs and bare references in text)
+  { re: /github\.com\/([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+)/g, type: 'repo', fix: (m) => `https://github.com/${m[1]}/${m[2]}` },
+  // Generic docs links (hosted docs sites)
+  { re: /docs?\.(?:github\.io|readthedocs\.io|npmjs\.com\/package)\/[^\s]+/g, type: 'doc', fix: (m) => m[0].replace(/\s+$/, '') },
+]
+
+function scanLinks(text) {
+  if (!text) return []
+  const found = new Map() // url → {type, url}
+  for (const { re, type, fix } of LINK_PATTERNS) {
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const url = fix(m)
+      if (!found.has(url)) {
+        found.set(url, { type, url })
+      }
+    }
+  }
+  return Array.from(found.values()).slice(0, DISCOVERY_CAP)
+}
+
+// ── Thin-yield detection ──────────────────────────────────────────────────────
+//
+// If extractText yields below threshold, the page is likely a SPA or marketing
+// shell — fall back to search to find the canonical repo/paper.
+
+function detectThinYield(acquired) {
+  return !!acquired.text && acquired.text.length < THIN_YIELD_THRESHOLD
+}
+
+// ── Search fallback ───────────────────────────────────────────────────────────
+//
+// Reuses the existing CSE→DDG search path (same as acquireTerm) to find
+// canonical resources when the page itself is thin. Queries for github and
+// arxiv hits, classifies by host, returns up to CAP resources.
+
+async function searchForResources(title, drop) {
+  const query = title !== drop ? `${title} github` : `${drop} github`
+  const results = await acquireTerm({ term: query })
+  if (results.failed || !results.text) return []
+
+  // Pull out any github/arxiv/doi links from the search result page
+  const links = scanLinks(results.text)
+
+  // Also try an arxiv-specific query
+  const arxivResults = await acquireTerm({ term: `${title} arxiv paper` })
+  if (!arxivResults.failed && arxivResults.text) {
+    const arxivLinks = scanLinks(arxivResults.text)
+    for (const link of arxivLinks) {
+      if (!links.find((l) => l.url === link.url)) {
+        links.push({ ...link, via: 'search' })
+      }
+    }
+  }
+
+  return links.slice(0, DISCOVERY_CAP)
+}
+
 // ── Classify ──────────────────────────────────────────────────────────────────
 
 function classify(drop, forceFeature = false) {
@@ -146,7 +222,7 @@ async function checkDedup(query) {
 // Export for testing
 module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
-  isRedditShortlink, buildCseUrl,
+  isRedditShortlink, buildCseUrl, scanLinks, detectThinYield,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -419,6 +495,19 @@ async function researchDrop(drop, opts = {}) {
   // 3. Acquire
   const acquired = await acquire(classification, projectOverride)
 
+  // 3b. Discover — link-scan acquired text; if thin, fall back to search
+  const discovered = []
+  const linkHits = scanLinks(acquired.text)
+  discovered.push(...linkHits.map((l) => ({ ...l, via: 'link-scan' })))
+
+  if (detectThinYield(acquired) && linkHits.length === 0) {
+    const searchHits = await searchForResources(acquired.title, drop)
+    discovered.push(...searchHits.map((l) => ({ ...l, via: 'search' })))
+  }
+
+  // Cap at DISCOVERY_CAP total
+  const discoveredCapped = discovered.slice(0, DISCOVERY_CAP)
+
   // 4. Judge — skip the model entirely on a genuine acquisition failure
   const judgment = acquired.failed
     ? stubJudgment(drop, classification, acquired)
@@ -433,6 +522,7 @@ async function researchDrop(drop, opts = {}) {
     digest: judgment.digest || '',
     deduped: false,
     acquisitionFailed: !!acquired.failed,
+    discovered: discoveredCapped,
   }
 
   if (!dryRun && isLocal) {
@@ -452,6 +542,12 @@ async function researchDrop(drop, opts = {}) {
   if (json) console.log(JSON.stringify(result, null, 2))
   else {
     console.log(`\n  ${judgment.digest || result.digest}`)
+    if (discoveredCapped.length > 0) {
+      console.log(`  Discovered ${discoveredCapped.length} resource(s):`)
+      for (const d of discoveredCapped) {
+        console.log(`    [${d.type}] ${d.url}  (via ${d.via})`)
+      }
+    }
     if (result.entityId) console.log(`  Filed: ${result.entityId}`)
     if (dryRun) console.log(`  (dry-run, not written)`)
   }

@@ -120,6 +120,100 @@ describe('buildCseUrl()', () => {
   })
 })
 
+// ── scanLinks() ───────────────────────────────────────────────────────────────
+
+describe('scanLinks()', () => {
+  it('finds arxiv abs links', () => {
+    const html = `<a href="https://arxiv.org/abs/2301.12345">Paper</a>`
+    const links = rig.scanLinks(html)
+    assert.strictEqual(links.length, 1)
+    assert.strictEqual(links[0].type, 'paper')
+    assert.strictEqual(links[0].url, 'https://arxiv.org/abs/2301.12345')
+  })
+
+  it('finds arxiv pdf links', () => {
+    const html = `<a href="https://arxiv.org/pdf/2301.12345.pdf">PDF</a>`
+    const links = rig.scanLinks(html)
+    assert.strictEqual(links.length, 1)
+    assert.strictEqual(links[0].type, 'paper')
+    assert.strictEqual(links[0].url, 'https://arxiv.org/pdf/2301.12345')
+  })
+
+  it('finds github repo links', () => {
+    const html = `Check out https://github.com/owner/repo-name for the source.`
+    const links = rig.scanLinks(html)
+    assert.strictEqual(links.length, 1)
+    assert.strictEqual(links[0].type, 'repo')
+    assert.strictEqual(links[0].url, 'https://github.com/owner/repo-name')
+  })
+
+  it('finds doi links', () => {
+    const html = `See DOI: https://doi.org/10.1234/example`
+    const links = rig.scanLinks(html)
+    assert.strictEqual(links.length, 1)
+    assert.strictEqual(links[0].type, 'paper')
+    assert.ok(links[0].url.includes('doi.org'))
+  })
+
+  it('deduplicates same URL', () => {
+    const html = `
+      <a href="https://github.com/owner/repo">link1</a>
+      <a href="https://github.com/owner/repo">link2</a>
+    `
+    const links = rig.scanLinks(html)
+    assert.strictEqual(links.length, 1)
+  })
+
+  it('caps at DISCOVERY_CAP (4)', () => {
+    const urls = [1, 2, 3, 4, 5].map((i) => `https://github.com/owner/repo${i}`).join(' ')
+    const links = rig.scanLinks(urls)
+    assert.ok(links.length <= 4)
+  })
+
+  it('returns empty array for text with no links', () => {
+    const links = rig.scanLinks('Just plain text with no URLs.')
+    assert.deepStrictEqual(links, [])
+  })
+
+  it('returns empty array for null input', () => {
+    const links = rig.scanLinks(null)
+    assert.deepStrictEqual(links, [])
+  })
+})
+
+// ── detectThinYield() ─────────────────────────────────────────────────────────
+
+describe('detectThinYield()', () => {
+  it('returns true when text is below threshold', () => {
+    const acquired = { text: 'short' }
+    assert.strictEqual(rig.detectThinYield(acquired), true)
+  })
+
+  it('returns false when text exceeds threshold', () => {
+    const acquired = { text: 'x'.repeat(700) }
+    assert.strictEqual(rig.detectThinYield(acquired), false)
+  })
+
+  it('returns false for empty text', () => {
+    const acquired = { text: '' }
+    assert.strictEqual(rig.detectThinYield(acquired), false)
+  })
+
+  it('returns false for null text', () => {
+    const acquired = { text: null }
+    assert.strictEqual(rig.detectThinYield(acquired), false)
+  })
+})
+
+// ── researchDrop() discovery ──────────────────────────────────────────────────
+
+describe('researchDrop() discovery', () => {
+  it('includes discovered array in result', async () => {
+    const result = await rig.researchDrop('http://127.0.0.1:1/nonexistent', { dryRun: true, json: true })
+    assert.ok(Array.isArray(result.discovered))
+  })
+})
+
 // ── researchDrop() failure handling ───────────────────────────────────────────
 
 describe('researchDrop() acquisition failure', () => {
