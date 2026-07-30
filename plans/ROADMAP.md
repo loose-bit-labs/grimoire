@@ -186,6 +186,12 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | ✅ accepted (#0120 in thread) — Track G complete |
 
+## Track F cont. — dashboard (phase 37)
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | queued (hierophant, 2026-07-30) — **⚠️ for the live Grafana/telemetry session, NOT the autonomous 33–35 loop** (these files are its uncommitted WIP) |
+
 ## Deploy hygiene (phase 36, aid-only)
 
 | Phase | Brief | What lands | Status |
@@ -203,9 +209,9 @@ via provenance-at-write.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | queued (hierophant, 2026-07-29) |
-| 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | queued (blocked on 33) |
-| 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | queued (blocked on 33) — Track G-v2 complete |
+| 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | ✅ accepted (hierophant, 2026-07-29) |
+| 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | ✅ accepted (blocked on 33) |
+| 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | ✅ accepted (blocked on 33) — Track G-v2 complete |
 
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
@@ -216,7 +222,7 @@ tavern is where rumors/notes/links get dropped off and turned into filed KB enti
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | ✅ accepted (#0123 in thread) — code-accepted, NOT deployed |
-| 32 | plans/phase-32.md | **grim-tavern go-live** — cut `flimsflams` over to the researcher. NOT a cherry-pick: the bot rides the 78-file `config-reorg-2026-06-25` refactor (deletes old bots, rewires to grim-npc). Staged, reversible cutover; `requires: permission` (live-service restart, user-gated) | queued (hierophant, 2026-07-29) — fLimfLaMs repo |
+| 32 | plans/phase-32.md | **grim-tavern go-live** — cut `flimsflams` over to the researcher. NOT a cherry-pick: the bot rides the 78-file `config-reorg-2026-06-25` refactor (deletes old bots, rewires to grim-npc). Staged, reversible cutover; `requires: permission` (live-service restart, user-gated) | ✅ accepted (hierophant, 2026-07-29) — fLimfLaMs repo |
 
 ## Track I — Autopact: the pact runs itself (phases 25–27)
 
