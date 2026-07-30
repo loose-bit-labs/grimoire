@@ -190,7 +190,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 36 | plans/phase-36.md | roll `grimoire.service` system unit → user-space (house convention: `%h/.grimoire/bin/node` pinned, `default.target`, log-append); drop the cross-scope ollama ordering; create the missing aid pin (closes phase-24 gap). **`requires: permission`** — sudo + brief KB outage, user-gated cutover | queued (hierophant, 2026-07-30) — fixes the last pre-standardization holdout |
+| 36 | plans/phase-36.md | roll `grimoire.service` system unit → user-space (house convention: `%h/.grimoire/bin/node` pinned, `default.target`, log-append); drop the cross-scope ollama ordering; create the missing aid pin (closes phase-24 gap). **`requires: permission`** — sudo + brief KB outage, user-gated cutover | ✅ done — live cutover 2026-07-30 (`df2c28a`); now `/user.slice`, pinned node, KB read+write verified, system unit retired; closed the phase-24 aid pin gap. Last system-scope holdout gone (only ollama remains, third-party & being retired for llama.cpp) |
 
 ## Track G-v2 — research brain, agentic acquisition (phases 33–35)
 
