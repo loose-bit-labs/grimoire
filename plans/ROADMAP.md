@@ -186,6 +186,12 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | ✅ accepted (#0120 in thread) — Track G complete |
 
+## Deploy hygiene (phase 36, aid-only)
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 36 | plans/phase-36.md | roll `grimoire.service` system unit → user-space (house convention: `%h/.grimoire/bin/node` pinned, `default.target`, log-append); drop the cross-scope ollama ordering; create the missing aid pin (closes phase-24 gap). **`requires: permission`** — sudo + brief KB outage, user-gated cutover | queued (hierophant, 2026-07-30) — fixes the last pre-standardization holdout |
+
 ## Track G-v2 — research brain, agentic acquisition (phases 33–35)
 
 **Goal:** the intention v1 never reached — *one drop in, the tool discovers what's worth
