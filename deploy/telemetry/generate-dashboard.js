@@ -123,7 +123,7 @@ class DashboardGenerator {
         id: p(9),
         title: 'GPU Temp',
         type: 'gauge',
-        targets: [{ expr: `gen_gpu_temp_c{job!="grafana",node="${host}"}`, legendFormat: 'gpu{{gpu}}', refId: 'A' }],
+        targets: [{ expr: `gen_gpu_temp_c{job!="grafana",node="${host}"}`, legendFormat: 'gpu{{gpu}}', refId: 'A', interval: '5s' }],
         options: { reduceOptions: { values: false, calcs: ['lastNotNull'], fields: '' } },
       },
       {
@@ -190,8 +190,8 @@ class DashboardGenerator {
         type: 'timeseries',
         timeFrom: '2m',
         targets: [
-          { expr: `gen_host_cpu_percent{job!="grafana",node="${host}"}`, legendFormat: 'cpu', refId: 'A' },
-          { expr: `gen_host_mem_used_mb{job!="grafana",node="${host}"} / gen_host_mem_total_mb{job!="grafana",node="${host}"} * 100`, legendFormat: 'mem', refId: 'B' },
+          { expr: `gen_host_cpu_percent{job!="grafana",node="${host}"}`, legendFormat: 'cpu', refId: 'A', interval: '5s' },
+          { expr: `gen_host_mem_used_mb{job!="grafana",node="${host}"} / gen_host_mem_total_mb{job!="grafana",node="${host}"} * 100`, legendFormat: 'mem', refId: 'B', interval: '5s' },
         ],
         options: { legend: { displayMode: 'table', placement: 'bottom', calcs: ['lastNotNull', 'max'] } },
       },
@@ -217,8 +217,8 @@ class DashboardGenerator {
         type: 'timeseries',
         timeFrom: '2m',
         targets: [
-          { expr: `gen_gpu_vram_used_mb{job!="grafana",node="${host}"} / gen_gpu_vram_total_mb{job!="grafana",node="${host}"} * 100`, legendFormat: 'vram % gpu{{gpu}}', refId: 'A' },
-          { expr: `gen_gpu_util_percent{job!="grafana",node="${host}"}`, legendFormat: 'gpu compute %', refId: 'B' },
+          { expr: `gen_gpu_vram_used_mb{job!="grafana",node="${host}"} / gen_gpu_vram_total_mb{job!="grafana",node="${host}"} * 100`, legendFormat: 'vram % gpu{{gpu}}', refId: 'A', interval: '5s' },
+          { expr: `gen_gpu_util_percent{job!="grafana",node="${host}"}`, legendFormat: 'gpu compute %', refId: 'B', interval: '5s' },
         ],
         options: { legend: { displayMode: 'table', placement: 'bottom', calcs: ['lastNotNull', 'max'] } },
       },
@@ -243,7 +243,7 @@ class DashboardGenerator {
         title: 'GPU Temp (last 2m)',
         type: 'timeseries',
         timeFrom: '2m',
-        targets: [{ expr: `gen_gpu_temp_c{job!="grafana",node="${host}"}`, legendFormat: 'gpu{{gpu}}', refId: 'A' }],
+        targets: [{ expr: `gen_gpu_temp_c{job!="grafana",node="${host}"}`, legendFormat: 'gpu{{gpu}}', refId: 'A', interval: '5s' }],
         options: { legend: { displayMode: 'table', placement: 'bottom', calcs: ['lastNotNull', 'max'] } },
       },
     ]

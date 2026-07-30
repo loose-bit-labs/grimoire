@@ -785,7 +785,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"aid\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -997,12 +998,14 @@
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"aid\"}",
               "legendFormat": "cpu",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_host_mem_used_mb{job!=\"grafana\",node=\"aid\"} / gen_host_mem_total_mb{job!=\"grafana\",node=\"aid\"} * 100",
               "legendFormat": "mem",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1078,12 +1081,14 @@
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"aid\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"aid\"} * 100",
               "legendFormat": "vram % gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_gpu_util_percent{job!=\"grafana\",node=\"aid\"}",
               "legendFormat": "gpu compute %",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1157,7 +1162,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"aid\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1467,7 +1473,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"chonko\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1679,12 +1686,14 @@
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"chonko\"}",
               "legendFormat": "cpu",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_host_mem_used_mb{job!=\"grafana\",node=\"chonko\"} / gen_host_mem_total_mb{job!=\"grafana\",node=\"chonko\"} * 100",
               "legendFormat": "mem",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1760,12 +1769,14 @@
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"chonko\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"chonko\"} * 100",
               "legendFormat": "vram % gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_gpu_util_percent{job!=\"grafana\",node=\"chonko\"}",
               "legendFormat": "gpu compute %",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -1839,7 +1850,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"chonko\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -2149,7 +2161,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"meinherz\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -2361,12 +2374,14 @@
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"meinherz\"}",
               "legendFormat": "cpu",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_host_mem_used_mb{job!=\"grafana\",node=\"meinherz\"} / gen_host_mem_total_mb{job!=\"grafana\",node=\"meinherz\"} * 100",
               "legendFormat": "mem",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -2442,12 +2457,14 @@
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"meinherz\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"meinherz\"} * 100",
               "legendFormat": "vram % gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_gpu_util_percent{job!=\"grafana\",node=\"meinherz\"}",
               "legendFormat": "gpu compute %",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -2521,7 +2538,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"meinherz\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -2831,7 +2849,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"superack\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -3043,12 +3062,14 @@
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"superack\"}",
               "legendFormat": "cpu",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_host_mem_used_mb{job!=\"grafana\",node=\"superack\"} / gen_host_mem_total_mb{job!=\"grafana\",node=\"superack\"} * 100",
               "legendFormat": "mem",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -3124,12 +3145,14 @@
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"superack\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"superack\"} * 100",
               "legendFormat": "vram % gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             },
             {
               "expr": "gen_gpu_util_percent{job!=\"grafana\",node=\"superack\"}",
               "legendFormat": "gpu compute %",
-              "refId": "B"
+              "refId": "B",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -3203,7 +3226,8 @@
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"superack\"}",
               "legendFormat": "gpu{{gpu}}",
-              "refId": "A"
+              "refId": "A",
+              "interval": "5s"
             }
           ],
           "options": {
@@ -3251,5 +3275,5 @@
   "timezone": "browser",
   "title": "Grimoire Rig Hotspots",
   "uid": "grimoire-rig-hotspots",
-  "version": 17
+  "version": 18
 }
