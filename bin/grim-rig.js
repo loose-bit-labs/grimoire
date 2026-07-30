@@ -340,8 +340,8 @@ function metricsUrl(base, type) {
 }
 
 /**
- * Parse rocm-smi text output for GPU% and temp.
- * Returns { gpuPct, temp } or null on failure.
+ * Parse rocm-smi text output for GPU%, VRAM%, and temp.
+ * Returns { gpuPct, vramPct, temp } or null on failure.
  */
 function parseRocmSmi(text) {
   try {
@@ -356,12 +356,23 @@ function parseRocmSmi(text) {
     if (!nums || nums.length < 2) return null
     // Last % is GPU%, second-to-last is VRAM%
     const gpuPct = parseFloat(nums[nums.length - 1])
+    const vramPct = parseFloat(nums[nums.length - 2])
     const temp = tempMatch ? parseFloat(tempMatch[1]) : null
     if (isNaN(gpuPct)) return null
-    return { gpuPct, temp: isNaN(temp) ? null : temp }
+    return { gpuPct, vramPct: isNaN(vramPct) ? null : vramPct, temp: isNaN(temp) ? null : temp }
   } catch {
     return null
   }
+}
+
+/**
+ * AMD VRAM-used fallback — nvidia-smi covers NVIDIA's used-VRAM lookup, but AMD
+ * has no equivalent in selectAllComputeGpus. rocm-smi's own VRAM% (parseRocmSmi)
+ * is the only source for it, so derive used-MB from total * that percentage.
+ */
+function _amdVramUsedMb(vramTotalMb, gpuFallback) {
+  if (!vramTotalMb || gpuFallback?.vramPct == null) return null
+  return Math.round(vramTotalMb * gpuFallback.vramPct / 100)
 }
 
 /**
@@ -440,19 +451,25 @@ async function getGpuMetricsFallbackNvidia() {
 }
 
 /**
- * Query nvidia-smi for per-GPU memory totals and usage.
- * Returns [{ index, memoryTotal, memoryUsed }] or [] on failure / no NVIDIA GPU.
+ * Query nvidia-smi for per-GPU memory totals/usage, utilization%, and temp.
+ * Returns [{ index, memoryTotal, memoryUsed, util, temp }] or [] on failure / no NVIDIA GPU.
  * Graceful degradation: missing nvidia-smi → [].
  */
 async function getSmiGpus() {
   return new Promise(resolve => {
     const { exec } = require('node:child_process')
-    exec('nvidia-smi --query-gpu=index,memory.total,memory.used --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
+    exec('nvidia-smi --query-gpu=index,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
       if (err || !stdout || !stdout.trim()) return resolve([])
       const gpus = []
       for (const line of stdout.trim().split('\n')) {
-        const m = /^(\d+),\s*(\d+)\s*MiB,\s*(\d+)\s*MiB$/.exec(line.trim())
-        if (m) gpus.push({ index: parseInt(m[1], 10), memoryTotal: parseInt(m[2], 10), memoryUsed: parseInt(m[3], 10) })
+        const m = /^(\d+),\s*(\d+)\s*MiB,\s*(\d+)\s*MiB,\s*(\d+)\s*%,\s*(\d+)$/.exec(line.trim())
+        if (m) gpus.push({
+          index: parseInt(m[1], 10),
+          memoryTotal: parseInt(m[2], 10),
+          memoryUsed: parseInt(m[3], 10),
+          util: parseInt(m[4], 10),
+          temp: parseInt(m[5], 10),
+        })
       }
       resolve(gpus)
     })
@@ -482,9 +499,9 @@ function selectAllComputeGpus(graphics, smiGpus) {
   return candidates.map((c, i) => {
     const smi = smiMap[i]
     if (smi) {
-      return { vendor: c.vendor, model: c.model, vram: smi.memoryTotal, vramUsed: smi.memoryUsed, index: i }
+      return { vendor: c.vendor, model: c.model, vram: smi.memoryTotal, vramUsed: smi.memoryUsed, util: smi.util, temp: smi.temp, index: i }
     }
-    return { vendor: c.vendor, model: c.model, vram: c.vram, vramUsed: c.memoryUsed, index: i }
+    return { vendor: c.vendor, model: c.model, vram: c.vram, vramUsed: c.memoryUsed, util: undefined, temp: undefined, index: i }
   })
 }
 
@@ -722,7 +739,12 @@ async function buildSnapshot(boxes) {
     ])
 
     if (load) cpuLoad = load.currentLoad
-    if (mem) { memUsed = mem.used; memTotal = mem.total }
+    // mem.used is raw total-free — counts reclaimable buff/cache as "used",
+    // which on a box with a large page cache (e.g. LLM weights) reads as
+    // near-100% even when actual pressure is low. mem.available (matches
+    // `free`'s "available" column) is the real signal; fall back to mem.used
+    // if a platform doesn't report it.
+    if (mem) { memUsed = mem.available != null ? mem.total - mem.available : mem.used; memTotal = mem.total }
     // Collect all real compute GPUs, not just index 0
     const smiGpus = await getSmiGpus().catch(() => [])
     allGpus = selectAllComputeGpus(graphics, smiGpus)
@@ -757,16 +779,18 @@ async function buildSnapshot(boxes) {
         vendor: g.vendor,
         model: g.model,
         vramTotalMb: g.vram,
-        vramUsedMb: g.vramUsed ?? null,
-        gpuPercent: g.index === 0 ? (gpuFallback?.gpuPct ?? (() => {
+        vramUsedMb: g.index === 0 ? (g.vramUsed ?? _amdVramUsedMb(g.vram, gpuFallback)) : (g.vramUsed ?? null),
+        // nvidia-smi reports util/temp per GPU — use it directly when present so
+        // every card on a multi-GPU box (not just index 0) gets real numbers.
+        gpuPercent: g.util ?? (g.index === 0 ? (gpuFallback?.gpuPct ?? (() => {
           const total = g.vram
           if (!total || total < 256) return null
           const used = computeApps.reduce((s, a) => s + a.usedMiB, 0)
           if (used === 0) return null
           const pct = Math.round(used / total * 100)
           return pct > 100 ? null : pct
-        })()) : null,
-        tempC: g.index === 0 ? (g.temperatureGpu || gpuFallback?.temp || null) : null,
+        })()) : null),
+        tempC: g.temp ?? (g.index === 0 ? (g.temperatureGpu || gpuFallback?.temp || null) : null),
         computeApps: g.index === 0 ? computeApps : [],
         index: g.index,
       })),
@@ -774,7 +798,7 @@ async function buildSnapshot(boxes) {
         vendor: allGpus[0].vendor,
         model: allGpus[0].model,
         vramTotalMb: allGpus[0].vram,
-        vramUsedMb: allGpus[0].vramUsed ?? null,
+        vramUsedMb: allGpus[0].vramUsed ?? _amdVramUsedMb(allGpus[0].vram, gpuFallback),
         gpuPercent: gpuFallback?.gpuPct ?? (() => {
           const total = allGpus[0].vram
           if (!total || total < 256) return null
@@ -1149,7 +1173,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, getComputeApps, getSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

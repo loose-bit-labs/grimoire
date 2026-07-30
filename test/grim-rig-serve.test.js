@@ -325,6 +325,23 @@ describe('parseNvidiaSmi()', () => {
   })
 })
 
+describe('parseRocmSmi()', () => {
+  it('parses GPU%, VRAM%, and temp from a real rocm-smi concise-info line', () => {
+    const text = [
+      '======================================== ROCm System Management Interface ========================================',
+      '================================================== Concise Info ==================================================',
+      'Device  Node  IDs              Temp    Power  Partitions          SCLK   MCLK   Fan    Perf  PwrCap  VRAM%  GPU%',
+      '0       1     0x7551,   17620  41.0°C  11.0W  N/A, N/A, 0         39Mhz  96Mhz  14.9%  auto  300.0W  26%    3%',
+      '==================================================================================================================',
+    ].join('\n')
+    assert.deepStrictEqual(rig.parseRocmSmi(text), { gpuPct: 3, vramPct: 26, temp: 41 })
+  })
+
+  it('returns null when the data line is missing', () => {
+    assert.strictEqual(rig.parseRocmSmi('no data here'), null)
+  })
+})
+
 describe('discoverLocalServices()', () => {
   it('returns only known generation-service types, never infra like itself', () => {
     const services = rig.discoverLocalServices()
@@ -532,8 +549,6 @@ describe('selectComputeGpu()', () => {
 
 describe('buildSnapshot() self-discovery', () => {
   it('calls discoverLocalServices when boxes is empty', async () => {
-    const discover = rig.discoverLocalServices
-    const mock = jest ? jest.fn() : null
     // Use a real call — on this host it returns whatever --user units are running
     const snapshot = await rig.buildSnapshot([])
     assert.ok(Array.isArray(snapshot.services))
@@ -561,6 +576,22 @@ describe('selectAllComputeGpus()', () => {
     assert.strictEqual(result[1].vram, 24576)
     assert.strictEqual(result[1].vramUsed, 2048)
     assert.strictEqual(result[1].index, 1)
+  })
+
+  it('carries per-GPU util/temp from smi for every card, not just index 0', () => {
+    const g = { controllers: [
+      { vendor: 'NVIDIA', model: 'Tesla P40', vram: 20000 * 1024 * 1024 },
+      { vendor: 'NVIDIA', model: 'Tesla P40', vram: 20000 * 1024 * 1024 },
+    ]}
+    const smi = [
+      { index: 0, memoryTotal: 24576, memoryUsed: 4096, util: 12, temp: 55 },
+      { index: 1, memoryTotal: 24576, memoryUsed: 2048, util: 40, temp: 61 },
+    ]
+    const result = rig.selectAllComputeGpus(g, smi)
+    assert.strictEqual(result[0].util, 12)
+    assert.strictEqual(result[0].temp, 55)
+    assert.strictEqual(result[1].util, 40)
+    assert.strictEqual(result[1].temp, 61, 'second GPU must get its own temp, not the first GPU\'s or null')
   })
 
   it('filters out Matrox BMC, keeps NVIDIA', () => {

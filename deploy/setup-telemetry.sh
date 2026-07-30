@@ -28,6 +28,10 @@ cmd_generate() {
   step "Generating scrape config from rig.json"
   bash "$TELEMETRY_DIR/generate-scrape.sh"
   ok "Scrape config written"
+
+  step "Regenerating per-host dashboard rows from rig.json"
+  node "$TELEMETRY_DIR/generate-dashboard.js"
+  ok "Dashboard rows synced"
 }
 
 # ── binary install ────────────────────────────────────────────────────────────
