@@ -4,3 +4,4 @@ node_modules/
 logs/
 .mm/
 tmp/
+/bin/node

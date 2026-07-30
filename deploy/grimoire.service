@@ -1,20 +1,22 @@
+# Grimoire Knowledge Graph Server — user-space unit (house convention, phase 36).
+# Canonical copy lives in the repo; symlink it into the user unit dir:
+#   ln -sfn ~/.grimoire/deploy/grimoire.service ~/.config/systemd/user/grimoire.service
+#   systemctl --user daemon-reload && systemctl --user enable --now grimoire
+# Replaces the old system unit /etc/systemd/system/grimoire.service.
 [Unit]
 Description=Grimoire Knowledge Graph Server
 Documentation=https://github.com/vgvm-lbl/grimoire
-After=network.target ollama.service
-Wants=ollama.service
+After=network.target
 
 [Service]
-Type=simple
-User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/src/me/grimoire
-EnvironmentFile=/home/YOUR_USER/src/me/grimoire/.env
-ExecStart=/home/YOUR_USER/.nvm/versions/node/vX.Y.Z/bin/node bin/grim-server.js
+WorkingDirectory=%h/.grimoire
+EnvironmentFile=%h/.grimoire/.env
+ExecStart=%h/.grimoire/bin/node bin/grim-server.js
 Restart=on-failure
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:%h/data/logs/grimoire/grim-server.log
+StandardError=append:%h/data/logs/grimoire/grim-server.log
 SyslogIdentifier=grimoire
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
