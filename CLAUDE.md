@@ -142,6 +142,8 @@ These apply to every task unless explicitly overridden. Bias: caution over speed
 
 **Rule 14 — `locate` before `find`; `$PATH` before either.** These boxes are long-running with a warm `plocate.db`, thousands of files, and ~100GB of GGUFs. `locate -b foo` answers in milliseconds; `find /` is minutes of disk thrash. **If the user *ran* a command, it is on `$PATH`** — use `command -v` or scan `$PATH`, never `find` over directories you guessed at. Safe idiom that costs nothing on a cold/absent db: `locate -b foo || find …`. Reach for `find` only to walk a *known* tree. Models skip `locate` because training data favors `find`/`rg` (portable in containers/CI where no db exists) — that heuristic is wrong here. Related: `~/bin` is a symlink into the **nixe** repo (~153 personal scripts, `_name_main` style) — check what already exists before offering to write a utility.
 
+**Rule 15 — Don't SSH to the box you're already on.** Before `ssh <host> <cmd>`, check whether *this* session is already on `<host>`: compare `hostname` (and the box's `aliases` in `$GRIMOIRE_ROOT/rig.json`) against the target. If it matches, run `<cmd>` **directly** — sshing to your own box wastes a round-trip, can trigger an auth prompt, and spawns X11/agent-forwarding noise (the source of the stray X11 spam). Idiom: `t=chonko; [ "$(hostname)" = "$t" ] && sh -c "$cmd" || ssh "$t" "$cmd"`. The fleet code already does exactly this — mirror `bin/grim-rig.js` (`LOCAL_HOSTNAME` + `isLocal = (box.aliases||[]).includes(LOCAL_HOSTNAME)` → runs `bash` locally, else `ssh … bash`). Boxes live in `rig.json` (aid=[aid,p40], chonko, meinherz, superack); read it, don't hardcode. Same spirit as Rule 14: the wrong default is a training-data habit, not correct here.
+
 ---
 
 ## Environment
