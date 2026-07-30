@@ -184,6 +184,21 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | ✅ accepted (#0120 in thread) — Track G complete |
 
+## Track G-v2 — research brain, agentic acquisition (phases 33–35)
+
+**Goal:** the intention v1 never reached — *one drop in, the tool discovers what's worth
+reading and digs into it itself.* If the human has to name the repo, the tool failed.
+Design dialogue: 2026-07-29 (triggered by a thin `grim research` on hindsight.vectorize.io
+— a SPA whose real substance was in a repo + arxiv paper it never noticed). Compositional:
+reuses the existing search + `grim archaeologist`. Feeds the future memory track (Track J)
+via provenance-at-write.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | queued (hierophant, 2026-07-29) |
+| 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | queued (blocked on 33) |
+| 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | queued (blocked on 33) — Track G-v2 complete |
+
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
 **Goal:** drop-to-Discord. **grim-tavern** — a thin `researcher` persona on flimflam
