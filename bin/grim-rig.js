@@ -963,6 +963,24 @@ function httpGetJson(url, timeout = 2000) {
   })
 }
 
+/**
+ * Reduce a /status response's host.gpus (or legacy host.gpu) into one summary
+ * for the fleet view — sum VRAM across every GPU, take the max util/temp (the
+ * hottest card is what's worth flagging at a glance), not just GPU 0's numbers.
+ * Returns { vramTotal, vramUsed, util, temp, model } in GB / percent / celsius.
+ */
+function aggregateGpus(host) {
+  const gpus = host.gpus && host.gpus.length > 0
+    ? host.gpus
+    : (host.gpu ? [host.gpu] : [])
+  const vramTotal = gpus.reduce((s, g) => s + (g.vramTotalMb || 0), 0) / 1024
+  const vramUsed = gpus.reduce((s, g) => s + (g.vramUsedMb || 0), 0) / 1024
+  const util = gpus.length > 0 ? Math.max(...gpus.map(g => g.gpuPercent ?? 0)) : 0
+  const temp = gpus.length > 0 ? Math.max(...gpus.map(g => g.tempC ?? 0)) : 0
+  const model = gpus.length === 0 ? '—' : gpus.length === 1 ? gpus[0].model : `${gpus[0].model} ×${gpus.length}`
+  return { vramTotal, vramUsed, util, temp, model }
+}
+
 async function getFleet(boxes) {
   const results = []
   for (const box of boxes) {
@@ -982,11 +1000,7 @@ async function getFleet(boxes) {
       const data = await httpGetJson(addr, 2000)
       if (!data || !data.host) throw new Error('no host data')
 
-      const gpu = data.host.gpu || null
-      const vramTotal = gpu ? gpu.vramTotalMb / 1024 : 0
-      const vramUsed = gpu ? gpu.vramUsedMb / 1024 : 0
-      const util = gpu ? gpu.gpuPercent : 0
-      const temp = gpu ? gpu.tempC : 0
+      const { vramTotal, vramUsed, util, temp, model: gpuModel } = aggregateGpus(data.host)
 
       // Find loaded model from services
       let model = '—'
@@ -1004,7 +1018,7 @@ async function getFleet(boxes) {
         vramTotal: Math.round(vramTotal * 10) / 10,
         temp,
         model,
-        gpu: gpu ? gpu.model : '—',
+        gpu: gpuModel,
         up: true,
       })
     } catch {
@@ -1186,7 +1200,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

@@ -434,6 +434,40 @@ describe('buildSnapshot()', () => {
 
 // ── getFleet() ────────────────────────────────────────────────────────────────
 
+// ── aggregateGpus() ──────────────────────────────────────────────────────────
+// Regression coverage: getFleet() used to read host.gpu (singular, GPU 0 only),
+// so a dual-P40 box like chonko would silently drop the second card's VRAM/util/
+// temp from the fleet view.
+
+describe('aggregateGpus()', () => {
+  it('sums VRAM and takes max util/temp across multiple GPUs', () => {
+    const host = {
+      gpus: [
+        { model: 'Tesla P40', vramTotalMb: 24576, vramUsedMb: 22010, gpuPercent: 0, tempC: 45 },
+        { model: 'Tesla P40', vramTotalMb: 24576, vramUsedMb: 21276, gpuPercent: 40, tempC: 57 },
+      ],
+    }
+    const result = rig.aggregateGpus(host)
+    assert.strictEqual(result.vramTotal, 48)
+    assert.strictEqual(Math.round(result.vramUsed * 10) / 10, 42.3)
+    assert.strictEqual(result.util, 40, 'should take the hotter GPU\'s util, not GPU 0\'s')
+    assert.strictEqual(result.temp, 57, 'should take the hotter GPU\'s temp, not GPU 0\'s')
+    assert.strictEqual(result.model, 'Tesla P40 ×2')
+  })
+
+  it('falls back to the legacy singular host.gpu when gpus array is absent', () => {
+    const host = { gpu: { model: 'RTX 4060 Ti', vramTotalMb: 15948, vramUsedMb: 15344, gpuPercent: 20, tempC: 50 } }
+    const result = rig.aggregateGpus(host)
+    assert.strictEqual(result.vramTotal, 15.57421875)
+    assert.strictEqual(result.model, 'RTX 4060 Ti')
+  })
+
+  it('returns zeroed summary with — model when no GPU is present', () => {
+    const result = rig.aggregateGpus({})
+    assert.deepStrictEqual(result, { vramTotal: 0, vramUsed: 0, util: 0, temp: 0, model: '—' })
+  })
+})
+
 describe('getFleet()', () => {
   let fleetServer
 
