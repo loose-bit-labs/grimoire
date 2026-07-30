@@ -990,8 +990,9 @@
             "y": 8
           },
           "id": 3005,
-          "title": "CPU / Mem over time",
+          "title": "CPU / Mem (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"aid\"}",
@@ -1070,8 +1071,9 @@
             "y": 8
           },
           "id": 3006,
-          "title": "VRAM / GPU Compute over time",
+          "title": "VRAM / GPU Compute (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"aid\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"aid\"} * 100",
@@ -1148,8 +1150,9 @@
             "y": 8
           },
           "id": 3007,
-          "title": "GPU Temp over time",
+          "title": "GPU Temp (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"aid\"}",
@@ -1669,8 +1672,9 @@
             "y": 8
           },
           "id": 3015,
-          "title": "CPU / Mem over time",
+          "title": "CPU / Mem (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"chonko\"}",
@@ -1749,8 +1753,9 @@
             "y": 8
           },
           "id": 3016,
-          "title": "VRAM / GPU Compute over time",
+          "title": "VRAM / GPU Compute (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"chonko\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"chonko\"} * 100",
@@ -1827,8 +1832,9 @@
             "y": 8
           },
           "id": 3017,
-          "title": "GPU Temp over time",
+          "title": "GPU Temp (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"chonko\"}",
@@ -2348,8 +2354,9 @@
             "y": 8
           },
           "id": 3025,
-          "title": "CPU / Mem over time",
+          "title": "CPU / Mem (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"meinherz\"}",
@@ -2428,8 +2435,9 @@
             "y": 8
           },
           "id": 3026,
-          "title": "VRAM / GPU Compute over time",
+          "title": "VRAM / GPU Compute (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"meinherz\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"meinherz\"} * 100",
@@ -2506,8 +2514,9 @@
             "y": 8
           },
           "id": 3027,
-          "title": "GPU Temp over time",
+          "title": "GPU Temp (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"meinherz\"}",
@@ -3027,8 +3036,9 @@
             "y": 8
           },
           "id": 3035,
-          "title": "CPU / Mem over time",
+          "title": "CPU / Mem (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_host_cpu_percent{job!=\"grafana\",node=\"superack\"}",
@@ -3107,8 +3117,9 @@
             "y": 8
           },
           "id": 3036,
-          "title": "VRAM / GPU Compute over time",
+          "title": "VRAM / GPU Compute (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_vram_used_mb{job!=\"grafana\",node=\"superack\"} / gen_gpu_vram_total_mb{job!=\"grafana\",node=\"superack\"} * 100",
@@ -3185,8 +3196,9 @@
             "y": 8
           },
           "id": 3037,
-          "title": "GPU Temp over time",
+          "title": "GPU Temp (last 2m)",
           "type": "timeseries",
+          "timeFrom": "2m",
           "targets": [
             {
               "expr": "gen_gpu_temp_c{job!=\"grafana\",node=\"superack\"}",
@@ -3239,5 +3251,5 @@
   "timezone": "browser",
   "title": "Grimoire Rig Hotspots",
   "uid": "grimoire-rig-hotspots",
-  "version": 16
+  "version": 17
 }
