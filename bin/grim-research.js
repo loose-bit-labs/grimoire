@@ -117,11 +117,11 @@ const LINK_PATTERNS = [
   { re: /arxiv\.org\/abs\/([\d\.]+)/g, type: 'paper', fix: (m) => `https://arxiv.org/abs/${m[1]}` },
   { re: /arxiv\.org\/pdf\/([\d\.]+)(?=\.pdf|$)/g, type: 'paper', fix: (m) => `https://arxiv.org/pdf/${m[1]}` },
   // DOI
-  { re: /doi\.org\/(?:10\.\d{4,}\/[^\s]+)/g, type: 'paper', fix: (m) => m[0].replace(/\s+$/, '') },
+  { re: /doi\.org\/(?:10\.\d{4,}\/[^\s"'>]+)/g, type: 'paper', fix: (m) => `https://${m[0]}` },
   // GitHub org/repo (full URLs and bare references in text)
   { re: /github\.com\/([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+)/g, type: 'repo', fix: (m) => `https://github.com/${m[1]}/${m[2]}` },
   // Generic docs links (hosted docs sites)
-  { re: /docs?\.(?:github\.io|readthedocs\.io|npmjs\.com\/package)\/[^\s]+/g, type: 'doc', fix: (m) => m[0].replace(/\s+$/, '') },
+  { re: /docs?\.(?:github\.io|readthedocs\.io|npmjs\.com\/package)\/[^\s"'>]+/g, type: 'doc', fix: (m) => m[0].replace(/\s+$/, '') },
 ]
 
 function scanLinks(text) {
@@ -222,7 +222,7 @@ async function checkDedup(query) {
 // Export for testing
 module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
-  isRedditShortlink, buildCseUrl, scanLinks, detectThinYield,
+  isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ async function acquireUrl(info) {
   if (titleMatch) title = titleMatch[1].trim()
 
   const text = extractText(html)
-  return { title, text }
+  return { title, text, html }
 }
 
 // Both old-style shortlinks (redd.it/xyz) and the newer mobile-share links
@@ -497,7 +497,7 @@ async function researchDrop(drop, opts = {}) {
 
   // 3b. Discover — link-scan acquired text; if thin, fall back to search
   const discovered = []
-  const linkHits = scanLinks(acquired.text)
+  const linkHits = scanLinks(acquired.html || acquired.text)
   discovered.push(...linkHits.map((l) => ({ ...l, via: 'link-scan' })))
 
   if (detectThinYield(acquired) && linkHits.length === 0) {

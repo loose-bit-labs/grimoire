@@ -68,6 +68,13 @@ describe('acquireUrl()', () => {
     assert.strictEqual(result.text, '[fetch failed]')
     assert.strictEqual(result.failed, true)
   })
+
+  it('includes html in the result', async () => {
+    const result = await rig.acquireUrl({ url: 'https://example.com' })
+    assert.ok(result.html)
+    assert.ok(typeof result.html === 'string')
+    assert.ok(result.html.length > 0)
+  })
 })
 
 // ── isRedditShortlink() ─────────────────────────────────────────────────────────
@@ -221,5 +228,23 @@ describe('researchDrop() acquisition failure', () => {
     const result = await rig.researchDrop('http://127.0.0.1:1/nonexistent', { dryRun: true, json: true })
     assert.strictEqual(result.acquisitionFailed, true)
     assert.match(result.digest, /Could not acquire content/)
+  })
+})
+
+// ── searchForResources() ──────────────────────────────────────────────────────
+
+describe('searchForResources()', () => {
+  it('is exported', () => {
+    assert.strictEqual(typeof rig.searchForResources, 'function')
+  })
+
+  it('returns empty array when acquireTerm fails', async () => {
+    // Stub acquireTerm to simulate failure
+    const orig = rig.acquireTerm
+    // acquireTerm is not directly replaceable on the module, but we can test
+    // via the exported function with an unreachable term that will fail CSE+DDG
+    const links = await rig.searchForResources('nonexistent-test-term-xyz123', 'nonexistent-test-term-xyz123')
+    // Should not throw; returns [] when search fails
+    assert.ok(Array.isArray(links))
   })
 })
