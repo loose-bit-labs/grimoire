@@ -451,27 +451,40 @@ async function getGpuMetricsFallbackNvidia() {
 }
 
 /**
+ * Parse `nvidia-smi --query-gpu=index,memory.total,memory.used,utilization.gpu,
+ * temperature.gpu --format=csv,noheader,nounits` output.
+ *
+ * nounits strips all unit suffixes (MiB, %) — each line is plain comma-separated
+ * numbers, e.g. "1, 24576, 21276, 0, 57". Non-matching lines are skipped.
+ *
+ * Returns [{ index, memoryTotal, memoryUsed, util, temp }] or [] on empty input.
+ */
+function parseSmiGpus(stdout) {
+  if (!stdout || !stdout.trim()) return []
+  const gpus = []
+  for (const line of stdout.trim().split('\n')) {
+    const m = /^(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)$/.exec(line.trim())
+    if (m) gpus.push({
+      index: parseInt(m[1], 10),
+      memoryTotal: parseInt(m[2], 10),
+      memoryUsed: parseInt(m[3], 10),
+      util: parseInt(m[4], 10),
+      temp: parseInt(m[5], 10),
+    })
+  }
+  return gpus
+}
+
+/**
  * Query nvidia-smi for per-GPU memory totals/usage, utilization%, and temp.
- * Returns [{ index, memoryTotal, memoryUsed, util, temp }] or [] on failure / no NVIDIA GPU.
- * Graceful degradation: missing nvidia-smi → [].
+ * Graceful degradation: missing nvidia-smi / exec error → [].
  */
 async function getSmiGpus() {
   return new Promise(resolve => {
     const { exec } = require('node:child_process')
     exec('nvidia-smi --query-gpu=index,memory.total,memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>&1', { timeout: 5000 }, (err, stdout) => {
-      if (err || !stdout || !stdout.trim()) return resolve([])
-      const gpus = []
-      for (const line of stdout.trim().split('\n')) {
-        const m = /^(\d+),\s*(\d+)\s*MiB,\s*(\d+)\s*MiB,\s*(\d+)\s*%,\s*(\d+)$/.exec(line.trim())
-        if (m) gpus.push({
-          index: parseInt(m[1], 10),
-          memoryTotal: parseInt(m[2], 10),
-          memoryUsed: parseInt(m[3], 10),
-          util: parseInt(m[4], 10),
-          temp: parseInt(m[5], 10),
-        })
-      }
-      resolve(gpus)
+      if (err) return resolve([])
+      resolve(parseSmiGpus(stdout))
     })
   })
 }
@@ -1173,7 +1186,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 

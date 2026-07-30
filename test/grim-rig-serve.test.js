@@ -560,6 +560,29 @@ describe('buildSnapshot() self-discovery', () => {
 
 // ── selectAllComputeGpus() ───────────────────────────────────────────────────
 
+// ── parseSmiGpus() ───────────────────────────────────────────────────────────
+// Regression coverage for a real bug: the parser required literal "MiB"/"%"
+// unit suffixes, but --format=csv,noheader,nounits (as the name says) never
+// emits them — the parser silently matched nothing, on every box, always.
+// Sample lines are verbatim `nvidia-smi --query-gpu=index,memory.total,
+// memory.used,utilization.gpu,temperature.gpu --format=csv,noheader,nounits`
+// output captured from a live dual-P40 box.
+
+describe('parseSmiGpus()', () => {
+  it('parses real nounits CSV output — no MiB/% suffixes present', () => {
+    const stdout = '0, 24576, 22010, 0, 45\n1, 24576, 21276, 0, 57'
+    assert.deepStrictEqual(rig.parseSmiGpus(stdout), [
+      { index: 0, memoryTotal: 24576, memoryUsed: 22010, util: 0, temp: 45 },
+      { index: 1, memoryTotal: 24576, memoryUsed: 21276, util: 0, temp: 57 },
+    ])
+  })
+
+  it('returns [] for empty or garbage input', () => {
+    assert.deepStrictEqual(rig.parseSmiGpus(''), [])
+    assert.deepStrictEqual(rig.parseSmiGpus('command not found\n'), [])
+  })
+})
+
 describe('selectAllComputeGpus()', () => {
   it('returns two NVIDIA P40s with smi VRAM', () => {
     const g = { controllers: [
