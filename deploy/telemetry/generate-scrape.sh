@@ -42,8 +42,12 @@ for (const box of rig) {
 
 const config = {
   global: {
-    scrape_interval: '15s',
-    evaluation_interval: '15s'
+    // grim-rig-serve's own internal poll interval defaults to 5s (see
+    // bin/grim-rig.js serve()'s --interval default) — scraping any slower
+    // than that just discards real updates; any faster doesn't help since
+    // the source isn't refreshing that often.
+    scrape_interval: '5s',
+    evaluation_interval: '5s'
   },
   scrape_configs: [{
     job_name: 'grim-rig',
