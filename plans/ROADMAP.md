@@ -186,6 +186,12 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 14 | plans/phase-14.md | `grim research <drop>` — classify url\|reddit\|term, oracle-dedup, acquire (fetch / `.json` / Google CSE→DDG fallback), ARCHIVIST judge, file KB entity routed to project, `--json` digest | ✅ accepted (`plans/reviews/phase-14.md`) |
 | 15 | plans/phase-15.md | feature-request classification + entity type (`needs-triage`, capture-only) + `grim features <project>\|--all` view | ✅ accepted (#0120 in thread) — Track G complete |
 
+## Session orientation (phase 38)
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 38 | plans/phase-38.md | orientation block at the top of `grim load` briefing — client-side time · hostname · pwd (+ `--json orientation`); grounds every session in where/when it is (Rule-13 companion to Rule 15, kills ssh-to-self) | queued (hierophant, 2026-07-30) — loop work, small, independent |
+
 ## Track F cont. — dashboard (phase 37)
 
 | Phase | Brief | What lands | Status |
