@@ -190,7 +190,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | queued (hierophant, 2026-07-30) — **⚠️ for the live Grafana/telemetry session, NOT the autonomous 33–35 loop** (these files are its uncommitted WIP) |
+| 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | queued (hierophant, 2026-07-30) — **loop work**, builds on committed ad-hoc baseline `693b1f7`…`cf9ab68`; independent of 34/35 |
 
 ## Deploy hygiene (phase 36, aid-only)
 

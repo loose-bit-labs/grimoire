@@ -1,11 +1,11 @@
 # Phase 37 — full-width 10m VRAM/GPU-Compute row per host + kill the dual dashboard JSON
 
 **Authority:** hierophant, 2026-07-30. **Repo:** grimoire only. Track F (telemetry).
-**⚠️ COORDINATION — NOT for the autonomous 33–35 pact loop.** `generate-dashboard.js`,
-`dashboard-hotspots.json`, and `provisioning/dashboards/dashboard-hotspots.json` are all
-**uncommitted, actively edited by the live Grafana/telemetry session** (2026-07-30 14:01).
-This phase must be executed **by that session** (or after it commits and hands off) — the
-autonomous loop must not touch these files concurrently or it collides. Assign accordingly.
+**Loop work** (rolled into the mage/minion pair 2026-07-30 — the ad-hoc Grafana session
+is done and committed). Baseline is current HEAD: the ad-hoc telemetry fixes landed as
+`693b1f7`…`cf9ab68` (rig accuracy, per-GPU util/temp, static per-host rows, 2m windows,
+5s intervals), all **through `generate-dashboard.js`** — so the dashboard is generated,
+tree is clean, no collision. Build the two changes below on that baseline.
 
 ## Two changes
 
