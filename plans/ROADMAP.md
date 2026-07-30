@@ -1,6 +1,8 @@
 # Cross-phase roadmap
 
-**Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19, 2026-07-22. Binding for all phases.
+**Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19, 2026-07-22,
+2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
+containerization ruling). Binding for all phases. Last updated 2026-07-30.
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
