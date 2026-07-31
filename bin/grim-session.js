@@ -22,6 +22,7 @@
 
 const fs        = require('node:fs')
 const path      = require('node:path')
+const os        = require('node:os')
 const minimist  = require('minimist')
 const axios     = require('axios')
 const { loadGraph, loadEntity, saveEntity } = require('../lib/graph')
@@ -480,6 +481,15 @@ async function upsertGoal(text) {
 function formatBriefing(b) {
   console.log('\n  ░ SAVESTATE — Loading...\n')
 
+  // Orientation — client-side you-are-here anchor (time · host · cwd)
+  const now = new Date()
+  const tz = now.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop() || ''
+  const day = now.toLocaleDateString('en-US', { weekday: 'short' })
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  console.log(`  📍 ${b.orientation?.hostname || os.hostname()} · ${b.orientation?.cwd || process.cwd()} · ${day} ${dateStr} ${timeStr} ${tz}`)
+  console.log()
+
   if (b.interruptedSession) {
     const s = b.interruptedSession
     console.log(`  ⚡ INTERRUPTED SESSION DETECTED`)
@@ -559,6 +569,13 @@ async function main() {
   switch (sub) {
     case 'load': {
       const briefing = await loadBriefing()
+      // Prepend client-side orientation (accurate on CLI / SessionStart hook;
+      // on aid the server can't know the client box, so we compute locally).
+      briefing.orientation = {
+        time:     new Date().toISOString(),
+        hostname: os.hostname(),
+        cwd:      process.cwd(),
+      }
       if (args.json) console.log(JSON.stringify(briefing, null, 2))
       else           formatBriefing(briefing)
       break
@@ -620,7 +637,7 @@ async function main() {
   }
 }
 
-module.exports = { loadBriefing, startSession, saveSession, heartbeat, addNote, upsertGoal, decayAffect, labelAffect, AFFECT_BASELINE, AFFECT_DECAY_RATE }
+module.exports = { loadBriefing, startSession, saveSession, heartbeat, addNote, upsertGoal, decayAffect, labelAffect, AFFECT_BASELINE, AFFECT_DECAY_RATE, formatBriefing }
 
 if (require.main === module) {
   main().catch(e => { console.error(e.message); process.exit(1) })
