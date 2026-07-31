@@ -555,7 +555,7 @@ async function researchDrop(drop, opts = {}) {
   let repoDig = null
   const repoHit = discoveredCapped.find((d) => d.type === 'repo')
   if (repoHit && !acquired.failed) {
-    repoDig = await digRepo(repoHit.url, timeout)
+    repoDig = await digRepo(repoHit.url)
     if (repoDig.success) {
       // Fold into acquired text so the judge sees repo content, not just the landing page
       acquired.text = `[Archaeologist analysis of ${repoHit.url}:\n${repoDig.text.slice(0, 6000)}]\n\n${acquired.text}`
