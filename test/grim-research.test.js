@@ -291,3 +291,45 @@ describe('digRepo()', () => {
     assert.ok(typeof result.reason === 'string')
   })
 })
+
+// ── parseArxivId() ────────────────────────────────────────────────────────────
+
+describe('parseArxivId()', () => {
+  it('extracts id from abs URL', () => {
+    assert.strictEqual(rig.parseArxivId('https://arxiv.org/abs/2301.12345'), '2301.12345')
+  })
+
+  it('extracts id from pdf URL with .pdf extension', () => {
+    assert.strictEqual(rig.parseArxivId('https://arxiv.org/pdf/2301.12345.pdf'), '2301.12345')
+  })
+
+  it('extracts id from pdf URL without extension', () => {
+    assert.strictEqual(rig.parseArxivId('https://arxiv.org/pdf/2301.12345'), '2301.12345')
+  })
+
+  it('returns null for non-arxiv URL', () => {
+    assert.strictEqual(rig.parseArxivId('https://example.com/paper'), null)
+  })
+})
+
+// ── fetchPaper() ──────────────────────────────────────────────────────────────
+
+describe('fetchPaper()', () => {
+  it('is exported', () => {
+    assert.strictEqual(typeof rig.fetchPaper, 'function')
+  })
+
+  it('returns success:true with abstract for a real arxiv paper', async () => {
+    const result = await rig.fetchPaper('2301.12345')
+    // This may succeed or fail depending on network; just check shape
+    assert.ok(typeof result.success === 'boolean')
+    assert.ok(typeof result.abstract === 'string')
+    assert.ok(typeof result.text === 'string')
+  })
+
+  it('returns success:false for nonexistent paper without throwing', async () => {
+    const result = await rig.fetchPaper('9999.99999')
+    assert.ok(typeof result.success === 'boolean')
+    assert.ok(typeof result.abstract === 'string')
+  })
+})

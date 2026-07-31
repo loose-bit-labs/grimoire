@@ -29,9 +29,10 @@ const os      = require('node:os')
 const { execSync } = require('node:child_process')
 const minimist = require('minimist')
 const { askJSON }       = require('./model-ask')
-const { loadGraph }     = require('../lib/graph')
+const { loadGraph, loadEntity } = require('../lib/graph')
 const { writeEntity }   = require('../lib/entities')
 const { search }        = require('./grim-oracle')
+const { update }        = require('./grim-tome')
 const { config, isLocal, resolveGoogleCseKeys } = require('../lib/env')
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
@@ -150,6 +151,39 @@ function detectThinYield(acquired) {
   return !!acquired.text && acquired.text.length < THIN_YIELD_THRESHOLD
 }
 
+// ── Paper reader ──────────────────────────────────────────────────────────────
+//
+// Fetches an arxiv paper's abstract (abs page) and full text (ar5iv HTML),
+// extracts substantive content, returns bounded text for the judge.
+
+async function fetchPaper(arxivId) {
+  try {
+    // Abstract + metadata from abs page
+    const absHtml = await httpGet(`https://arxiv.org/abs/${arxivId}`, 15000)
+    let abstract = ''
+    if (absHtml) {
+      const absMatch = absHtml.match(/<meta\s+name="description"\s+content="([^"]+)"/i)
+      if (absMatch) abstract = absMatch[1].trim()
+    }
+
+    // Full text from ar5iv
+    const ar5ivHtml = await httpGet(`https://ar5iv.org/abs/${arxivId}`, 15000)
+    let fullText = ''
+    if (ar5ivHtml) {
+      fullText = extractText(ar5ivHtml)
+    }
+
+    return { abstract, text: fullText, success: true }
+  } catch {
+    return { abstract: '', text: '', success: false }
+  }
+}
+
+function parseArxivId(url) {
+  const m = /arxiv\.org\/(?:abs|pdf)\/([\d\.]+)(?:\.pdf)?$/i.exec(url)
+  return m ? m[1] : null
+}
+
 // ── Repo dig (archaeologist dispatch) ─────────────────────────────────────────
 //
 // Shallow-clones a discovered repo, runs the archaeologist pipeline, and
@@ -265,7 +299,7 @@ async function checkDedup(query) {
 module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
   isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
-  digRepo, parseRepoUrl,
+  digRepo, parseRepoUrl, fetchPaper, parseArxivId,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -407,7 +441,7 @@ async function acquire(classification, projectOverride) {
 
 const RESEARCH_JUDGE_SYSTEM = `You are THE ARCHIVIST. You judge acquired research material and decide how to file it in a knowledge graph.
 
-Given the original drop and acquired text, output a JSON object with:
+Given the original drop and acquired text (which may combine multiple sources: landing page, repo analysis, paper), output a JSON object with:
 - "type": "SoftwareApplication" (for tools/repos/frameworks) or "DefinedTerm" (for concepts/ideas, including feature-requests)
 - "name": concise display name
 - "description": 1-2 sentences — what this IS, written for a reader with no prior context
@@ -415,6 +449,7 @@ Given the original drop and acquired text, output a JSON object with:
 {projects}
 - "tags": string array (domain/X, research/YYYY-MM-DD)
 - "digest": a one-paragraph summary of why this matters and what it is
+- "sources": array of {{url, contribution}} objects describing what each source contributed. Include only sources that actually provided content.
 
 Return ONLY valid JSON. No markdown, no commentary.`
 
@@ -465,6 +500,7 @@ async function judge(drop, classification, acquired, timeout) {
       system: prompt,
       task: 'extraction',
       timeout,
+      thinking: true,
     })
     return result
   } catch (e) {
@@ -512,6 +548,11 @@ function fileEntity(judgment, drop, classification, acquired) {
   // Route to project if confident
   if (judgment.project) {
     entity.relationships = { works_on: [judgment.project] }
+  }
+
+  // Provenance — store sources so downstream can show attribution
+  if (judgment.sources?.length) {
+    entity.metadata.sources = judgment.sources
   }
 
   return writeEntity(entity)
@@ -562,6 +603,19 @@ async function researchDrop(drop, opts = {}) {
     }
   }
 
+  // 3d. Paper reader — fetch arxiv paper text for discovered papers
+  let paperFetch = null
+  const paperHit = discoveredCapped.find((d) => d.type === 'paper')
+  if (paperHit && !acquired.failed) {
+    const arxivId = parseArxivId(paperHit.url)
+    if (arxivId) {
+      paperFetch = await fetchPaper(arxivId)
+      if (paperFetch.success && paperFetch.text) {
+        acquired.text = `[Paper: ${paperHit.url} — abstract: ${paperFetch.abstract?.slice(0, 500) || 'no abstract'}\n\n${paperFetch.text.slice(0, 6000)}]\n\n${acquired.text}`
+      }
+    }
+  }
+
   // 4. Judge — skip the model entirely on a genuine acquisition failure
   const judgment = acquired.failed
     ? stubJudgment(drop, classification, acquired)
@@ -578,6 +632,8 @@ async function researchDrop(drop, opts = {}) {
     acquisitionFailed: !!acquired.failed,
     discovered: discoveredCapped,
     dig: repoDig,
+    paper: paperFetch,
+    sources: judgment.sources || [],
   }
 
   if (!dryRun && isLocal) {
@@ -589,6 +645,28 @@ async function researchDrop(drop, opts = {}) {
     // find it via checkDedup() — otherwise the just-written entity is
     // invisible to oracle search until the next scheduled scribe pass.
     require('./grim-scribe').scribe()
+
+    // Re-file: if an entity for this URL already exists (e.g. thin stub from
+    // a prior run), update it in place with the deepened, sourced content.
+    if (classification.url) {
+      try {
+        const graph = await loadGraph()
+        const existing = Object.values(graph.entities || {}).find(
+          (e) => e.metadata?.dropUrl === classification.url && e['@id'] !== id,
+        )
+        if (existing) {
+          await update(existing['@id'], {
+            name: judgment.name,
+            description: judgment.description,
+            tags: judgment.tags,
+            relationships: judgment.project ? { works_on: [judgment.project] } : {},
+            lastVerified: true,
+          })
+          result.entityId = existing['@id']
+          result.refiled = true
+        }
+      } catch {}
+    }
   } else if (dryRun) {
     result.dryRun = true
   }
@@ -608,6 +686,19 @@ async function researchDrop(drop, opts = {}) {
         console.log(`  Dig: ${repoDig.name} — archaeologist analysis folded into digest`)
       } else {
         console.log(`  Dig: failed — ${repoDig.reason}`)
+      }
+    }
+    if (paperFetch) {
+      if (paperFetch.success && paperFetch.text) {
+        console.log(`  Paper: ${paperHit.url} — abstract + ar5iv text folded into digest`)
+      } else {
+        console.log(`  Paper: failed — could not fetch paper content`)
+      }
+    }
+    if (result.sources?.length) {
+      console.log(`  Sources (${result.sources.length}):`)
+      for (const s of result.sources) {
+        console.log(`    ${s.url} — ${s.contribution?.slice(0, 60) || ''}`)
       }
     }
     if (result.entityId) console.log(`  Filed: ${result.entityId}`)
