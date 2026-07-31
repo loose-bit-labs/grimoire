@@ -25,6 +25,8 @@
 const path    = require('node:path')
 const http    = require('node:http')
 const https   = require('node:https')
+const os      = require('node:os')
+const { execSync } = require('node:child_process')
 const minimist = require('minimist')
 const { askJSON }       = require('./model-ask')
 const { loadGraph }     = require('../lib/graph')
@@ -148,6 +150,46 @@ function detectThinYield(acquired) {
   return !!acquired.text && acquired.text.length < THIN_YIELD_THRESHOLD
 }
 
+// ── Repo dig (archaeologist dispatch) ─────────────────────────────────────────
+//
+// Shallow-clones a discovered repo, runs the archaeologist pipeline, and
+// returns the synthesis text. Degrades gracefully on failure — never throws.
+
+const ARCHAEOLOGIST_TIMEOUT = 300000 // 5 min for full dig pipeline
+
+function parseRepoUrl(url) {
+  const m = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)/i.exec(url)
+  if (!m) return null
+  return { owner: m[1], repo: m[2] }
+}
+
+async function digRepo(url, timeout = ARCHAEOLOGIST_TIMEOUT) {
+  const repo = parseRepoUrl(url)
+  if (!repo) return { success: false, reason: 'not a github url' }
+
+  const tmpDir = path.join(os.tmpdir(), `grim-research-${repo.owner}-${repo.repo}-${Date.now()}`)
+  try {
+    execSync(`git clone --depth 1 --single-branch "${url}" "${tmpDir}"`, {
+      stdio: 'pipe', timeout,
+    })
+
+    const { runDig } = require('./grim-archaeologist')
+    const result = await runDig(tmpDir, { hints: '' })
+
+    // Read the synthesis — runDig writes final.md to its outDir
+    const finalPath = path.join(result.outDir, 'final.md')
+    const fs = require('node:fs')
+    const finalText = fs.existsSync(finalPath) ? fs.readFileSync(finalPath, 'utf8') : result.final || ''
+
+    return { success: true, text: finalText, name: result.name }
+  } catch (e) {
+    return { success: false, reason: e.message?.slice(0, 120) || 'clone or dig failed' }
+  } finally {
+    // Best-effort cleanup
+    try { execSync(`rm -rf "${tmpDir}"`, { stdio: 'pipe' }) } catch {}
+  }
+}
+
 // ── Search fallback ───────────────────────────────────────────────────────────
 //
 // Reuses the existing CSE→DDG search path (same as acquireTerm) to find
@@ -223,6 +265,7 @@ async function checkDedup(query) {
 module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
   isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
+  digRepo, parseRepoUrl,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -508,6 +551,17 @@ async function researchDrop(drop, opts = {}) {
   // Cap at DISCOVERY_CAP total
   const discoveredCapped = discovered.slice(0, DISCOVERY_CAP)
 
+  // 3c. Dig — shallow-clone top discovered repo and run archaeologist
+  let repoDig = null
+  const repoHit = discoveredCapped.find((d) => d.type === 'repo')
+  if (repoHit && !acquired.failed) {
+    repoDig = await digRepo(repoHit.url, timeout)
+    if (repoDig.success) {
+      // Fold into acquired text so the judge sees repo content, not just the landing page
+      acquired.text = `[Archaeologist analysis of ${repoHit.url}:\n${repoDig.text.slice(0, 6000)}]\n\n${acquired.text}`
+    }
+  }
+
   // 4. Judge — skip the model entirely on a genuine acquisition failure
   const judgment = acquired.failed
     ? stubJudgment(drop, classification, acquired)
@@ -523,6 +577,7 @@ async function researchDrop(drop, opts = {}) {
     deduped: false,
     acquisitionFailed: !!acquired.failed,
     discovered: discoveredCapped,
+    dig: repoDig,
   }
 
   if (!dryRun && isLocal) {
@@ -546,6 +601,13 @@ async function researchDrop(drop, opts = {}) {
       console.log(`  Discovered ${discoveredCapped.length} resource(s):`)
       for (const d of discoveredCapped) {
         console.log(`    [${d.type}] ${d.url}  (via ${d.via})`)
+      }
+    }
+    if (repoDig) {
+      if (repoDig.success) {
+        console.log(`  Dig: ${repoDig.name} — archaeologist analysis folded into digest`)
+      } else {
+        console.log(`  Dig: failed — ${repoDig.reason}`)
       }
     }
     if (result.entityId) console.log(`  Filed: ${result.entityId}`)

@@ -248,3 +248,46 @@ describe('searchForResources()', () => {
     assert.ok(Array.isArray(links))
   })
 })
+
+// ── parseRepoUrl() ────────────────────────────────────────────────────────────
+
+describe('parseRepoUrl()', () => {
+  it('parses a github.com URL', () => {
+    const r = rig.parseRepoUrl('https://github.com/owner/repo')
+    assert.deepStrictEqual(r, { owner: 'owner', repo: 'repo' })
+  })
+
+  it('parses https with www', () => {
+    const r = rig.parseRepoUrl('https://www.github.com/foo/bar-baz')
+    assert.deepStrictEqual(r, { owner: 'foo', repo: 'bar-baz' })
+  })
+
+  it('returns null for non-github URLs', () => {
+    assert.strictEqual(rig.parseRepoUrl('https://gitlab.com/owner/repo'), null)
+    assert.strictEqual(rig.parseRepoUrl('https://example.com/repo'), null)
+  })
+
+  it('returns null for null input', () => {
+    assert.strictEqual(rig.parseRepoUrl(null), null)
+  })
+})
+
+// ── digRepo() ─────────────────────────────────────────────────────────────────
+
+describe('digRepo()', () => {
+  it('is exported', () => {
+    assert.strictEqual(typeof rig.digRepo, 'function')
+  })
+
+  it('returns failure for non-github URL', async () => {
+    const result = await rig.digRepo('https://gitlab.com/owner/repo')
+    assert.strictEqual(result.success, false)
+    assert.ok(typeof result.reason === 'string')
+  })
+
+  it('returns failure for unreachable URL without throwing', async () => {
+    const result = await rig.digRepo('https://github.com/nonexistent-user-xyz123/not-a-repo-xyz', 5000)
+    assert.strictEqual(result.success, false)
+    assert.ok(typeof result.reason === 'string')
+  })
+})
