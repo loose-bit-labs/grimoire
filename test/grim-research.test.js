@@ -319,12 +319,11 @@ describe('fetchPaper()', () => {
     assert.strictEqual(typeof rig.fetchPaper, 'function')
   })
 
-  it('returns success:true with abstract for a real arxiv paper', async () => {
+  it('returns success:true with abstract and text for a real arxiv paper', async () => {
     const result = await rig.fetchPaper('2301.12345')
-    // This may succeed or fail depending on network; just check shape
-    assert.ok(typeof result.success === 'boolean')
-    assert.ok(typeof result.abstract === 'string')
-    assert.ok(typeof result.text === 'string')
+    assert.strictEqual(result.success, true)
+    assert.ok(result.abstract.length > 0, 'abstract should not be empty')
+    assert.ok(result.text.length > 100, 'text should have substantive content')
   })
 
   it('returns success:false for nonexistent paper without throwing', async () => {

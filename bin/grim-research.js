@@ -167,7 +167,7 @@ async function fetchPaper(arxivId) {
     }
 
     // Full text from ar5iv
-    const ar5ivHtml = await httpGet(`https://ar5iv.org/abs/${arxivId}`, 15000)
+    const ar5ivHtml = await httpGet(`https://ar5iv.labs.arxiv.org/html/${arxivId}`, 15000)
     let fullText = ''
     if (ar5ivHtml) {
       fullText = extractText(ar5ivHtml)
