@@ -62,7 +62,7 @@ deploy/
     provisioning/
       datasources/prometheus.yml    # Grafana datasource provisioning
       dashboards/grimoire.yml       # Dashboard provider config
-      dashboards/dashboard-hotspots.json  # Dashboard (copied for mounting)
+      dashboards/dashboard-hotspots.json  # Symlink → ../../dashboard-hotspots.json (single source)
   grim-prometheus.service           # systemd user unit
   grim-grafana.service              # systemd user unit
   setup-telemetry.sh                # Install + manage stack

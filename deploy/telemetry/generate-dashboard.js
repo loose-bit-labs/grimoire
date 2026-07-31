@@ -246,6 +246,33 @@ class DashboardGenerator {
         targets: [{ expr: `gen_gpu_temp_c{job!="grafana",node="${host}"}`, legendFormat: 'gpu{{gpu}}', refId: 'A', interval: '5s' }],
         options: { legend: { displayMode: 'table', placement: 'bottom', calcs: ['lastNotNull', 'max'] } },
       },
+      {
+        datasource: { type: 'prometheus', uid: 'prometheus' },
+        fieldConfig: {
+          defaults: {
+            color: { mode: 'palette-classic' },
+            thresholds: { mode: 'absolute', steps: [{ color: 'green', value: null }] },
+            custom: {
+              axisCenteredZero: false, axisLabel: '', axisPlacement: 'auto', barAlignment: 0,
+              drawStyle: 'line', fillOpacity: 10, gradientMode: 'none', lineWidth: 2, pointSize: 5,
+              scaleDistribution: { type: 'linear' }, showPoints: 'never', spanNulls: false,
+              stacking: { group: 'A', mode: 'none' }, thresholdsStyle: { mode: 'off' },
+            },
+            min: 0, max: 100, unit: 'percent',
+          },
+          overrides: [],
+        },
+        gridPos: { h: 8, w: 24, x: 0, y: 24 },
+        id: p(8),
+        title: 'VRAM / GPU Compute (last 10m)',
+        type: 'timeseries',
+        timeFrom: '10m',
+        targets: [
+          { expr: `gen_gpu_vram_used_mb{job!="grafana",node="${host}"} / gen_gpu_vram_total_mb{job!="grafana",node="${host}"} * 100`, legendFormat: 'vram % gpu{{gpu}}', refId: 'A', interval: '5s' },
+          { expr: `gen_gpu_util_percent{job!="grafana",node="${host}"}`, legendFormat: 'gpu compute %', refId: 'B', interval: '5s' },
+        ],
+        options: { legend: { displayMode: 'table', placement: 'bottom', calcs: ['lastNotNull', 'max'] } },
+      },
     ]
   }
 
@@ -284,8 +311,6 @@ class DashboardGenerator {
 
     const text = JSON.stringify(dashboard, null, 2) + '\n'
     fs.writeFileSync(this.dashboardPath, text)
-    fs.mkdirSync(path.dirname(this.provisioningPath), { recursive: true })
-    fs.writeFileSync(this.provisioningPath, text)
 
     return { hosts, changed: before !== after, version: dashboard.version }
   }
