@@ -190,13 +190,14 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 38 | plans/phase-38.md | orientation block at the top of `grim load` briefing — client-side time · hostname · pwd (+ `--json orientation`); grounds every session in where/when it is (Rule-13 companion to Rule 15, kills ssh-to-self) | queued (hierophant, 2026-07-30) — loop work, small, independent |
+| 38 | plans/phase-38.md | orientation block at the top of `grim load` briefing — client-side time · hostname · pwd (+ `--json orientation`); grounds every session in where/when it is (Rule-13 companion to Rule 15, kills ssh-to-self) | ✅ accepted (#0186 area in thread) — shipped `ba91f9d`, orientation in `bin/grim-session.js` + `--json` |
 
 ## Track F cont. — dashboard (phase 37)
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | queued (hierophant, 2026-07-30) — **loop work**, builds on committed ad-hoc baseline `693b1f7`…`cf9ab68`; independent of 34/35 |
+| 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | ✅ accepted (thread archived) — shipped `f39d68e`; provisioning JSON → symlink, generator writes one file |
+| 39 | plans/phase-39.md | **`grim rig status` from any node** — client boxes (no rig.json) render the fleet via the hub's `/fleet` agent (`aid:18081`, already live); location-transparent (hub = local fan-out, client = remote fetch); `endpoints.rig_hub` registry entry (no DNS — mesh ruling); client-aware error text | queued (hierophant, 2026-08-01) — loop work, Track F; builds on existing `/fleet` + the `grim rig gpu <host>` remote-fetch precedent |
 
 ## Deploy hygiene (phase 36, aid-only)
 
