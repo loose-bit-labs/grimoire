@@ -1,7 +1,7 @@
 'use strict'
 const { test } = require('node:test')
 const assert   = require('node:assert/strict')
-const { parseVRAM, parseBoxOutput, fmtGPU, fmtServices, findBoxesForService } = require('../bin/grim-rig')
+const { parseVRAM, parseBoxOutput, fmtGPU, fmtServices, findBoxesForService, fleetToDisplay, resolveRigHub, fetchFleetRemote } = require('../bin/grim-rig')
 
 // ── parseVRAM ─────────────────────────────────────────────────────────────────
 
@@ -166,4 +166,65 @@ test('findBoxesForService: skip=true boxes are excluded', () => {
     () => findBoxesForService(rigBoxes, 'anything', 'client'),
     e => e.code === 'NOT_FOUND'
   )
+})
+
+// ── fleetToDisplay ────────────────────────────────────────────────────────────
+
+test('fleetToDisplay: maps fleet member to display shape', () => {
+  const member = { name: 'chonko', util: 48, vramUsed: 42.3, vramTotal: 48, temp: 68, model: '—', gpu: 'GP102GL [Tesla P40] ×2', up: true }
+  const r = fleetToDisplay(member)
+  assert.equal(r.host, 'chonko')
+  assert.equal(r.label, 'chonko')
+  assert.equal(r.reachable, true)
+  assert.equal(r.services.length, 0)
+  assert.equal(r.gpu.name, 'GP102GL [Tesla P40] ×2')
+  assert.equal(r.gpu.total, Math.round(48 * 1024))
+  assert.equal(r.gpu.used, Math.round(42.3 * 1024))
+  assert.equal(r.gpu.free, Math.round((48 - 42.3) * 1024))
+})
+
+test('fleetToDisplay: down box gets null gpu', () => {
+  const member = { name: 'dead', util: 0, vramUsed: 0, vramTotal: 0, temp: 0, model: '—', gpu: '—', up: false }
+  const r = fleetToDisplay(member)
+  assert.equal(r.reachable, false)
+  assert.equal(r.gpu, null)
+})
+
+test('fleetToDisplay: model becomes note when present', () => {
+  const member = { name: 'aid', util: 3, vramUsed: 1.6, vramTotal: 32, temp: 42, model: 'qwen3.6', gpu: 'Navi 48', up: true }
+  const r = fleetToDisplay(member)
+  assert.equal(r.note, 'qwen3.6')
+})
+
+test('fleetToDisplay: empty note when model is —', () => {
+  const member = { name: 'superack', util: 0, vramUsed: 7.5, vramTotal: 12, temp: 41, model: '—', gpu: 'GA106', up: true }
+  const r = fleetToDisplay(member)
+  assert.equal(r.note, '')
+})
+
+// ── resolveRigHub ─────────────────────────────────────────────────────────────
+
+test('resolveRigHub: returns explicit rig_hub from lbl-config', () => {
+  // On this box lbl-config has rig_hub = http://aid:18081
+  const hub = resolveRigHub()
+  assert.ok(typeof hub === 'string')
+  assert.ok(hub.length > 0)
+})
+
+// ── fetchFleetRemote ──────────────────────────────────────────────────────────
+
+test('fetchFleetRemote: returns fleet data from live hub', async () => {
+  const hub = resolveRigHub()
+  if (!hub) { this.skip() }
+  const fleet = await fetchFleetRemote(hub)
+  assert.ok(fleet !== null)
+  assert.ok(Array.isArray(fleet.boxes))
+  assert.ok(fleet.boxes.length > 0)
+  assert.ok(fleet.boxes[0].name)
+  assert.ok(typeof fleet.boxes[0].up === 'boolean')
+})
+
+test('fetchFleetRemote: returns null for unreachable hub', async () => {
+  const fleet = await fetchFleetRemote('http://127.0.0.1:1/nonexistent')
+  assert.equal(fleet, null)
 })

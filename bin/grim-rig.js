@@ -38,7 +38,7 @@ const fs         = require('node:fs')
 const os         = require('node:os')
 const path       = require('node:path')
 const minimist   = require('minimist')
-const { config } = require('../lib/env')
+const { config, isLocal, lblEndpoint } = require('../lib/env')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
 
@@ -103,6 +103,56 @@ function loadBoxesGraceful() {
   } catch (e) {
     process.stderr.write(`grim rig: failed to parse rig.json — ${e.message} — running with empty service list\n`)
     return []
+  }
+}
+
+/**
+ * Resolve the rig hub URL: explicit endpoints.rig_hub from lbl-config,
+ * else derive from endpoints.grimoire host + canonical port 18081.
+ */
+function resolveRigHub() {
+  const explicit = lblEndpoint('rig_hub')
+  if (explicit) return explicit
+  const grimoire = lblEndpoint('grimoire')
+  if (!grimoire) return null
+  const { host, port } = new URL(grimoire)
+  return `${host.startsWith('http') ? '' : 'http://'}${host.replace(/^https?:\/\//, '')}:18081`
+}
+
+/**
+ * Fetch the fleet aggregate from the rig hub. Returns parsed JSON or null.
+ */
+async function fetchFleetRemote(hubUrl) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), 5000)
+    http.get(`${hubUrl}/fleet`, { signal: AbortSignal.timeout(5000) }, res => {
+      clearTimeout(timer)
+      if (res.statusCode !== 200) return resolve(null)
+      let body = ''
+      res.on('data', c => { body += c })
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)) }
+        catch { resolve(null) }
+      })
+    }).on('error', () => { clearTimeout(timer); resolve(null) })
+  })
+}
+
+/**
+ * Map a /fleet member shape → the display() /checkBox shape.
+ * /fleet: { name, util, vramUsed, vramTotal, temp, model, gpu, up }  (VRAM in GB)
+ * display: { host, label, note, reachable, gpu: { name, used, free, total }, services }
+ */
+function fleetToDisplay(member) {
+  const vramUsedMb  = Math.round((member.vramUsed  || 0) * 1024)
+  const vramTotalMb = Math.round((member.vramTotal || 0) * 1024)
+  return {
+    host:      member.name,
+    label:     member.name,
+    note:      member.model && member.model !== '—' ? member.model : '',
+    reachable: member.up,
+    gpu:       member.up ? { name: member.gpu, used: vramUsedMb, free: vramTotalMb - vramUsedMb, total: vramTotalMb } : null,
+    services:  [],
   }
 }
 
@@ -291,17 +341,43 @@ function display(results, elapsed) {
 // ── Status command ────────────────────────────────────────────────────────────
 
 async function status({ json = false } = {}) {
-  const t0    = Date.now()
-  const boxes = loadBoxes()
+  const t0 = Date.now()
 
-  const results = await Promise.all(boxes.filter(b => !b.skip).map(checkBox))
+  if (isLocal) {
+    // Hub path: local fan-out via loadBoxes + checkBox (unchanged)
+    const boxes = loadBoxes()
+    const results = await Promise.all(boxes.filter(b => !b.skip).map(checkBox))
+    const elapsed = Date.now() - t0
+    if (json) {
+      console.log(JSON.stringify({ boxes: results, elapsed }, null, 2))
+      return
+    }
+    display(results, elapsed)
+    return
+  }
+
+  // Client path: fetch fleet from the rig hub
+  const hub = resolveRigHub()
+  if (!hub) {
+    console.error('grim rig: no local fleet inventory and no reachable rig hub.')
+    console.error('  If this is a client box, run deploy/setup-client.sh.')
+    console.error('  Set endpoints.rig_hub in ~/.config/lbl-config.json to point at the hub.')
+    process.exit(1)
+  }
+
+  const fleet = await fetchFleetRemote(hub)
   const elapsed = Date.now() - t0
+  if (!fleet || !fleet.boxes) {
+    console.error(`grim rig: cannot reach rig hub at ${hub}/fleet`)
+    console.error('  Check that the hub rig agent is running (grim rig serve).')
+    process.exit(1)
+  }
 
+  const results = fleet.boxes.map(fleetToDisplay)
   if (json) {
     console.log(JSON.stringify({ boxes: results, elapsed }, null, 2))
     return
   }
-
   display(results, elapsed)
 }
 
@@ -1200,7 +1276,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -1238,6 +1314,7 @@ async function main() {
 
   Config:
     $GRIMOIRE_ROOT/rig.json — box inventory (copy from rig.example.json)
+    ~/.config/lbl-config.json endpoints.rig_hub — hub URL for client boxes
     Service control fields:
       "unit": "name"         systemctl unit name (default: service name)
       "scope": "user"        use systemctl --user instead of system
