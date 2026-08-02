@@ -230,7 +230,7 @@ tavern is where rumors/notes/links get dropped off and turned into filed KB enti
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 16 | plans/phase-16.md | flimflam `researcher` persona + DM handler → `grim research --json` via `ext/grimoire`; fail-loud (fLimfLaMs repo) | ✅ accepted (#0123 in thread) — code-accepted, NOT deployed |
-| 32 | plans/phase-32.md | **grim-tavern go-live** — cut `flimsflams` over to the researcher. NOT a cherry-pick: the bot rides the 78-file `config-reorg-2026-06-25` refactor (deletes old bots, rewires to grim-npc). Staged, reversible cutover; `requires: permission` (live-service restart, user-gated) | ✅ accepted (hierophant, 2026-07-29) — fLimfLaMs repo |
+| 32 | plans/phase-32.md | **grim-tavern go-live** — cut `flimsflams` over to the researcher. NOT a cherry-pick: the bot rides the 78-file `config-reorg-2026-06-25` refactor (deletes old bots, rewires to grim-npc). Staged, reversible cutover; `requires: permission` (live-service restart, user-gated) | ✅ **LIVE 2026-08-01** — researcher-only path (user-chosen). Recon revealed the reorg is a per-character re-architecture already largely deployed (maiden/grim-seer/labotami run as own units off the branch); researcher was the one character without a unit. Added `researcher.service` (`fLimfLaMs 15b664a`), Discord `ready`, doorbell online. Legacy `flimsflams.service` (utility bot, old code) left untouched. **Deferred:** retiring that legacy unit + full reorg completion → own follow-up |
 
 ## Track I — Autopact: the pact runs itself (phases 25–27)
 
