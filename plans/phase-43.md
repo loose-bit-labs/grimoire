@@ -45,6 +45,19 @@ apply manually"). aid's own `/etc/hosts` is hand-maintained (carries the same st
    calls `grim host gen-hosts --apply` instead of the ad-hoc single-`aid` step — so every box
    self-heals its fleet resolution on each run. Keep it graceful (warn, don't fail, if sudo
    unavailable).
+4. **Seed the one bootstrap value + prove fileless resolution.** The intent-resolution layer
+   already works (`lib/env.js` `refreshLblCache()` pulls the whole topology from
+   `GET /config/lbl`; a client with **no** local `lbl-config.json` resolves endpoints by intent
+   once it knows the server address — verified 2026-08-02: `GRIMOIRE_HOST=http://aid:3663` +
+   empty HOME → `lblEndpoint('ollama')` returns `http://chonko:11434` after refresh). The one
+   thing a fresh client still needs is **that bootstrap value**. So `setup-client.sh` must seed
+   exactly one of: `GRIMOIRE_HOST` in the client `.env`, **or** a minimal
+   `~/.config/lbl-config.json` with just `endpoints.grimoire` (its IP resolvable via the phase-43
+   `/etc/hosts` block). Not the full topology — just "where grimoire is." Then everything else
+   comes by intent from the server.
+   - Add a **turnkey check** to `setup-client.sh`: after seeding + applying hosts, run a
+     `grim config sync` and confirm an intent resolves (e.g. `grim config get use.ollama` or the
+     equivalent) — proving the box needs no cargoed topology.
 
 ## Out of scope / do NOT
 
@@ -63,5 +76,7 @@ apply manually"). aid's own `/etc/hosts` is hand-maintained (carries the same st
   `blip .141` is gone.
 - `setup-client.sh` applies the block on a client (or warns gracefully without sudo).
 - Test: gen-hosts dedupe/link-local filtering (unit), managed-block replace idempotency.
+- **Turnkey proof:** on a client with only the seeded bootstrap value (no cargoed topology),
+  `grim config sync` succeeds and an intent (`use.ollama`) resolves to the server's value.
 - Footprint: `bin/grim-host.js`, maybe `deploy/grim-register-host.sh` (canonical-IP at
   registration), `deploy/setup-client.sh`, tests, KB note.

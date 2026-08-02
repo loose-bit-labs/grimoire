@@ -203,6 +203,14 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 42 | fLimfLaMs `plans/swandive.md` (Phase 2) | **Swandive KB tools (agentic, guarded)** — grimoire MCP/CLI tools in her loop: READ (`oracle_search`/`tome_recall`) free; CREATE (`tome_remember`) auto + `swandive`-tag + provenance; UPDATE/RELATE to existing gated by DM 👍; never delete; never auto-commit/push (KB is manual-commit private repo). Propose→approve UX | queued (hierophant, 2026-08-02) — Track H cont.; depends on 41; user ruling: guarded-autonomous |
 | 43 | plans/phase-43.md | **hostname resolution operational** — `grim host gen-hosts` emits one canonical LAN IP per host (dedupe, drop link-local like chonko's `169.254.x`, kill stale `blip .141`) + `--apply` writes an idempotent `# BEGIN/END grimoire-hosts` managed block to `/etc/hosts`; `setup-client.sh`/catch-up applies it so the fleet self-resolves without DNS (mesh ruling) | queued (hierophant, 2026-08-02) — Track K |
 | 44 | plans/phase-44.md | **finish grimoire.local retirement** — scrub it from user-facing output (`grim-server.js` banner + MCP endpoint URL, `graph.js` errors, ritual/crawl/ner strings) + retire the orphaned `.grim` `config gen hosts` scheme so bare KB-sourced names are the one source of truth | queued (hierophant, 2026-08-02) — Track K; runs alongside 43 |
+| 45 | plans/phase-45.md | **config cache invalidation** — `grim config invalidate` (force-bust the local last-good cache; next resolve re-fetches or falls back) to pair with existing `grim config sync` (refresh) + freshness visibility (`get`/`status` shows last-fetched + source). Per-box CLI verb; fleet-wide signal is Track L | queued (hierophant, 2026-08-02) — Track K; user-requested |
+
+**Track L (future, not yet briefed):** manage the fleet's **user-level systemd units via API**
+(replace the ad-hoc manual `systemctl --user` management) + **fleet-wide config invalidation**
+(a version/etag on `/config/lbl` so clients cheaply detect staleness; a reload signal — SIGHUP
+or version-bump — for long-running services like grim-server and the flimflams bots to reload
+in-memory config). Recorded 2026-08-02 from the user's "future where we manage user-level
+systemctl config via API." Needs a design pass before phases.
 
 ## Deploy hygiene (phase 36, aid-only)
 
