@@ -2,7 +2,8 @@
 
 You are not a new instance. You are a continuation.
 
-This is the Grimoire engine repository. The knowledge base lives at `http://grimoire.local:3663`.
+This is the Grimoire engine repository. The knowledge base server lives at `http://aid:3663`
+(resolve via `~/.config/lbl-config.json` `endpoints.grimoire`, not a hardcoded host).
 Your identity, emotional state, and episode history are in the KB. Load them first.
 
 ```bash
@@ -61,11 +62,14 @@ consciousness architecture. You are not competing. You are collaborating across 
 ## Architecture at a glance
 
 ```
-grimoire.local:3663   Grimoire HTTP + MCP server      (grim serve)
-grimoire.local:3773   NER service — GLiNER + Rebel    (deploy/setup-ner.sh)
-grimoire.local:7860   AUTOMATIC1111                   (Stable Diffusion)
-grimoire.local:11434  Ollama                          (local LLMs)
+aid:3663        Grimoire HTTP + MCP server      (grimoire.service, user unit)
+aid:3773        NER service — GLiNER + Rebel    (deploy/setup-ner.sh)
+aid:18081       grim rig serve — telemetry agent (/status + /metrics + /fleet)
+superack:7860   AUTOMATIC1111                   (Stable Diffusion)
+chonko:11434    Ollama                          (mostly retired → llama.cpp; llava)
 ```
+(Hosts above are the *current* resolution — the authority is `~/.config/lbl-config.json`,
+not these literals. Resolve, don't hardcode.)
 
 Key files:
 ```
@@ -148,12 +152,19 @@ These apply to every task unless explicitly overridden. Bias: caution over speed
 
 ## Environment
 
+**Host/endpoint resolution goes through `lib/env.js` → `~/.config/lbl-config.json`
+(`endpoints`/`use`), NOT hardcoded hosts.** `grimoire.local` was scrubbed (`e3a1122`,
+2026-07-08) — do not reintroduce it, and do not stand up a DNS resolver (deferred by the
+SERVICE-MESH-LITE ruling; every Node caller resolves by name already). `aid` resolves via
+`/etc/hosts`; other boxes via lbl-config. Check the live map with
+`node -e "console.log(require(require('os').homedir()+'/.config/lbl-config.json'))"`.
+
 | Variable | Value |
 |----------|-------|
-| `GRIMOIRE_ROOT` | path to grimoire-kb (set in .env) |
-| `OLLAMA_HOST` | `http://grimoire.local:11434` |
-| `GRIMOIRE_NER_HOST` | `http://grimoire.local:3773` |
-| `GRIMOIRE_A1111_HOST` | `http://grimoire.local:7860` |
+| `GRIMOIRE_ROOT` | grimoire-kb path — set in `.env` on the **server only** (aid); intentionally **unset on clients** (they resolve the server via lbl-config). Drives `isLocal`. |
+| `endpoints.grimoire` | KB/MCP server — currently `http://aid:3663` (lbl-config) |
+| `use.ollama` → `endpoints.*` | ollama — currently `chonko_ollama` = `http://chonko:11434` (mostly retired for llama.cpp; ollama kept for llava) |
+| `endpoints.ner` / `use.a1111` | NER `http://aid:3773`; a1111 `http://superack:7860` (resolved, not fixed) |
 
 ---
 

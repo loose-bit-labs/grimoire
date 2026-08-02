@@ -198,6 +198,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 |-------|-------|-----------|--------|
 | 37 | plans/phase-37.md | per-host **full-width "VRAM / GPU Compute (last 10m)"** row added to the `generate-dashboard.js` template (same targets as the 2m panel, `timeFrom:'10m'`, w:24) + **kill the dual dashboard JSON** (top-level + provisioning mirror drift → one canonical file, generator writes once) | ✅ accepted (thread archived) — shipped `f39d68e`; provisioning JSON → symlink, generator writes one file |
 | 39 | plans/phase-39.md | **`grim rig status` from any node** — client boxes (no rig.json) render the fleet via the hub's `/fleet` agent (`aid:18081`, already live); location-transparent (hub = local fan-out, client = remote fetch); `endpoints.rig_hub` registry entry (no DNS — mesh ruling); client-aware error text | ✅ accepted (#0190 area in thread) — shipped `79f6ba7`; 30/30 rig tests green |
+| 40 | plans/phase-40.md | **`grim load` 500 fix** — `loadBriefing`/`saveSession` in `bin/grim-session.js` check `isRemote` before `isLocal`, so on aid (both true) the briefing endpoint proxies to itself → recursion → 500. Prefer local (`isRemote && !isLocal`). Regressed with `e3a1122` (added own address to lbl-config) | queued (hierophant, 2026-08-01) — correctness, small; **grim load currently broken on aid** |
 
 ## Deploy hygiene (phase 36, aid-only)
 
