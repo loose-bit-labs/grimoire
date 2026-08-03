@@ -69,33 +69,89 @@ EOF
   ok "wrote .env (minimal)"
 }
 
-# ── 4. /etc/hosts — ensure 'aid' resolves ────────────────────────────────────
+# ── 4. Bootstrap + /etc/hosts ────────────────────────────────────────────────
+# Seed exactly one bootstrap value (GRIMOIRE_HOST in .env or minimal lbl-config),
+# then run grim host gen-hosts --apply so every fleet host resolves from the
+# managed block. Graceful if sudo is unavailable.
 
-_ensure_etc_hosts() {
-  step "Checking /etc/hosts for 'aid'..."
-  if grep -qE '^\s*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\s+.*\baid\b' /etc/hosts; then
-    ok "aid already in /etc/hosts"
-    return
+_seed_bootstrap_and_hosts() {
+  step "Seeding bootstrap + applying /etc/hosts..."
+
+  # ── 4a. Seed exactly one bootstrap value ──────────────────────────────────
+  # Prefer writing a minimal lbl-config.json (survives across env changes);
+  # fall back to GRIMOIRE_HOST in .env if lbl-config already has content.
+
+  local lbl_cfg="$HOME/.config/lbl-config.json"
+  local has_grimoire=false
+  if [[ -f "$lbl_cfg" ]]; then
+    has_grimoire=$(node -e "
+      try {
+        const c = JSON.parse(require('fs').readFileSync('$lbl_cfg','utf8'));
+        process.stdout.write(c.endpoints?.grimoire ? 'true' : 'false');
+      } catch { process.stdout.write('false'); }
+    " 2>/dev/null || echo false)
   fi
 
-  warn "aid not found in /etc/hosts"
-  echo    "  The Grimoire server runs on a host named 'aid'."
-  echo    "  Enter the IP address of aid (leave blank to skip — use grim host gen-hosts later):"
-  local aid_ip
-  read -r -p "  aid IP: " aid_ip
-
-  if [[ -z "$aid_ip" ]]; then
-    warn "skipped — run 'grim host gen-hosts' once KB is populated, then apply to /etc/hosts"
-    return
-  fi
-
-  if [[ "$EUID" -ne 0 ]]; then
-    echo "  Adding to /etc/hosts (requires sudo)..."
-    echo "$aid_ip  aid" | sudo tee -a /etc/hosts > /dev/null
+  if [[ "$has_grimoire" == "true" ]]; then
+    ok "lbl-config.json already has endpoints.grimoire — skipping bootstrap seed"
   else
-    echo "$aid_ip  aid" >> /etc/hosts
+    # Write minimal lbl-config with just the grimoire endpoint
+    mkdir -p "$HOME/.config"
+    cat > "$lbl_cfg" <<EOF
+{
+  "endpoints": {
+    "grimoire": "$(_grimoire_host)"
+  }
+}
+EOF
+    ok "seeded minimal lbl-config.json (endpoints.grimoire = $(_grimoire_host))"
   fi
-  ok "added: $aid_ip  aid"
+
+  # ── 4b. Apply fleet host resolution ───────────────────────────────────────
+  # grim host gen-hosts --apply writes a managed block to /etc/hosts.
+  # Graceful if sudo is unavailable (warn, don't fail).
+
+  local grim_bin
+  grim_bin=$(command -v grim 2>/dev/null || echo "$ENGINE_ROOT/bin/grim.js")
+
+  if [[ ! -x "$grim_bin" && ! -f "$grim_bin" ]]; then
+    # Try via node directly
+    grim_bin="$ENGINE_ROOT/bin/grim.js"
+  fi
+
+  if [[ "$EUID" -eq 0 ]]; then
+    # Root — can write directly
+    if node "$grim_bin" host gen-hosts --apply 2>/dev/null; then
+      ok "grim host gen-hosts --apply succeeded"
+    else
+      warn "grim host gen-hosts --apply failed — /etc/hosts may need manual update"
+    fi
+  elif sudo -n true 2>/dev/null; then
+    # Non-root but sudo available (no prompt)
+    if sudo node "$grim_bin" host gen-hosts --apply 2>/dev/null; then
+      ok "grim host gen-hosts --apply succeeded (via sudo)"
+    else
+      warn "grim host gen-hosts --apply failed — /etc/hosts may need manual update"
+    fi
+  else
+    warn "no sudo available — skipping grim host gen-hosts --apply"
+    warn "  Once sudo is available: sudo grim host gen-hosts --apply"
+  fi
+
+  # ── 4c. Turnkey proof: confirm intent resolution works ────────────────────
+  step "Verifying intent resolution..."
+  local resolved
+  resolved=$(node -e "
+    const { lblEndpoint } = require('$ENGINE_ROOT/lib/env');
+    process.stdout.write(lblEndpoint('ollama') || 'null');
+  " 2>/dev/null || echo "null")
+
+  if [[ "$resolved" != "null" && "$resolved" != "" ]]; then
+    ok "intent resolution works: use.ollama → $resolved"
+  else
+    warn "intent resolution failed — check that aid resolves and grim serve is running"
+    warn "  Bootstrap: lbl-config.json has endpoints.grimoire = $(_grimoire_host)"
+  fi
 }
 
 # ── 5. Git hooks ─────────────────────────────────────────────────────────────
@@ -558,7 +614,7 @@ _main() {
   _check_node
   _npm_install
   _write_env
-  _ensure_etc_hosts
+  _seed_bootstrap_and_hosts
   _activate_git_hooks
   _configure_claude_code
   _install_grim_link
