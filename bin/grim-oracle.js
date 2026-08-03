@@ -40,11 +40,12 @@ const { relTargetId, resolveTarget, fmtBounds, filterActive, isActive } = requir
  * @param {number}  [opts.depth]         - relationship traversal depth (default 0)
  * @param {number}  [opts.limit]         - max results (default 20)
  * @param {Array}   [opts.semanticHits]  - pre-computed vector hits to merge in
+ * @param {number}  [opts.minScore]      - cosine threshold for semantic hits (default 0.55)
  * @param {boolean} [opts.active]        - if true, filter traversal to active edges only
  * @param {string}  [opts.asOf]          - ISO date for active filter (default: today)
  * @returns {Array<{entity, score, hops}>}
  */
-function search(graph, { query, tag, type, depth = 0, limit = 20, semanticHits = [], active = false, asOf } = {}) {
+function search(graph, { query, tag, type, depth = 0, limit = 20, semanticHits = [], minScore = 0.4, active = false, asOf } = {}) {
   const results = new Map() // id → { entity, score, hops }
 
   // ── Seed results ───────────────────────────────────────────────────────────
@@ -116,7 +117,9 @@ function search(graph, { query, tag, type, depth = 0, limit = 20, semanticHits =
 
     // ── Merge semantic hits ──────────────────────────────────────────────────
     // Vector scores are cosine similarity 0–1; scale to 0–55 and blend in.
+    // Only merge hits at or above minScore — below-threshold hits are dropped.
     for (const hit of semanticHits) {
+      if (hit.score < minScore) continue
       const entity = graph.entities[hit.id]
       if (!entity) continue
       const semScore = Math.round(hit.score * 55)
@@ -289,9 +292,9 @@ function formatHuman(results, { query, tag, type, depth, active, asOf }) {
 
 async function main() {
   const args = minimist(process.argv.slice(3), { // slice(3): strip 'grim oracle'
-    boolean: ['json', 'list-tags', 'list-types', 'list-ontology', 'suggest-tags', 'active'],
+    boolean: ['json', 'list-tags', 'list-types', 'list-ontology', 'suggest-tags', 'active', 'no-semantic'],
     alias:   { j: 'json', d: 'depth', t: 'tag', l: 'limit' },
-    default: { depth: 0, limit: 20 }
+    default: { depth: 0, limit: 20, minScore: 0.55 }
   })
 
   // ── Ontology modes (no graph load needed) ─────────────────────────────────
@@ -370,6 +373,7 @@ async function main() {
     type:   args.type   || null,
     depth:  Number(args.depth),
     limit:  Number(args.limit),
+    minScore: args['min-score'] !== undefined ? Number(args['min-score']) : args.minScore !== undefined ? Number(args.minScore) : 0.55,
     active: args.active || false,
     asOf:   args['as-of'] || undefined,
   }
@@ -382,6 +386,8 @@ async function main() {
     console.error('       grim oracle --list-types')
     console.error('       grim oracle <query> --depth 2 --active           (active edges only)')
     console.error('       grim oracle <query> --depth 2 --active --as-of 2023-01-01')
+    console.error('       grim oracle <query> --min-score 0.6              (tighten semantic floor)')
+    console.error('       grim oracle <query> --min-score 0                (disable floor)')
     process.exit(1)
   }
 

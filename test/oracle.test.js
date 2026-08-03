@@ -206,3 +206,36 @@ test('enrichWithContext: temporal fields preserved on rich edges', () => {
   assert.equal(edge.validFrom,  '2022')
   assert.equal(edge.validUntil, '2025')
 })
+
+// ── search: semantic relevance floor ──────────────────────────────────────────
+
+test('search: low-cosine semantic hit excluded at default floor', () => {
+  const graph = makeGraph({
+    loose_match: { '@id': 'loose_match', '@type': 'DefinedTerm', name: 'loose match', description: 'barely related', tags: [] },
+  })
+  // cosine 0.2 → scaled score ~11, well below default floor of 0.55
+  const results = search(graph, { query: 'alice', semanticHits: [{ id: 'loose_match', score: 0.2 }], minScore: 0.55 })
+  const ids = results.map(r => r.entity['@id'])
+  assert.ok(!ids.includes('loose_match'), 'low-cosine hit excluded at default floor')
+})
+
+test('search: low-cosine semantic hit included when floor disabled', () => {
+  const graph = makeGraph({
+    loose_match: { '@id': 'loose_match', '@type': 'DefinedTerm', name: 'loose match', description: 'barely related', tags: [] },
+  })
+  const results = search(graph, { query: 'alice', semanticHits: [{ id: 'loose_match', score: 0.2 }], minScore: 0 })
+  const ids = results.map(r => r.entity['@id'])
+  assert.ok(ids.includes('loose_match'), 'low-cosine hit included when floor is 0')
+})
+
+test('search: keyword match preserved regardless of semantic floor', () => {
+  const graph = makeGraph({
+    alice: { '@id': 'alice', '@type': 'Person', name: 'Alice', description: 'engineer', tags: ['domain/backend'], relationships: {} },
+  })
+  graph.index.alice = 'alice'
+  // Even with a high floor, the keyword-exact match should still appear
+  const results = search(graph, { query: 'alice', semanticHits: [], minScore: 0.99 })
+  const found = results.find(r => r.entity['@id'] === 'alice')
+  assert.ok(found, 'exact keyword match preserved even with high minScore')
+  assert.equal(found.score, 100)
+})
