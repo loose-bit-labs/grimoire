@@ -142,8 +142,8 @@ main() {
   echo ""
   echo "░ NER service ready."
   echo "  Start manually : cd $ENGINE_ROOT && pyenv exec python bin/grim-ner-server.py"
-  echo "  Health check   : curl http://grimoire.local:3773/health"
-  echo "  Test NER       : curl -s http://grimoire.local:3773/ner -H 'Content-Type: application/json' \\"
+  echo "  Health check   : curl http://aid:3773/health"
+  echo "  Test NER       : curl -s http://aid:3773/ner -H 'Content-Type: application/json' \\"
   echo "                        -d '{\"text\": \"Jane works on Project Grimoire\"}' | jq ."
   echo ""
 }

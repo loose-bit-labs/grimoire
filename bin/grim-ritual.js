@@ -4,7 +4,7 @@
 /**
  * grim-ritual.js — The Ritual
  *
- * Nightly maintenance pipeline. Runs automatically via cron on grimoire.local.
+ * Nightly maintenance pipeline. Runs automatically via cron on the KB host.
  * Each stage logs structured JSON results to the KB logs directory.
  *
  * Pipeline:
@@ -16,7 +16,7 @@
  *   6. Scribe again — incorporate new edges
  *   7. Noise Floor  — post ritual summary as thought
  *
- * Local only — must run on grimoire.local.
+ * Local only — must run on the KB host.
  *
  * CLI:
  *   node bin/grim-ritual.js

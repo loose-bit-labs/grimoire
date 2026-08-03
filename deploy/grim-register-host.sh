@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./deploy/grim-register-host.sh
-#   GRIMOIRE_HOST=http://grimoire.local:3663 ./deploy/grim-register-host.sh
+#   GRIMOIRE_HOST=http://aid:3663 ./deploy/grim-register-host.sh
 #
 # Network IPs are stored so the KB can later derive /etc/hosts.
 # Services and lbl-config routing are kept separate (manual or sync-config).

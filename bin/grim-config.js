@@ -137,6 +137,7 @@ class GrimConfig {
 
   /**
    * Generate /etc/hosts-style block.
+   * Emits bare hostnames (no .grim suffix) — the canonical scheme per phase 44.
    * @param {object} endpoints
    */
   async _genHosts(endpoints) {
@@ -148,7 +149,7 @@ class GrimConfig {
         const host = parsed.hostname
         // Resolve hostname to IP if it looks like a hostname (not an IP literal)
         const ip = await this._resolveHost(dns, host)
-        return `${ip} ${key}.grim`
+        return `${ip} ${key}`
       })
     )
     console.log(lines.join('\n'))
@@ -183,12 +184,13 @@ class GrimConfig {
 
   /**
    * Generate Caddyfile text.
+   * Uses bare hostnames (no .grim suffix) — the canonical scheme per phase 44.
    * @param {object} endpoints
    */
   _genCaddy(endpoints) {
     const blocks = []
     for (const [key, url] of Object.entries(endpoints).sort((a, b) => a[0].localeCompare(b[0]))) {
-      blocks.push(`${key}.grim {\n    reverse_proxy ${url}\n}`)
+      blocks.push(`${key} {\n    reverse_proxy ${url}\n}`)
     }
     console.log(blocks.join('\n\n'))
   }

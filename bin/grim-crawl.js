@@ -256,7 +256,7 @@ async function crawl({ source, since, dryRun = false, verbose = false, noNer = f
   }
 
   const useNer = !noNer && await nerAvailable()
-  if (verbose && !noNer) console.log(`  NER service: ${useNer ? 'online (grimoire.local:3773)' : 'offline — using Ollama only'}`)
+  if (verbose && !noNer) console.log(`  NER service: ${useNer ? 'online' : 'offline — using Ollama only'}`)
 
   console.log(`\n  THE CRAWLER descends. (${files.length} file${files.length === 1 ? '' : 's'})\n`)
 
@@ -292,7 +292,7 @@ async function crawl({ source, since, dryRun = false, verbose = false, noNer = f
 
 async function syncQueue({ verbose = false, dryRun = false } = {}) {
   if (!isRemote) {
-    console.error('Sync requires GRIMOIRE_HOST to be set (e.g. http://grimoire.local:3663).')
+    console.error('Sync requires GRIMOIRE_HOST to be set (e.g. http://aid:3663).')
     process.exit(1)
   }
 

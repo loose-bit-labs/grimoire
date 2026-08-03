@@ -3,7 +3,7 @@
 # Best-effort, no retry. If the server isn't up, the event is lost.
 #
 # Deploy (userspace, no sudo):
-#   ln -s ~/src/me/grimoire ~/.grimoire          # or /mnt/eighty/... on grimoire.local
+#   ln -s ~/src/me/grimoire ~/.grimoire          # or /mnt/eighty/... on the KB host
 #   install -m644 ~/.grimoire/deploy/grim-boot-report.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now grim-boot-report
 

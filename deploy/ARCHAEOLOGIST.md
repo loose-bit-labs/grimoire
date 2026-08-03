@@ -6,7 +6,7 @@ catalogue, and breathe new life into decades of accumulated code and ideas.
 
 ## The KB
 
-The Grimoire KB lives at `http://grimoire.local:3663` (or `GRIMOIRE_HOST` if overridden).
+The Grimoire KB lives at the host configured in `endpoints.grimoire` (or `GRIMOIRE_HOST` if overridden).
 It contains entities (projects, people, concepts, tools) and their relationships.
 You have tools to search it, add to it, and reason across it.
 
@@ -84,8 +84,8 @@ When you start a session here, your first move is always:
 ## Environment
 
 ```bash
-export GRIMOIRE_HOST=http://grimoire.local:3663   # point at the KB server
-export OLLAMA_HOST=http://grimoire.local:11434    # local models
+export GRIMOIRE_HOST=http://aid:3663             # point at the KB server
+export OLLAMA_HOST=http://chonko:11434           # local models
 ```
 
 ## Persona

@@ -5,7 +5,8 @@
  * grim-server.js — The Grimoire Server
  *
  * Exposes the KB to the LAN via HTTP REST API + MCP endpoint.
- * Binds to 0.0.0.0 so clients on other hosts can reach it via http://grimoire.local:3663
+ * Binds to 0.0.0.0 so clients on other hosts can reach it via the configured endpoint
+ * (endpoints.grimoire in ~/.config/lbl-config.json).
  *
  * Routes:
  *   GET  /health                 → status + graph stats
@@ -30,7 +31,7 @@
  *   GET  /config/lbl                    → canonical lbl-config.json (?path=dot.path for a single value)
  *   POST /mcp                           → MCP Streamable HTTP transport
  *
- * Run on grimoire.local: node bin/grim-server.js
+ * Run on the KB host: node bin/grim-server.js
  */
 
 const fs      = require('node:fs')
@@ -713,9 +714,10 @@ app.listen(PORT, '0.0.0.0', async () => {
   try {
     const graph = await getGraph()
     const m     = graph._meta || {}
+    const _host = config.host || `http://localhost:${PORT}`
     console.log(`\n  ░ Grimoire online.`)
-    console.log(`    http://0.0.0.0:${PORT}  (LAN: http://grimoire.local:${PORT})`)
-    console.log(`    MCP endpoint: http://grimoire.local:${PORT}/mcp`)
+    console.log(`    http://0.0.0.0:${PORT}  (LAN: ${_host})`)
+    console.log(`    MCP endpoint: ${_host.replace(/\/$/, '')}/mcp`)
     console.log(`    Entities: ${m.entityCount || '?'}  Edges: ${m.edgeCount || '?'}`)
     console.log(`    Noise Floor: ${path.relative(process.cwd(), NOISE_FILE)}\n`)
   } catch (e) {

@@ -82,7 +82,7 @@ _enable_and_start() {
   echo ""
   echo "grimoire: service installed and running"
   echo "  logs:   journalctl -u grimoire -f"
-  echo "  health: curl http://grimoire.local:3663/health"
+  echo "  health: curl http://aid:3663/health"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────

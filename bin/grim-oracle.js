@@ -8,7 +8,7 @@
  * Optionally traverses relationships to a given depth.
  *
  * Works in two modes:
- *   Local  — reads graph.json directly (run on grimoire.local, GRIMOIRE_ROOT set)
+ *   Local  — reads graph.json directly (run on the KB host, GRIMOIRE_ROOT set)
  *   Remote — queries Grimoire server   (any host, GRIMOIRE_HOST set)
  *
  * CLI:

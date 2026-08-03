@@ -3,7 +3,7 @@
 grim-ner-server.py — Grimoire NER + Relation Extraction Service
 
 Exposes GLiNER (zero-shot NER) and Rebel (relation extraction) via HTTP.
-Runs on grimoire.local:3773.
+Runs on the KB host:3773.
 
 Routes:
   GET  /health           → status + model load state
