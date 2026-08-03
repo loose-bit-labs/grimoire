@@ -45,7 +45,7 @@ const { relTargetId, resolveTarget, fmtBounds, filterActive, isActive } = requir
  * @param {string}  [opts.asOf]          - ISO date for active filter (default: today)
  * @returns {Array<{entity, score, hops}>}
  */
-function search(graph, { query, tag, type, depth = 0, limit = 20, semanticHits = [], minScore = 0.4, active = false, asOf } = {}) {
+function search(graph, { query, tag, type, depth = 0, limit = 20, semanticHits = [], minScore = 0.55, active = false, asOf } = {}) {
   const results = new Map() // id → { entity, score, hops }
 
   // ── Seed results ───────────────────────────────────────────────────────────
