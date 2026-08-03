@@ -5,12 +5,14 @@
  * grim-config.js — lbl-config client (config authority CLI)
  *
  * Subcommands:
- *   get [<path>]   Fetch config from the grim-server /config/lbl route.
- *                  Falls back to reading config/lbl-config.json directly
- *                  if the fetch fails and this is a local repo checkout.
- *   sync           Fetch the full config from the server and write it to
- *                  ~/.config/lbl-config.json (last-good cache). Prints
- *                  changed keys, or "unchanged".
+ *   get [<path>]       Fetch config from the grim-server /config/lbl route.
+ *                      Falls back to reading config/lbl-config.json directly
+ *                      if the fetch fails and this is a local repo checkout.
+ *   sync               Fetch the full config from the server and write it to
+ *                      ~/.config/lbl-config.json (last-good cache). Prints
+ *                      changed keys, or "unchanged".
+ *   invalidate         Discard the local cache; next resolve re-fetches from server.
+ *   status             Show cache path, last-fetched timestamp, source, reachability.
  *
  * Canonical source: config/lbl-config.json in this repo (git history is
  * the change log). The server (grim-server.js) reads it fresh per request.
@@ -21,7 +23,7 @@ const os       = require('node:os')
 const path     = require('node:path')
 const axios    = require('axios')
 const minimist = require('minimist')
-const { config, refreshLblCache } = require('../lib/env')
+const { config, refreshLblCache, clearLblCache, lblCacheMeta } = require('../lib/env')
 
 const LOCAL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'lbl-config.json')
 const CACHE_PATH        = path.join(os.homedir(), '.config', 'lbl-config.json')
@@ -88,6 +90,52 @@ class GrimConfig {
     const changed = this._changedKeys(before, fresh)
     if (!changed.length) console.log('unchanged')
     else console.log(`changed: ${changed.join(', ')}`)
+  }
+
+  // ── invalidate ────────────────────────────────────────────────────────────────
+
+  /**
+   * Discard the local lbl-config cache so the next resolve re-fetches from the server.
+   * Idempotent — no-op if cache is already absent.
+   */
+  invalidate() {
+    clearLblCache()
+    console.log('cache cleared')
+  }
+
+  // ── status ────────────────────────────────────────────────────────────────────
+
+  /**
+   * Show cache path, last-fetched timestamp, source URL, and server reachability.
+   */
+  async status() {
+    const meta = lblCacheMeta()
+    const hasCache = fs.existsSync(CACHE_PATH)
+
+    console.log(`  cache:  ${CACHE_PATH}`)
+    if (hasCache) {
+      console.log(`  valid:  yes`)
+    } else {
+      console.log(`  valid:  no (absent)`)
+    }
+    if (meta) {
+      console.log(`  fetched: ${meta.fetchedAt}`)
+      console.log(`  source:  ${meta.source}`)
+    } else {
+      console.log(`  fetched: never`)
+    }
+
+    // Check server reachability
+    if (config.host) {
+      try {
+        await axios.get(`${config.host}/config/lbl`, { timeout: 2000 })
+        console.log(`  server: reachable`)
+      } catch {
+        console.log(`  server: unreachable`)
+      }
+    } else {
+      console.log(`  server: not configured`)
+    }
   }
 
   _safeParse(text) {
@@ -201,15 +249,17 @@ class GrimConfig {
     const args = minimist(process.argv.slice(3))
     const sub  = args._[0]
 
-    if (sub === 'get')  return this.get(args._[1])
-    if (sub === 'sync') return this.sync()
-    if (sub === 'gen')  return this.gen(args._[1])
+    if (sub === 'get')     return this.get(args._[1])
+    if (sub === 'sync')    return this.sync()
+    if (sub === 'invalidate') return this.invalidate()
+    if (sub === 'status')  return this.status()
+    if (sub === 'gen')     return this.gen(args._[1])
 
     // Direct invocation: `node bin/grim-config.js gen <format>` (no 'config' token)
     const knownFormats = ['hosts', 'probes', 'caddy']
     if (knownFormats.includes(sub)) return this.gen(sub)
 
-    console.error('Usage: grim config <get [<path>]|sync|gen <hosts|probes|caddy>>')
+    console.error('Usage: grim config <get [<path>]|sync|invalidate|status|gen <hosts|probes|caddy>>')
     process.exit(1)
   }
 }
