@@ -551,6 +551,17 @@ const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: 'grim_features',
+    description: 'List feature-request entities from the KB, grouped by project. Use before proposing a new feature to check for duplicates and find the right project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: { type: 'string', description: 'Filter by project ID (e.g. project_grimoire). Omit for all.' },
+        json:    { type: 'boolean', description: 'Return JSON instead of human-readable text' },
+      },
+    },
+  },
 ]
 
 async function executeMCPTool(name, args) {
@@ -649,6 +660,12 @@ async function executeMCPTool(name, args) {
       const value = dotGet(cfg, args.path)
       if (value === undefined) throw new Error(`path not found: ${args.path}`)
       return { path: args.path, value }
+    }
+
+    case 'grim_features': {
+      const { listFeatures } = require('./grim-features')
+      const result = await listFeatures({ project: args.project || null, json: args.json ?? false })
+      return typeof result === 'string' ? { text: result } : result
     }
 
     default:
