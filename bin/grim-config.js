@@ -96,11 +96,59 @@ class GrimConfig {
 
   /**
    * Discard the local lbl-config cache so the next resolve re-fetches from the server.
+   * Safe: in local mode (GRIMOIRE_ROOT set), preserves a bootstrap entry so the box
+   * never strands with zero endpoints. On clients, preserves GRIMOIRE_HOST if set.
    * Idempotent — no-op if cache is already absent.
    */
   invalidate() {
+    const isLocal = !!process.env.GRIMOIRE_ROOT
+    const hasHost = !!process.env.GRIMOIRE_HOST
+
+    // Preserve bootstrap for local mode: write a minimal cache with the repo's
+    // canonical grimoire endpoint so resolution never returns null.
+    if (isLocal) {
+      try {
+        const repoCfg = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'))
+        const grimoireEndpoint = repoCfg.endpoints?.grimoire
+        if (!grimoireEndpoint) {
+          console.error('error: repo config has no endpoints.grimoire — cannot bootstrap')
+          console.error('Set endpoints.grimoire in config/lbl-config.json, or run `grim config sync` after seeding GRIMOIRE_HOST.')
+          process.exit(1)
+        }
+        const bootstrap = {
+          endpoints: { grimoire: grimoireEndpoint },
+          use:       { grimoire: 'grimoire' },
+        }
+        fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true })
+        fs.writeFileSync(CACHE_PATH, JSON.stringify(bootstrap, null, 2) + '\n')
+        fs.writeFileSync(path.join(os.homedir(), '.config', 'lbl-config.json.meta'),
+          JSON.stringify({ fetchedAt: new Date().toISOString(), source: 'repo-bootstrap' }) + '\n')
+        console.log('cache cleared (repo bootstrap preserved)')
+        return
+      } catch (e) {
+        // Repo config absent — fall through to full clear
+        console.error(`warning: could not read repo config for bootstrap: ${e.message}`)
+      }
+    }
+
+    // Client mode: preserve GRIMOIRE_HOST if set so sync can re-populate cache
+    if (hasHost) {
+      const bootstrap = {
+        endpoints: { grimoire: process.env.GRIMOIRE_HOST },
+        use:       { grimoire: 'grimoire' },
+      }
+      fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true })
+      fs.writeFileSync(CACHE_PATH, JSON.stringify(bootstrap, null, 2) + '\n')
+      fs.writeFileSync(path.join(os.homedir(), '.config', 'lbl-config.json.meta'),
+        JSON.stringify({ fetchedAt: new Date().toISOString(), source: 'env-bootstrap' }) + '\n')
+      console.log('cache cleared (GRIMOIRE_HOST bootstrap preserved)')
+      return
+    }
+
+    // Unseeded client with no bootstrap: clear and warn
     clearLblCache()
     console.log('cache cleared')
+    console.error('warning: no GRIMOIRE_HOST and no repo config — run `grim config sync` after setting endpoints.grimoire')
   }
 
   // ── status ────────────────────────────────────────────────────────────────────
