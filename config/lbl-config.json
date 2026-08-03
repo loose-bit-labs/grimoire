@@ -20,7 +20,7 @@
     "anthropic": "mh_llama",
     "a1111":     "a1111",
 	"ollama":    "chonko_ollama",
-	"coding":    "chonko"
+	"coding":    "mh_llama"
   },
   "ports": {
     "grim_rig": 18081,
