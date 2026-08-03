@@ -201,7 +201,7 @@ function assessAffect(sessionEntity) {
 // ── Briefing (grim load) ──────────────────────────────────────────────────────
 
 async function loadBriefing() {
-  if (isRemote) {
+  if (isRemote && !isLocal) {
     const res = await axios.get(`${config.host}/api/session/briefing`)
     return res.data
   }
@@ -343,7 +343,7 @@ async function startSession(topic) {
 // ── End session (grim save) ───────────────────────────────────────────────────
 
 async function saveSession({ topic, summary, learned = [], nextSteps = [], decisions = [] }) {
-  if (isRemote) {
+  if (isRemote && !isLocal) {
     const res = await axios.post(`${config.host}/api/session/save`, { topic, summary, learned, nextSteps, decisions })
     return res.data
   }

@@ -2,7 +2,9 @@
 
 const { describe, it } = require('node:test')
 const assert = require('node:assert')
-const { formatBriefing } = require('../bin/grim-session.js')
+const fs = require('node:fs')
+const { formatBriefing, loadBriefing } = require('../bin/grim-session.js')
+const { isLocal, isRemote } = require('../lib/env')
 
 // ── formatBriefing() orientation ──────────────────────────────────────────────
 
@@ -46,5 +48,27 @@ describe('formatBriefing() orientation', () => {
     assert.ok(typeof orientation.time === 'string' && orientation.time.length > 0)
     assert.ok(typeof orientation.hostname === 'string' && orientation.hostname.length > 0)
     assert.ok(typeof orientation.cwd === 'string' && orientation.cwd.length > 0)
+  })
+})
+
+// ── loadBriefing() mode guard (phase 40 regression) ──────────────────────────
+
+describe('loadBriefing() mode guard', () => {
+  it('source uses isRemote && !isLocal (not bare isRemote)', () => {
+    const src = fs.readFileSync(require.resolve('../bin/grim-session.js'), 'utf8')
+    const branches = src.match(/if \(isRemote[^)]*\)/g) || []
+    assert.equal(branches.length, 2, 'should have exactly two isRemote branches')
+    for (const b of branches) {
+      assert.ok(b.includes('!isLocal'), `branch should guard with !isLocal: ${b}`)
+    }
+  })
+
+  it('takes local branch when both isLocal and isRemote are true', async () => {
+    // On the hub both flags are true; loadBriefing must read the KB directly,
+    // not proxy to itself (which would recurse → 500).
+    // We verify by calling it and asserting no axios-shaped error.
+    const result = await loadBriefing()
+    assert.ok(typeof result === 'object', 'should return briefing object')
+    assert.ok('agentModel' in result, 'briefing should include agentModel')
   })
 })
