@@ -53,9 +53,9 @@ describe('GrimConfig.gen()', () => {
       const output = await captureLog(async () => await new GrimConfig().gen('hosts'))
       const lines = output.trim().split('\n')
       assert.strictEqual(lines.length, 3)
-      assert.ok(lines[0].includes('alpha.grim'))
-      assert.ok(lines[1].includes('beta.grim'))
-      assert.ok(lines[2].includes('zebra.grim'))
+      assert.ok(lines[0].includes('alpha'))
+      assert.ok(lines[1].includes('beta'))
+      assert.ok(lines[2].includes('zebra'))
     } finally { restoreConfig() }
   })
 
@@ -89,7 +89,7 @@ describe('GrimConfig.gen()', () => {
         use: {},
       })
       const output = await captureLog(() => new GrimConfig().gen('caddy'))
-      assert.ok(output.includes('svc.grim {'))
+      assert.ok(output.includes('svc {'))
       assert.ok(output.includes('reverse_proxy http://10.0.0.1:8080'))
       assert.ok(output.includes('}'))
     } finally { restoreConfig() }
