@@ -2,14 +2,23 @@
 # platform.d/linux.sh — Linux gather functions for grim-register-host
 
 _gather_cpu() {
-  CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || echo 'unknown')"
-  CPU_THREADS="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 0)"
+  # NOTE: the caller runs with `set -o pipefail`, so a pipeline whose grep finds
+  # nothing (e.g. ARM /proc/cpuinfo lacks 'physical id'/'cpu MHz'/'model name')
+  # exits non-zero. Do NOT append `|| echo <default>` to such a pipeline — the
+  # pipeline has already emitted its own output (e.g. `wc -l` prints 0), so the
+  # fallback gets *concatenated* ("0\n1") and breaks later arithmetic. Instead:
+  # swallow the failure with `|| true` and apply the default via `${var:-default}`.
+  CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || true)"
+  CPU_MODEL="${CPU_MODEL:-unknown}"
+  CPU_THREADS="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || true)"
+  CPU_THREADS="${CPU_THREADS:-0}"
   local raw_cores
-  raw_cores="$(grep 'cpu cores' /proc/cpuinfo 2>/dev/null | head -1 | awk -F: '{print $2}' | xargs || echo '')"
+  raw_cores="$(grep 'cpu cores' /proc/cpuinfo 2>/dev/null | head -1 | awk -F: '{print $2}' | xargs || true)"
   CPU_CORES="${raw_cores:-$CPU_THREADS}"
-  CPU_SOCKETS="$(grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l | xargs || echo 1)"
+  CPU_SOCKETS="$(grep 'physical id' /proc/cpuinfo 2>/dev/null | sort -u | wc -l | xargs || true)"
   [[ "${CPU_SOCKETS:-0}" -eq 0 ]] && CPU_SOCKETS=1
-  CPU_MHZ="$(grep -m1 'cpu MHz' /proc/cpuinfo 2>/dev/null | awk -F: '{print $2}' | xargs | cut -d. -f1 || echo 0)"
+  CPU_MHZ="$(grep -m1 'cpu MHz' /proc/cpuinfo 2>/dev/null | awk -F: '{print $2}' | xargs | cut -d. -f1 || true)"
+  CPU_MHZ="${CPU_MHZ:-0}"
   export CPU_MODEL CPU_THREADS CPU_CORES CPU_SOCKETS CPU_MHZ
 }
 
