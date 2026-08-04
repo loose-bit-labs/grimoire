@@ -7,7 +7,7 @@
  * Subcommands:
  *   list                   List all KB-registered hosts (tag: hardware/inventory)
  *   gen-hosts [--out F]    Generate /etc/hosts block from KB network data
- *   gen-hosts --apply      Write managed block to /etc/hosts (needs sudo)
+ *   gen-hosts --apply      Write managed block to /etc/hosts (escalates only the write)
  *   sync-config [<host>]   Push ~/.config/lbl-configs/<host>.json to each host
  *   register               Run grim-register-host.sh on this machine
  *
@@ -146,6 +146,21 @@ class GrimHost {
    * One canonical LAN IP per host; link-local and dupes dropped.
    */
   async genHosts({ out, apply } = {}) {
+    // Guard: running grim under sudo is broken (no ~root/.config/lbl-config.json,
+    // headless boxes trip a display probe). Tell the user what to do instead.
+    if (process.getuid() === 0) {
+      const sudoUser = process.env.SUDO_USER || null
+      if (sudoUser) {
+        console.error('Don\'t run grim under sudo.')
+        console.error(`Run as your normal user instead:  grim host gen-hosts --apply`)
+        console.error(`(SUDO_USER=${sudoUser} — config won't resolve from /root.)`)
+      } else {
+        console.error('Don\'t run grim as root.')
+        console.error('Run `grim host gen-hosts --apply` as your normal user — it escalates only the /etc/hosts write.')
+      }
+      process.exit(1)
+    }
+
     // Source the block from the local KB (server/aid) or, on a client with no
     // GRIMOIRE_ROOT, from the grimoire server's /api/hosts (mirrors how config
     // resolves remotely). Either way the write/apply path below is identical.
@@ -335,13 +350,13 @@ class GrimHost {
   Subcommands:
     list                    List all registered hosts from KB
     gen-hosts [--out F]     Generate /etc/hosts entries for all registered hosts
-    gen-hosts --apply       Write managed block to /etc/hosts (needs sudo)
+    gen-hosts --apply       Write managed block to /etc/hosts (run as your normal user — it sudo's only the write)
     sync-config [<host>]    Push per-host lbl-config to each host
     register                Inventory this machine and register it in the KB
 
   Options for gen-hosts:
     --out <file>    Write to file instead of stdout
-    --apply         Write managed block to /etc/hosts (requires sudo)
+    --apply         Write managed block to /etc/hosts (run as your normal user — it sudo's only the write)
 
   Managed block:
     Lines between # BEGIN grimoire-hosts and # END grimoire-hosts are
