@@ -217,6 +217,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 54 | plans/phase-54.md | **`gen-hosts` client/remote mode** — `GrimHost` throws without `GRIMOIRE_ROOT` (grim-host.js:80) and no server endpoint serves the host list, so NO client can run `gen-hosts --apply` (phase 43's client story is impossible as built). Add `GET /api/hosts` + remote-fetch in gen-hosts when `config.host` set / `config.root` absent | ✅ done — hierophant implemented live 2026-08-03 (`a3e47c1`+test); GET /api/hosts + remote-mode gen-hosts, verified with a fake client; 21/21 grim-host tests |
 | 55 | fLimfLaMs `plans/swandive.md` (Phase 7) | **Swandive async dives** — research takes >45s (discovery + slow q4), so the synchronous 120s cutoff just yields "Lost the signal." Ack immediately, run research in the background, then post a Discord **embed** (title/digest/sources) with a **"Discuss" button** that opens a grounded conversation about the topic. Supersedes the blocking timeout | queued (hierophant, 2026-08-03) — Track H cont.; depends on 50/51; user-designed |
 | 56 | fLimfLaMs `plans/swandive.md` (Phase 8) | **Swandive idea intake** — drop a "new idea" → she asks 2-3 focused questions (embeds w/ project buttons/select) → drafts a routed feature-request → files to `grim features` on 👍. User-initiated goal creation (complements Phase 3 dive-scouting) | queued (hierophant, 2026-08-04) — Track H cont.; depends on 3/5/7; user-designed |
+| 57 | plans/phase-57.md | **`grim librarian` — KB durability cadence** — the KB defaulted to *never* pushed (513 uncommitted found live 2026-08-04); aid is a SPOF. `grim librarian commit` (skip-if-clean, code-generated `N new / M updated` message, push, non-fatal on failure, never `--force`, **KB-only**) + nightly user timer on aid + best-effort `grim save` hook. v1 durability only; curation deferred to v2 | queued (hierophant, 2026-08-04) — Track O piece 1; SPOF ruling |
 
 **Track L (future, not yet briefed):** manage the fleet's **user-level systemd units via API**
 (replace the ad-hoc manual `systemctl --user` management) + **fleet-wide config invalidation**
@@ -273,6 +274,28 @@ money HALTs to the user.
 | 25 | plans/phase-25.md | `grim mm next` — deterministic router: `ACT`/`WAIT`/`HALT <reason>` + exit codes; halt predicate (budget/deadlock/decision/permission/roadmap-empty); `escalate --scope` tag; brief `requires: permission` tag; ROADMAP phase-queue reader | ✅ accepted (`plans/reviews/phase-25.md`) |
 | 26 | plans/phase-26.md | `grim mm drive` + `/loop` wiring for mage+minion — self-driving, commit-local/no-push, budget guard, compaction-survival; terminal-only halt | ✅ accepted (#0141 in thread) |
 | 27 | plans/phase-27.md | hierophant auto-authority within tracks — escalate-woken (no polling), rules architecture, HALTs to user on scope/product/external; `drive` guard against ruling on reserved decisions | ✅ accepted (#0146 in thread) — Track I complete |
+
+## Track O — grimoire HA / no single point of failure (phase 57 + future)
+
+**SPOF ruling (2026-08-04):** aid holds the grimoire (KB, config authority, routing, telemetry
+hub). The whole fleet resolves through one bit of client config — *"who has the grimoire open?"* —
+which is the right design, but it makes aid a hard single point of failure. Found live: the KB had
+**513 uncommitted files** (months of knowledge, never pushed) because no push cadence was ever set
+— it defaulted to *never*. Backlog committed + pushed by hand 2026-08-04.
+
+The SPOF decomposes into three pieces, cheapest-highest-value first:
+
+1. **Durability (phase 57)** — `grim librarian`: KB commit + push on a cadence (nightly timer on aid
+   + best-effort `grim save` hook). Kills the *data-loss* mode. v1 durability only; curation (prune
+   stale dreams, dedup, path-fix) is a deferred v2 pass under the same command.
+2. **Failover locator (future)** — the single client config becomes an **ordered list** of grimoire
+   candidates (`aid`, then a standby); the client health-checks `/health` and picks the live one.
+   Preserves the "one config = the locator" model while killing the *availability* mode.
+3. **Warm standby (future)** — a designated second box keeps a clone of repo + KB, pulls
+   periodically, can `systemctl start grimoire` on demand. Cold/warm is enough at this scale; no
+   live replication.
+
+Sequence: durability now (protects against irreversible loss), then pieces 2–3 as a later arc.
 
 ## Acceptance bar (mage enforces per phase)
 
