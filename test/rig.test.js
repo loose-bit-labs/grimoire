@@ -1,7 +1,7 @@
 'use strict'
 const { test } = require('node:test')
 const assert   = require('node:assert/strict')
-const { parseVRAM, parseBoxOutput, fmtGPU, fmtServices, findBoxesForService, fleetToDisplay, resolveRigHub, fetchFleetRemote } = require('../bin/grim-rig')
+const { parseVRAM, parseBoxOutput, fmtGPU, fmtServices, findBoxesForService, fleetToDisplay, resolveRigHub, fetchFleetRemote, parseDuration, toEpoch, summarize, fmt } = require('../bin/grim-rig')
 
 // ── parseVRAM ─────────────────────────────────────────────────────────────────
 
@@ -227,4 +227,80 @@ test('fetchFleetRemote: returns fleet data from live hub', async () => {
 test('fetchFleetRemote: returns null for unreachable hub', async () => {
   const fleet = await fetchFleetRemote('http://127.0.0.1:1/nonexistent')
   assert.equal(fleet, null)
+})
+
+// ── parseDuration ─────────────────────────────────────────────────────────────
+
+test('parseDuration: parses 10m to seconds', () => {
+  assert.equal(parseDuration('10m'), 600)
+})
+
+test('parseDuration: parses 2h to seconds', () => {
+  assert.equal(parseDuration('2h'), 7200)
+})
+
+test('parseDuration: parses 1d to seconds', () => {
+  assert.equal(parseDuration('1d'), 86400)
+})
+
+test('parseDuration: parses 30s to seconds', () => {
+  assert.equal(parseDuration('30s'), 30)
+})
+
+test('parseDuration: throws for invalid format', () => {
+  assert.throws(() => parseDuration('foo'), /invalid duration/)
+})
+
+// ── toEpoch ───────────────────────────────────────────────────────────────────
+
+test('toEpoch: parses ISO string to epoch seconds', () => {
+  const t = toEpoch('2026-08-03T19:00:00Z')
+  assert.ok(typeof t === 'number')
+  assert.ok(t > 0)
+})
+
+test('toEpoch: passes through epoch seconds', () => {
+  const epoch = 1785783600
+  assert.equal(toEpoch(String(epoch)), epoch)
+})
+
+// ── summarize ─────────────────────────────────────────────────────────────────
+
+test('summarize: computes min/max/avg/last from points', () => {
+  const pts = [{ v: 10 }, { v: 20 }, { v: 30 }]
+  const s = summarize(pts)
+  assert.equal(s.min, 10)
+  assert.equal(s.max, 30)
+  assert.equal(s.avg, 20)
+  assert.equal(s.last, 30)
+})
+
+test('summarize: returns nulls for empty input', () => {
+  const s = summarize([])
+  assert.equal(s.min, null)
+  assert.equal(s.max, null)
+  assert.equal(s.avg, null)
+  assert.equal(s.last, null)
+})
+
+test('summarize: filters null/NaN values', () => {
+  const pts = [{ v: 10 }, { v: null }, { v: NaN }, { v: 40 }]
+  const s = summarize(pts)
+  assert.equal(s.min, 10)
+  assert.equal(s.max, 40)
+  assert.equal(s.avg, 25)
+})
+
+// ── fmt ───────────────────────────────────────────────────────────────────────
+
+test('fmt: formats integers', () => {
+  assert.equal(fmt(42), '42')
+})
+
+test('fmt: formats floats to 2 decimals', () => {
+  assert.equal(fmt(42.5), '42.50')
+})
+
+test('fmt: returns — for null', () => {
+  assert.equal(fmt(null), '—')
 })

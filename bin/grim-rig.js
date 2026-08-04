@@ -1276,7 +1276,153 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub, parseDuration, toEpoch, queryRange, summarize, fmt, history }
+
+// ── History (Prometheus query_range) ──────────────────────────────────────────
+
+/**
+ * Parse a duration string like '10m', '2h', '1d' into seconds.
+ */
+function parseDuration(dur) {
+  const m = String(dur).match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$/)
+  if (!m) throw new Error(`invalid duration: ${dur} (use e.g. 10m, 2h, 1d)`)
+  const [, val, unit] = m
+  const mult = { ms: 0.001, s: 1, m: 60, h: 3600, d: 86400 }[unit]
+  return Math.round(parseFloat(val) * mult * 1000) / 1000 // seconds as float
+}
+
+/**
+ * Format a timestamp (epoch seconds or ISO) to epoch seconds.
+ */
+function toEpoch(ts) {
+  if (/^\d+(\.\d+)?$/.test(String(ts))) return parseFloat(ts)
+  return new Date(ts).getTime() / 1000
+}
+
+/**
+ * Query Prometheus query_range and return the result matrix.
+ */
+async function queryRange(promUrl, query, start, end, step) {
+  const params = new URLSearchParams({ query, start: String(start), end: String(end), step: String(step) })
+  const url = `${promUrl.replace(/\/$/, '')}/api/v1/query_range?${params}`
+  const res = await fetchJson(url, 10000)
+  if (res.status !== 'success') throw new Error(`prometheus query failed: ${JSON.stringify(res)}`)
+  return res.data
+}
+
+/**
+ * Compute min/max/avg/last from a list of {v, t} points.
+ */
+function summarize(points) {
+  const vals = points.map(p => p.v).filter(v => v != null && !isNaN(v))
+  if (!vals.length) return { min: null, max: null, avg: null, last: null }
+  return {
+    min:  Math.min(...vals),
+    max:  Math.max(...vals),
+    avg:  vals.reduce((a, b) => a + b, 0) / vals.length,
+    last: vals[vals.length - 1],
+  }
+}
+
+/**
+ * Format a number to a readable string.
+ */
+function fmt(n) {
+  if (n == null) return '—'
+  if (Number.isInteger(n)) return String(n)
+  return n.toFixed(2)
+}
+
+/**
+ * grim rig history <host> [options]
+ */
+async function history({ host, metrics, last, from, to, json }) {
+  if (!config.prometheus) {
+    console.error('error: endpoints.prometheus not configured in ~/.config/lbl-config.json')
+    console.error('Run: grim config sync  (or set PROMETHEUS_HOST)')
+    process.exit(1)
+  }
+
+  // Determine time window
+  let start, end
+  if (last) {
+    const dur = parseDuration(last)
+    end = Date.now() / 1000
+    start = end - dur
+  } else if (from && to) {
+    start = toEpoch(from)
+    end = toEpoch(to)
+  } else {
+    const dur = 600 // 10m default
+    end = Date.now() / 1000
+    start = end - dur
+  }
+
+  if (start >= end) throw new Error('--from must be before --to')
+
+  const range = end - start
+  const rawStep = range / 100
+  const step = Math.max(5, Math.round(rawStep / 5) * 5) // floor to 5s interval
+
+  // Metric definitions
+  const metricDefs = {
+    cpu:  `gen_host_cpu_percent{node="${host}"}`,
+    ram:  `gen_host_mem_used_mb{node="${host}"}`,
+    gpu:  `gen_gpu_util_percent{node="${host}"}`,
+    vram: `gen_gpu_vram_used_mb{node="${host}"}`,
+  }
+
+  const selected = metrics && metrics.length ? metrics : ['cpu', 'ram', 'gpu', 'vram']
+  const queries = selected.map(m => {
+    if (!metricDefs[m]) throw new Error(`unknown metric: ${m} (valid: cpu, ram, gpu, vram)`)
+    return { key: m, query: metricDefs[m] }
+  })
+
+  // Fetch all queries in parallel
+  const results = await Promise.all(
+    queries.map(async ({ key, query }) => {
+      const data = await queryRange(config.prometheus, query, start, end, step)
+      return { key, ...data }
+    })
+  )
+
+  if (json) {
+    const out = {}
+    for (const r of results) {
+      const series = {}
+      for (const matrix of r.result || []) {
+        const labels = matrix.metric
+        const key = labels.gpu != null ? `${r.key}[gpu=${labels.gpu}]` : r.key
+        series[key] = matrix.values.map(([t, v]) => ({ t: new Date(t * 1000).toISOString(), v: parseFloat(v) }))
+      }
+      out[r.key] = series
+    }
+    console.log(JSON.stringify(out, null, 2))
+    return
+  }
+
+  // Human-readable output
+  console.log(`\n  ${host}  ${new Date(start * 1000).toISOString()} → ${new Date(end * 1000).toISOString()}  (step ${step}s)\n`)
+
+  for (const r of results) {
+    const matrix = r.result || []
+    if (!matrix.length) {
+      console.log(`  ${r.key}: no data\n`)
+      continue
+    }
+
+    for (const m of matrix) {
+      const labels = m.metric
+      const suffix = labels.gpu != null ? ` [gpu=${labels.gpu}]` : ''
+      const points = m.values.map(([t, v]) => ({ t, v: parseFloat(v) }))
+      const sum = summarize(points)
+
+      console.log(`  ${r.key}${suffix}`)
+      console.log(`    min ${fmt(sum.min)}  max ${fmt(sum.max)}  avg ${fmt(sum.avg)}  last ${fmt(sum.last)}`)
+      console.log()
+    }
+  }
+}
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -1294,6 +1440,7 @@ async function main() {
   Usage: grim rig [status] [--json]
          grim rig up <service> [--box <name>]
          grim rig down <service> [--box <name>]
+         grim rig history <host> [--last 10m | --from <ts> --to <ts>] [--metrics cpu,ram,gpu,vram] [--json]
          grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
          grim rig serve --dashboard [--port 3003] [--listen 0.0.0.0]
 
@@ -1301,6 +1448,7 @@ async function main() {
     status (default)   Show VRAM + service status for all boxes
     up <service>       systemctl start <service>
     down <service>     systemctl stop <service>
+    history <host>     Query Prometheus for host telemetry over a time range
     serve              Start resident telemetry agent (/status + /metrics)
     serve --dashboard  Fleet dashboard front-door (/cluster + /fleet)
 
@@ -1311,10 +1459,15 @@ async function main() {
     --interval <s> Poll interval in seconds for serve (default: 5)
     --listen <addr> Bind address for serve (default: 127.0.0.1) or --dashboard (default: 0.0.0.0)
     --dashboard    Dashboard mode: no poller, only /cluster + /fleet
+    --last <dur>   Time window for history (default: 10m; e.g. 10m, 2h, 1d)
+    --from <ts>    Start time for history (ISO or epoch)
+    --to <ts>      End time for history (ISO or epoch)
+    --metrics <m>  Comma-separated metrics: cpu,ram,gpu,vram (default: all)
 
   Config:
     $GRIMOIRE_ROOT/rig.json — box inventory (copy from rig.example.json)
     ~/.config/lbl-config.json endpoints.rig_hub — hub URL for client boxes
+    ~/.config/lbl-config.json endpoints.prometheus — Prometheus URL (default: http://aid:9090)
     Service control fields:
       "unit": "name"         systemctl unit name (default: service name)
       "scope": "user"        use systemctl --user instead of system
@@ -1388,6 +1541,24 @@ async function main() {
       process.exit(1)
     }
     await controlService(action, serviceName, { box: args.box || null })
+    return
+  }
+
+  if (sub === 'history') {
+    const host = args._[1]
+    if (!host) {
+      console.error('Usage: grim rig history <host> [--last 10m | --from <ts> --to <ts>] [--metrics cpu,ram,gpu,vram] [--json]')
+      process.exit(1)
+    }
+    const metrics = args.metrics ? args.metrics.split(',') : null
+    await history({
+      host,
+      metrics,
+      last:    args.last    || null,
+      from:    args.from    || null,
+      to:      args.to      || null,
+      json:    args.json    || false,
+    })
     return
   }
 

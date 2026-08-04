@@ -33,7 +33,8 @@
     "aid":    "http://aid:11311",
     "a2c":    "http://meinherz:17071",
     "a1111":  "http://superack:7860",
-    "grimoire": "http://aid:3663",
-    "ner":      "http://aid:3773"
+    "grimoire":   "http://aid:3663",
+    "ner":        "http://aid:3773",
+    "prometheus": "http://aid:9090"
   }
 }
