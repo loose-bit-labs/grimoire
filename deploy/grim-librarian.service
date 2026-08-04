@@ -1,0 +1,13 @@
+[Unit]
+Description=grim librarian — KB durability cadence (commit + push)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.grimoire
+ExecStart=%h/.grimoire/bin/node bin/grim.js librarian commit
+StandardOutput=append:%h/data/logs/grimoire/grim-librarian.log
+StandardError=append:%h/data/logs/grimoire/grim-librarian.log
+
+[Install]
+WantedBy=default.target

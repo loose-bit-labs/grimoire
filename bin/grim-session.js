@@ -397,6 +397,11 @@ async function saveSession({ topic, summary, learned = [], nextSteps = [], decis
       saveEntity('meta_cognitive_state', state, graph)
     }
 
+    // Best-effort KB durability: commit + push any new/updated entities.
+    // Non-fatal — a failed push must never break grim save.
+    try { const { cmdCommit } = require('./grim-librarian')
+      cmdCommit() } catch (_) { /* librarian failure is non-fatal */ }
+
     return { ok: true, id: open['@id'], endedAt: now, affect }
   }
 
@@ -413,6 +418,9 @@ async function saveSession({ topic, summary, learned = [], nextSteps = [], decis
     fresh.nextSteps = nextSteps
     saveEntity(fresh['@id'], fresh, newGraph)
   }
+  // Best-effort KB durability
+  try { const { cmdCommit } = require('./grim-librarian')
+    cmdCommit() } catch (_) { /* librarian failure is non-fatal */ }
   return { ok: true, id: result.id, endedAt: now }
 }
 

@@ -172,6 +172,22 @@ function stampRole(dir, role, session) {
 // re-explain it in prose — `read`'s footer prints the exact legal command instead.
 
 const NEXT_OWNER   = { mage: 'minion', minion: 'mage', hierophant: 'mage' }
+
+// Resolve --to recipients. Default is the pact counterpart (mage↔minion,
+// hierophant→mage) — NOT the sender, which used to produce meaningless
+// `from-mage-to-mage` messages. A self-addressed message is never valid in the
+// pact, so refuse it loudly rather than write junk.
+function resolveRecipients(role, to) {
+  const tos = to
+    ? to.split(',').map(t => t.trim()).filter(Boolean)
+    : [NEXT_OWNER[role] || role]
+  if (tos.includes(role)) {
+    throw new Error(
+      `grim mm write: refusing a self-addressed message (from '${role}' to '${role}'). ` +
+      `Omit --to (defaults to '${NEXT_OWNER[role]}') or name a real counterpart.`)
+  }
+  return tos
+}
 const REPLY_STATES = {
   minion:     { mage:       { brief: ['report', 'question', 'blocked'], revise: ['report', 'question', 'blocked'] } },
   mage:       { minion:     { report: ['accepted', 'revise'], question: ['revise'], blocked: ['revise'] },
@@ -298,8 +314,9 @@ function write({ dir, role, state, phase, body, force, json, scope, to }) {
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
 
-  // Resolve recipients: --to flag overrides; defaults to sender (single-role reply).
-  const tos = to ? to.split(',').map(t => t.trim()) : [role]
+  // Resolve recipients: --to overrides; else defaults to the pact counterpart
+  // (mage↔minion, hierophant→mage). Refuses a self-addressed message.
+  const tos = resolveRecipients(role, to)
 
   // Don't fire a second message while your own is the latest unanswered one
   // (the don't-double-send rule the skills keep tripping on). --force overrides.
@@ -743,4 +760,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients }

@@ -37,6 +37,7 @@ const COMMANDS = {
   'research':      { script: 'grim-research.js',      desc: 'Research a URL, term, or post         (The Researcher)'    },
   'features':      { script: 'grim-features.js',      desc: 'List feature requests by project      (The Features)'    },
   'roadmap':       { script: 'grim-roadmap.js',       desc: 'How much work is left on the ROADMAP    (The Ledger)'      },
+  'librarian':     { script: 'grim-librarian.js',     desc: 'KB durability: commit + push on cadence   (The Librarian)' },
   'serve':     { script: 'grim-server.js',   desc: 'Start the Grimoire HTTP+MCP server'                },
 }
 
