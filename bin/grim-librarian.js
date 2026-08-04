@@ -45,9 +45,12 @@ function _countChanges() {
   let newCount = 0
   let updatedCount = 0
   for (const line of raw.split('\n')) {
+    // _git trims leading/trailing whitespace, so porcelain status codes lose
+    // their leading space: ` M file` → `M file`, `?? file` → `??file`.
+    // Check the first two chars for the trimmed form.
     const status = line.slice(0, 2)
     if (status === '??') newCount++
-    else if (status === ' M') updatedCount++
+    else if (status === 'M ' || status === ' M') updatedCount++
   }
   return { new: newCount, updated: updatedCount }
 }
@@ -74,6 +77,7 @@ function cmdCommit() {
   }
 
   const counts = _countChanges()
+  console.error('DEBUG counts:', JSON.stringify(counts), 'root:', config.root)
   if (counts.new === 0 && counts.updated === 0) {
     // Clean — exit quietly, no empty commits
     process.exit(0)
