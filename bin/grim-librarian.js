@@ -77,7 +77,6 @@ function cmdCommit() {
   }
 
   const counts = _countChanges()
-  console.error('DEBUG counts:', JSON.stringify(counts), 'root:', config.root)
   if (counts.new === 0 && counts.updated === 0) {
     // Clean — exit quietly, no empty commits
     process.exit(0)
