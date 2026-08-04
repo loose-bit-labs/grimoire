@@ -211,3 +211,38 @@ describe('write --state brief requires --phase', () => {
     }
   })
 })
+
+// ── resolveRecipients: default --to to the pact counterpart, refuse self-send ──
+
+describe('resolveRecipients', () => {
+  const { resolveRecipients } = require('../bin/grim-mm')
+
+  it('mage defaults to minion',        () => assert.deepEqual(resolveRecipients('mage', undefined), ['minion']))
+  it('minion defaults to mage',        () => assert.deepEqual(resolveRecipients('minion', undefined), ['mage']))
+  it('hierophant defaults to mage',    () => assert.deepEqual(resolveRecipients('hierophant', undefined), ['mage']))
+
+  it('explicit --to overrides the default', () => assert.deepEqual(resolveRecipients('mage', 'hierophant'), ['hierophant']))
+  it('honors a broadcast --to',              () => assert.deepEqual(resolveRecipients('mage', 'minion,hierophant'), ['minion', 'hierophant']))
+
+  it('refuses a self-addressed message (the from-mage-to-mage bug)',
+    () => assert.throws(() => resolveRecipients('mage', 'mage'), /self-addressed/))
+  it('refuses self even inside a broadcast list',
+    () => assert.throws(() => resolveRecipients('mage', 'minion,mage'), /self-addressed/))
+})
+
+// ── write() stamps the counterpart into the filename when --to is omitted ──────
+
+describe('write default recipient → filename', () => {
+  it('mage with no --to writes from-mage-to-minion, not from-mage-to-mage', () => {
+    const tmp = mktmp()
+    try {
+      fs.mkdirSync(path.join(tmp, '.mm'), { recursive: true })
+      const { write } = require('../bin/grim-mm')
+      write({ dir: path.join(tmp, '.mm'), role: 'mage', state: 'brief', phase: 1, body: 'x', force: false, json: false })
+      const files = fs.readdirSync(path.join(tmp, '.mm'))
+      assert.ok(files[0].endsWith('-from-mage-to-minion.md'), `got ${files[0]}`)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+})
