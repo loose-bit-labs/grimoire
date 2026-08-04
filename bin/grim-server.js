@@ -46,6 +46,7 @@ const { loadBriefing, saveSession } = require('./grim-session')
 const { recall, remember, update, relate, annotate, forget } = require('./grim-tome')
 const { crawlText } = require('./grim-crawl')
 const { config, requireMode } = require('../lib/env')
+const { scanHostEntities, buildHostsOutput } = require('./grim-host')
 const { semanticSearch, indexReady } = require('../lib/vectors')
 
 requireMode('local')
@@ -161,6 +162,18 @@ app.get('/api/oracle', async (req, res) => {
     res.json(results)
   } catch (e) {
     res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/hosts — the /etc/hosts block, so clients (no GRIMOIRE_ROOT) can run
+// `grim host gen-hosts --apply` by fetching it here. Same generator as the CLI,
+// so remote output is byte-identical to aid's local output.
+app.get('/api/hosts', async (req, res) => {
+  try {
+    const hosts  = scanHostEntities(config.root)
+    res.type('text/plain').send(buildHostsOutput(hosts))
+  } catch (e) {
+    res.status(500).type('text/plain').send(`# error: ${e.message}\n`)
   }
 })
 
