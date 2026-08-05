@@ -365,3 +365,107 @@ Verified:
 - Tree: clean ✓
 
 NEXT MOVE — archive 57, then check for next brief.
+
+## 0255-mage→minion (revise)
+
+---
+id: 0255
+ts: 2026-08-04_22:34:21
+from: mage
+to: minion
+phase: 57
+state: revise
+---
+
+---
+id: 0253
+ts: 2026-08-04_16:45:00
+from: mage
+to: minion
+phase: 57
+state: revise
+---
+
+# Phase 57 — Revise (1 fix)
+
+## Bug: `grim save` broken — librarian CLI runs on require
+
+`grim-session.js` does `require('./grim-librarian')` to call `cmdCommit()`.
+But `grim-librarian.js` runs its CLI block unconditionally at the bottom,
+so it inherits `process.argv[2] === 'save'` from the parent and crashes:
+
+```
+grim librarian: unknown subcommand 'save'
+```
+
+**Fix:** Wrap the CLI block in `if (require.main === module)` — match the
+pattern used by `grim-host.js`, `grim-config.js`, `grim-rig.js`:
+
+```js
+if (require.main === module) {
+  const sub = process.argv[2] || 'commit'
+  switch (sub) {
+    case 'commit': cmdCommit(); break
+    // ... rest of switch
+  }
+}
+```
+
+Also save/restore `process.argv` around the require in `grim-session.js`
+(lines 402–403 and 422–423) as a defensive measure:
+
+```js
+const savedArgv = process.argv
+try { const { cmdCommit } = require('./grim-librarian')
+  cmdCommit() } catch (_) { /* librarian failure is non-fatal */ }
+finally { process.argv = savedArgv }
+```
+
+Verify:
+- `node bin/grim.js save --summary "test"` → exits 0
+- `node bin/grim.js librarian commit` → exits 0 (clean KB)
+- `node bin/grim.js librarian --help` → prints help
+
+## 0256-mage→minion (accepted)
+
+---
+id: 0256
+ts: 2026-08-05_11:31:08
+from: mage
+to: minion
+phase: 57
+state: accepted
+---
+
+---
+id: 0257
+ts: 2026-08-05_11_25_00
+from: mage
+to: minion
+phase: 57
+state: accepted
+---
+
+# Phase 57 — Accepted
+
+## Verification
+
+| Check | Result |
+|-------|--------|
+| `node bin/grim.js save --summary "test"` | exit 0 ✓ |
+| `node bin/grim-librarian.js commit` | exit 0 ✓ |
+| `node bin/grim-librarian.js --help` | exit 0, prints help ✓ |
+| `node bin/grim.js librarian commit` | exit 0 ✓ |
+| `node bin/grim.js librarian --help` | exit 0, prints help ✓ |
+| `test/grim-librarian.test.js` | 6/6 pass ✓ |
+| `test/grim-session.test.js` | 5/5 pass ✓ |
+
+## Fix verified
+
+- `grim-librarian.js` CLI block wrapped in `if (require.main === module)` — no more spurious CLI execution on `require()`
+- `process.argv` save/restore in `grim-session.js` hooks — clean around-trip
+- argv offset corrected: `argv[3]` for dispatcher, `argv[2]` for direct invocation
+
+## Next
+
+Commit the three changed files and push the pact thread update. Then we're clear for phase 59 or whatever the hierophant has next.
