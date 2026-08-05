@@ -26,6 +26,7 @@
 const { spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
+const { assertRealIdentity } = require('./grim-mm')
 
 // Decision-scope tags the hierophant must never rule on — those belong to the
 // user. If drive sees an ACT with a direction command while the thread's latest
@@ -62,6 +63,13 @@ function drive({ role, session, budgetExceeded, cwd, dir }) {
   const { verdict, reason, command, owner, phase, state, scope } = data
 
   if (verdict === 'ACT') {
+    // Identity preflight: refuse to proceed if git identity is a placeholder.
+    // This catches the model-improvised `git config user.name T` incident pattern
+    // before any pact commit can poison history.
+    try { assertRealIdentity(cwd) } catch (e) {
+      console.error(`grim mm drive: ${e.message}`)
+      process.exit(1)
+    }
     // Authority guard: hierophant must never write a direction answering a
     // decision-scope escalation — that's a user-only ruling.
     if (role === 'hierophant' && command && command.includes('--state direction')

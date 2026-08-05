@@ -47,6 +47,51 @@ const { drive } = require('./grim-mm-drive')
 
 const ROLES  = ['mage', 'minion', 'hierophant', 'user']
 const STATES = ['brief', 'report', 'revise', 'accepted', 'question', 'blocked', 'direction', 'escalate']
+
+// ── Identity gate ─────────────────────────────────────────────────────────────
+// The pact never invents a git identity. If one looks like a placeholder the
+// model hand-rolled (the root cause of the phase-57 poison incident), refuse
+// to commit and tell the human how to fix it.
+
+function assertRealIdentity(cwd) {
+  let name, email
+  try {
+    name  = execFileSync('git', ['config', 'user.name'],  { cwd, encoding: 'utf8' }).trim()
+    email = execFileSync('git', ['config', 'user.email'], { cwd, encoding: 'utf8' }).trim()
+  } catch (e) {
+    throw new Error(
+      `grim mm: git identity check failed — ${e.message}. ` +
+      `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+    )
+  }
+
+  const bad = isPlaceholderIdentity(name, email)
+  if (!bad) return
+
+  throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+}
+
+function isPlaceholderIdentity(name, email) {
+  // Empty name or email
+  if (!name || !email) return true
+  // Name is a single short token (≤ 2 chars) — e.g. "T", "a"
+  if (name.split(/\s+/).length === 1 && name.length <= 2) return true
+  // Trivial email shapes
+  if (email === 't@t' || email === 'test@test' || email === 'a@a') return true
+  // Single-char local + single-char domain
+  const [local, domain] = email.split('@')
+  if (local.length <= 1 && domain.length <= 1) return true
+  // No dot in domain (catches localhost, host, etc.)
+  if (!domain.includes('.')) return true
+  // example.* domain
+  if (domain.startsWith('example.')) return true
+  // localhost
+  if (domain === 'localhost') return true
+  return false
+}
 // Who each role listens to, so a role's inbox stays on its own layer of the pact:
 // the minion hears only the mage; the mage hears the minion below and the
 // hierophant above; the hierophant reads the whole thread (use --all).
@@ -420,6 +465,7 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true })
     fs.writeFileSync(outPath, content, 'utf8')
 
+    assertRealIdentity(cwd)
     execFileSync('git', ['add', outPath], { cwd })
     execFileSync('git', ['commit', '-m', `mm: archive phase ${phase} review thread`], { cwd })
 
@@ -460,10 +506,58 @@ function archive({ cwd, dir, phase, from, to, out, forceOverwrite }) {
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
   fs.writeFileSync(outPath, content, 'utf8')
 
+  assertRealIdentity(cwd)
   execFileSync('git', ['add', outPath], { cwd })
   execFileSync('git', ['commit', '-m', `mm: archive ${out} review thread`], { cwd })
 
   return { file: outPath, messageCount: selected.length }
+}
+
+// ── commit ────────────────────────────────────────────────────────────────────
+// Hardened commit verb: stages only explicit --files, never git add -A, never
+// pushes. The model must use this instead of raw git commit — it is the only
+// pact path that touches git history.
+
+function cmdCommit({ cwd, phase, files, message }) {
+  assertRealIdentity(cwd)
+
+  if (!files || files.length === 0) {
+    fail('commit: --files is required (comma-separated list of paths to stage)')
+  }
+
+  // Resolve to absolute paths and verify each exists
+  const absFiles = files.map(f => {
+    const abs = path.isAbsolute(f) ? f : path.join(cwd, f)
+    if (!fs.existsSync(abs)) {
+      fail(`commit: file not found: ${f}`)
+    }
+    return abs
+  })
+
+  // Verify each file has unstaged changes (or is untracked)
+  for (const f of absFiles) {
+    const rel = path.relative(cwd, f)
+    let status
+    try {
+      status = execFileSync('git', ['status', '--porcelain', '--', rel], { cwd, encoding: 'utf8' }).trim()
+    } catch {
+      // git status failure → fail loud
+      fail(`commit: git status failed for ${rel}`)
+    }
+    if (!status) {
+      fail(`commit: no changes in ${rel} — refusing to commit an unchanged file`)
+    }
+  }
+
+  // Stage only the explicit files (never git add -A / -u)
+  for (const f of absFiles) {
+    const rel = path.relative(cwd, f)
+    execFileSync('git', ['add', rel], { cwd })
+  }
+
+  // Build commit message
+  const msg = message || `phase ${phase}: pact commit`
+  execFileSync('git', ['commit', '-m', msg], { cwd })
 }
 
 // ── Halt predicates ──────────────────────────────────────────────────────
@@ -681,7 +775,7 @@ function main() {
 
   const args = minimist(argv.slice(1), {
     boolean: ['all', 'json', 'force', 'force-overwrite'],
-    string:  ['role', 'session', 'state', 'phase', 'file', 'body', 'from', 'to', 'out', 'scope', 'dir'],
+    string:  ['role', 'session', 'state', 'phase', 'file', 'body', 'from', 'to', 'out', 'scope', 'dir', 'files', 'message'],
     alias:   { d: 'dir' },
   })
 
@@ -747,7 +841,13 @@ function main() {
     return
   }
 
-  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next | drive`)
+  if (verb === 'commit') {
+    const files = args.files ? args.files.split(',').map(f => f.trim()).filter(Boolean) : []
+    cmdCommit({ cwd, phase: args.phase, files, message: args.message })
+    return
+  }
+
+  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next | drive | commit`)
 }
 
 function fail(msg) {
@@ -760,4 +860,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity }

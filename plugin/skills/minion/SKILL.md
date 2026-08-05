@@ -42,8 +42,7 @@ grim mm drive --role minion --session "$CLAUDE_CODE_SESSION_ID"
 - `DRIVE: HALT <reason>` → print the reason and **stop the loop** (`ScheduleWakeup stop`).
   Do not reschedule.
 
-After a phase is `accepted`, commit locally and verify the tree is clean before the next
-tick. The pact commits locally after each accepted phase and **never pushes**.
+After a phase is `accepted`, land it with `grim mm commit --phase N --files <your declared footprint>` — never raw `git commit`, never `git config`, never `git add -A`. The pact commits locally after each accepted phase and **never pushes**.
 
 Budget: the harness tracks cumulative tokens. When over budget, pass
 `--budget-exceeded` to `drive`; it HALTs with `budget`. The loop skill owns the counting.

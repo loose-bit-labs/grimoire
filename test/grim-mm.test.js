@@ -246,3 +246,135 @@ describe('write default recipient → filename', () => {
     }
   })
 })
+
+// ── assertRealIdentity ────────────────────────────────────────────────────────
+
+describe('assertRealIdentity', () => {
+  const { assertRealIdentity, isPlaceholderIdentity } = require('../bin/grim-mm')
+  const { execFileSync } = require('node:child_process')
+
+  function mkrepo(identity) {
+    const tmp = mktmp()
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' })
+    // Init with a valid identity so the repo has a commit, then overwrite
+    // with the test identity — that way git is happy but assertRealIdentity
+    // sees the placeholder we want to test.
+    execFileSync('git', ['config', 'user.name',  'Init'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync('git', ['config', 'user.email', 'init@init.com'], { cwd: tmp, stdio: 'ignore' })
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# test\n')
+    execFileSync('git', ['add', '.'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: tmp, stdio: 'ignore' })
+    // Overwrite with test identity
+    if (identity.name !== null) execFileSync('git', ['config', 'user.name',  identity.name],  { cwd: tmp, stdio: 'ignore' })
+    if (identity.email !== null) execFileSync('git', ['config', 'user.email', identity.email], { cwd: tmp, stdio: 'ignore' })
+    return tmp
+  }
+
+  it('throws for T <t@t>', () => {
+    const tmp = mkrepo({ name: 'T', email: 't@t' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('throws for empty name/email', () => {
+    const tmp = mkrepo({ name: '', email: 'x@y.z' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('throws for single-char name', () => {
+    const tmp = mkrepo({ name: 'a', email: 'a@a.com' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('throws for test@test', () => {
+    const tmp = mkrepo({ name: 'Test', email: 'test@test' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('throws for a@a', () => {
+    const tmp = mkrepo({ name: 'A', email: 'a@a' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('throws for x@localhost', () => {
+    const tmp = mkrepo({ name: 'X', email: 'x@localhost' })
+    try { assert.throws(() => assertRealIdentity(tmp), /placeholder/) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('passes for Val GvM <luckybit4755+lbl@gmail.com>', () => {
+    const tmp = mkrepo({ name: 'Val GvM', email: 'luckybit4755+lbl@gmail.com' })
+    try { assert.doesNotThrow(() => assertRealIdentity(tmp)) }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+})
+
+// ── grim mm commit ────────────────────────────────────────────────────────────
+
+describe('grim mm commit', () => {
+  const { cmdCommit } = require('../bin/grim-mm')
+  const { execFileSync } = require('node:child_process')
+
+  function mkrepo(identity) {
+    const tmp = mktmp()
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync('git', ['config', 'user.name',  identity.name],  { cwd: tmp, stdio: 'ignore' })
+    execFileSync('git', ['config', 'user.email', identity.email], { cwd: tmp, stdio: 'ignore' })
+    fs.writeFileSync(path.join(tmp, 'README.md'), '# test\n')
+    execFileSync('git', ['add', '.'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: tmp, stdio: 'ignore' })
+    return tmp
+  }
+
+  it('refuses with placeholder identity — no commit created', () => {
+    const tmp = mkrepo({ name: 'T', email: 't@t' })
+    const target = path.join(tmp, 'README.md')
+    fs.writeFileSync(target, '# updated\n')
+    try {
+      assert.throws(() => cmdCommit({ cwd: tmp, phase: 1, files: ['README.md'], message: 'test' }), /placeholder/)
+      const log = execFileSync('git', ['log', '--oneline'], { cwd: tmp, encoding: 'utf8' }).trim().split('\n')
+      assert.strictEqual(log.length, 1, 'should not create a commit under placeholder identity')
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('commits only the specified file, leaves unrelated changes untouched', () => {
+    const tmp = mkrepo({ name: 'Val GvM', email: 'luckybit4755+lbl@gmail.com' })
+    const target = path.join(tmp, 'README.md')
+    const other  = path.join(tmp, 'other.md')
+    fs.writeFileSync(target, '# updated\n')
+    fs.writeFileSync(other, '# scratch\n') // untracked, should NOT be staged
+    try {
+      cmdCommit({ cwd: tmp, phase: 1, files: ['README.md'], message: 'phase 1: test' })
+      const log = execFileSync('git', ['log', '--oneline'], { cwd: tmp, encoding: 'utf8' }).trim().split('\n')
+      assert.ok(log[0].includes('phase 1: test'), `expected phase message, got: ${log[0]}`)
+      // other.md should still be untracked
+      const status = execFileSync('git', ['status', '--porcelain'], { cwd: tmp, encoding: 'utf8' }).trim()
+      assert.ok(status.includes('other.md'), `other.md should remain untracked, got: ${status}`)
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('refuses with no --files', () => {
+    const tmp = mkrepo({ name: 'Val GvM', email: 'luckybit4755+lbl@gmail.com' })
+    try {
+      assert.throws(() => cmdCommit({ cwd: tmp, phase: 1, files: [], message: 'x' }), /--files is required/)
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('refuses with non-existent path', () => {
+    const tmp = mkrepo({ name: 'Val GvM', email: 'luckybit4755+lbl@gmail.com' })
+    try {
+      assert.throws(() => cmdCommit({ cwd: tmp, phase: 1, files: ['no-such-file.md'], message: 'x' }), /file not found/)
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('refuses when file has no changes', () => {
+    const tmp = mkrepo({ name: 'Val GvM', email: 'luckybit4755+lbl@gmail.com' })
+    try {
+      assert.throws(() => cmdCommit({ cwd: tmp, phase: 1, files: ['README.md'], message: 'x' }), /no changes/)
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+})
