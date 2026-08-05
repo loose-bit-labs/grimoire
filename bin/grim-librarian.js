@@ -109,13 +109,16 @@ function cmdCommit() {
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
-const sub = process.argv[2] || 'commit'
+if (require.main === module) {
+  // grim.js dispatcher passes [script, cmd, ...argv]; read argv[3] when present,
+  // fall back to argv[2] for direct invocation (node bin/grim-librarian.js commit).
+  const sub = process.argv[3] || process.argv[2] || 'commit'
 
-switch (sub) {
-  case 'commit': cmdCommit(); break
-  case '--help':
-  case '-h':
-    console.log(`
+  switch (sub) {
+    case 'commit': cmdCommit(); break
+    case '--help':
+    case '-h':
+      console.log(`
   grim librarian commit    Scan KB, commit changes, push to origin
                            (no-op if KB is clean)
 
@@ -124,9 +127,10 @@ switch (sub) {
     1  fatal (no KB root, not a git repo, commit failed)
     2  push failed (local commit kept for next retry)
 `)
-    process.exit(0)
-  default:
-    console.error(`grim librarian: unknown subcommand '${sub}'`)
-    console.error("Run 'grim librarian --help'")
-    process.exit(1)
+      process.exit(0)
+    default:
+      console.error(`grim librarian: unknown subcommand '${sub}'`)
+      console.error("Run 'grim librarian --help'")
+      process.exit(1)
+  }
 }

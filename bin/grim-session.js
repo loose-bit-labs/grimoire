@@ -399,8 +399,11 @@ async function saveSession({ topic, summary, learned = [], nextSteps = [], decis
 
     // Best-effort KB durability: commit + push any new/updated entities.
     // Non-fatal — a failed push must never break grim save.
+    // Save/restore process.argv so the required module never sees our argv.
+    const _savedArgv = process.argv
     try { const { cmdCommit } = require('./grim-librarian')
       cmdCommit() } catch (_) { /* librarian failure is non-fatal */ }
+    finally { process.argv = _savedArgv }
 
     return { ok: true, id: open['@id'], endedAt: now, affect }
   }
@@ -419,8 +422,10 @@ async function saveSession({ topic, summary, learned = [], nextSteps = [], decis
     saveEntity(fresh['@id'], fresh, newGraph)
   }
   // Best-effort KB durability
+  const _savedArgv2 = process.argv
   try { const { cmdCommit } = require('./grim-librarian')
     cmdCommit() } catch (_) { /* librarian failure is non-fatal */ }
+  finally { process.argv = _savedArgv2 }
   return { ok: true, id: result.id, endedAt: now }
 }
 
