@@ -26,7 +26,11 @@
 const { spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
-const { assertRealIdentity } = require('./grim-mm')
+// Late-bound: grim-mm.js requires this module at its top (before its own
+// module.exports is assigned), so destructuring here would capture `undefined`
+// from the half-loaded circular dep. Hold the module object and read the
+// property at call time, when grim-mm.js has finished loading.
+const mm = require('./grim-mm')
 
 // Decision-scope tags the hierophant must never rule on — those belong to the
 // user. If drive sees an ACT with a direction command while the thread's latest
@@ -66,7 +70,7 @@ function drive({ role, session, budgetExceeded, cwd, dir }) {
     // Identity preflight: refuse to proceed if git identity is a placeholder.
     // This catches the model-improvised `git config user.name T` incident pattern
     // before any pact commit can poison history.
-    try { assertRealIdentity(cwd) } catch (e) {
+    try { mm.assertRealIdentity(cwd) } catch (e) {
       console.error(`grim mm drive: ${e.message}`)
       process.exit(1)
     }

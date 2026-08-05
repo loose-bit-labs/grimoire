@@ -378,3 +378,20 @@ describe('grim mm commit', () => {
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 })
+
+// ── drive identity guard must be reachable (regression: circular-dep undefined) ──
+// grim-mm.js requires grim-mm-drive.js at its top, before its own module.exports.
+// If drive destructures assertRealIdentity at load, it captures `undefined` and the
+// drive ACT preflight dies with "not a function" — the guard is dead exactly in the
+// autonomous-loop commit path. Node flags this precise bug with a circular-dep warning.
+describe('drive identity guard reachability', () => {
+  const { spawnSync } = require('node:child_process')
+  it('loading grim-mm then grim-mm-drive emits NO circular-dependency warning', () => {
+    const repo = path.join(__dirname, '..')
+    const r = spawnSync(process.execPath,
+      ['-e', "require('./bin/grim-mm.js'); require('./bin/grim-mm-drive.js')"],
+      { cwd: repo, encoding: 'utf8' })
+    assert.ok(!/circular dependency/i.test(r.stderr || ''),
+      'circular-dep warning present — drive guard would be undefined:\n' + r.stderr)
+  })
+})
