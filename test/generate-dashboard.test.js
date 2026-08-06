@@ -62,7 +62,7 @@ describe('DashboardGenerator.rebuild()', () => {
     const rows = dashboard.panels.filter(p => p.type === 'row' && p.title.startsWith('▸ '))
     assert.strictEqual(rows.length, 2)
     assert.deepStrictEqual(rows.map(r => r.title), ['▸ aid', '▸ chonko'])
-    for (const row of rows) assert.strictEqual(row.panels.length, 10)
+    for (const row of rows) assert.strictEqual(row.panels.length, 11)
 
     // Static panels (Overview) survive untouched
     assert.ok(dashboard.panels.some(p => p.id === 1 && p.title === 'VRAM Hotspots'))

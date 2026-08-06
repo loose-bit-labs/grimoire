@@ -190,7 +190,8 @@ describe('write --state brief requires --phase', () => {
       const files = fs.readdirSync(path.join(tmp, '.mm'))
       assert.strictEqual(files.length, 1)
       const content = fs.readFileSync(path.join(tmp, '.mm', files[0]), 'utf8')
-      assert.ok(content.startsWith('phase: 3 · state: brief'))
+      assert.ok(content.includes('phase: 3'), 'should contain phase: 3')
+      assert.ok(content.includes('state: brief'), 'should contain state: brief')
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }

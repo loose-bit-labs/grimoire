@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const os = require('node:os')
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -117,33 +118,28 @@ test('HALT budget — --budget-exceeded flag, exit 4', () => {
 // ── HALT roadmap-empty: accepted, no queued phases ───────────────────────────
 
 test('HALT roadmap-empty — prints DRIVE: HALT, exit 4', () => {
-  const dir = createFixtureThread([
-    { num: 1, role: 'mage', phase: '5', state: 'brief', body: 'Phase 5 brief' },
-    { num: 2, role: 'minion', phase: '5', state: 'report', body: 'Phase 5 done' },
-    { num: 3, role: 'mage', phase: '5', state: 'accepted', body: 'Accepted' },
-  ])
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'grim-mm-drive-fixture-'))
+  const dir = path.join(fixtureRoot, '.mm')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(path.join(fixtureRoot, 'plans'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '0001-mage.md'), 'phase: 5 · state: brief\n\nPhase 5 brief\n')
+  fs.writeFileSync(path.join(dir, '0002-minion.md'), 'phase: 5 · state: report\n\nPhase 5 done\n')
+  fs.writeFileSync(path.join(dir, '0003-mage.md'), 'phase: 5 · state: accepted\n\nAccepted\n')
+  fs.writeFileSync(
+    path.join(fixtureRoot, 'plans', 'ROADMAP.md'),
+    '# Roadmap\n\n| 5 | plans/phase-5.md | done | ✅ accepted |\n'
+  )
   try {
-    // Patch ROADMAP.md to remove all queued phases
-    const roadmapPath = path.join(__dirname, '..', 'plans', 'ROADMAP.md')
-    const original = fs.readFileSync(roadmapPath, 'utf8')
-    const patched = original.split('\n').map(line => {
-      const match = /^\| (\d+) \| plans\/phase-\d+\.md/.exec(line)
-      if (match && (line.includes('queued') || line.includes('blocked') || line.includes('reserved')) && !line.includes('✅ accepted')) {
-        return line.replace(/(queued|blocked|reserved)/i, '✅ accepted')
-      }
-      return line
-    }).join('\n')
-    fs.writeFileSync(roadmapPath, patched, 'utf8')
-    try {
-      const out = runDrive(dir, 'mage')
-      assert.strictEqual(out.status, 4, 'exit code should be 4 for HALT')
-      assert.ok(out.stdout.includes('DRIVE: HALT'), 'should print DRIVE: HALT')
-      assert.ok(out.stdout.includes('roadmap-empty'), 'should mention roadmap-empty')
-    } finally {
-      fs.writeFileSync(roadmapPath, original, 'utf8')
-    }
+    const out = spawnSync(
+      process.execPath,
+      [path.join(__dirname, '..', 'bin', 'grim-mm-drive.js'), '--role', 'mage', '--session', 'test-session', '--dir', dir],
+      { cwd: fixtureRoot, encoding: 'utf8', timeout: 10000 }
+    )
+    assert.strictEqual(out.status, 4, 'exit code should be 4 for HALT')
+    assert.ok(out.stdout.includes('DRIVE: HALT'), 'should print DRIVE: HALT')
+    assert.ok(out.stdout.includes('roadmap-empty'), 'should mention roadmap-empty')
   } finally {
-    cleanupFixture()
+    fs.rmSync(fixtureRoot, { recursive: true, force: true })
   }
 })
 

@@ -310,7 +310,10 @@ class DashboardGenerator {
     if (before !== after) dashboard.version = (dashboard.version || 0) + 1
 
     const text = JSON.stringify(dashboard, null, 2) + '\n'
+    fs.mkdirSync(path.dirname(this.dashboardPath), { recursive: true })
+    fs.mkdirSync(path.dirname(this.provisioningPath), { recursive: true })
     fs.writeFileSync(this.dashboardPath, text)
+    fs.writeFileSync(this.provisioningPath, text)
 
     return { hosts, changed: before !== after, version: dashboard.version }
   }

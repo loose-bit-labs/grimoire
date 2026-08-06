@@ -115,8 +115,8 @@ function resolveRigHub() {
   if (explicit) return explicit
   const grimoire = lblEndpoint('grimoire')
   if (!grimoire) return null
-  const { host, port } = new URL(grimoire)
-  return `${host.startsWith('http') ? '' : 'http://'}${host.replace(/^https?:\/\//, '')}:18081`
+  const { hostname } = new URL(grimoire)
+  return `http://${hostname}:18081`
 }
 
 /**

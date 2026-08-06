@@ -474,7 +474,7 @@ describe('getFleet()', () => {
   beforeEach(async () => {
     const hostname = os.hostname().toLowerCase()
     const { server, stop, getSnapshot } = rig.serve({
-      port: 18081,
+      port: 18082,
       interval: 1,
       listen: '127.0.0.1',
       boxes: [{ host: hostname, label: hostname, aliases: [hostname], services: [] }],
@@ -524,7 +524,7 @@ describe('getFleet()', () => {
     const fleet = await rig.getFleet(boxes)
     assert.ok(fleet.boxes)
 
-    // Local box should be up (agent running on 127.0.0.1:18081)
+    // Local box should be up (agent running on 127.0.0.1:18082)
     const local = fleet.boxes.find(b => b.name === hostname)
     assert.ok(local, 'local box should be in fleet')
     assert.strictEqual(local.up, true, 'local box should be up')
