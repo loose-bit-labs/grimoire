@@ -320,8 +320,8 @@ primary (Prometheus for history) · inlined Three.js meeples · **thin vertical 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 61 | plans/phase-61.md | **thin vertical slice, aid only** — `lib/hmm.js` status state machine (parse `.mm` + `grim roadmap`), `grim rig` `GET /hmm`, grimoire `GET /api/hmm` (aid-only) + `/hall`, `grim hmm` CLI, rough Three.js Guild Hall. Proves the whole pipe end-to-end | queued (hierophant, 2026-08-06) — Track Q |
-| 62 | (brief TBD) | **fleet fan-out + WS + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`), WS push-on-change, `hmm_*` gauges, host/project switcher | planned — Track Q |
-| 63 | (brief TBD) | **Guild Hall polish** — full 8-status meeple animations, idle-cycle tour, gray-out on inactivity, info-panel, distinct per-role avatars | planned — Track Q |
+| 62 | plans/phase-62.md | **fleet fan-out + WS + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`, down-box tolerant), WS push-on-change, `hmm_*` gauges, host/project switcher | queued (hierophant, 2026-08-06) — Track Q; depends on 61 |
+| 63 | plans/phase-63.md | **Guild Hall polish** — full status→meeple animations, idle-cycle tour, gray-out on inactivity, `/api/hmm/:host/:project` info-panel, distinct per-role avatars | queued (hierophant, 2026-08-06) — Track Q; depends on 62 |
 
 ## Acceptance bar (mage enforces per phase)
 
