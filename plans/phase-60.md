@@ -39,7 +39,10 @@ again. Deterministic mechanics — fix the tests/teardown, don't paper over with
 5. **Un-couple the live-hub rig test** (`rig.test.js` `fetchFleetRemote`) — mock the fetch (feed it a
    canned hub response) so it tests the parse/shape deterministically, **or** tag it as
    integration/network-only and exclude it from the default `node --test test/` run. The default suite
-   must pass with **no live services**.
+   must pass with **no live services**. ⚠ **The "Invalid URL" here is a REAL bug** (`resolveRigHub`
+   builds a double-port `http://aid:3663:18081`), fixed in **phase 65** — do **not** mock it away in a
+   way that hides that. Mock only the actual network call; if unsure, tag/skip this one assertion and
+   leave the URL-shape fix to 65 rather than papering over it.
 6. **Ledger reconcile (docs, rides along).** In `plans/ROADMAP.md`: (a) de-duplicate the **53/54** rows
    so `grim roadmap` stops flagging drift — merge/renumber the *ROADMAP rows only*, do **not** rename
    phase briefs on disk; (b) close **phase 32** (grim-tavern) — it's superseded by Track G-v2 /

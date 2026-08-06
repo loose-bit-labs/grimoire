@@ -323,6 +323,16 @@ primary (Prometheus for history) · inlined Three.js meeples · **thin vertical 
 | 62 | plans/phase-62.md | **fleet fan-out + WS + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`, down-box tolerant), WS push-on-change, `hmm_*` gauges, host/project switcher | queued (hierophant, 2026-08-06) — Track Q; depends on 61 |
 | 63 | plans/phase-63.md | **Guild Hall polish** — full status→meeple animations, idle-cycle tour, gray-out on inactivity, `/api/hmm/:host/:project` info-panel, distinct per-role avatars | queued (hierophant, 2026-08-06) — Track Q; depends on 62 |
 
+## Track K cont. — fresh-client robustness (phases 64–65)
+
+Found live on the **new box joining the fleet** (same way vier gave us 53/54/59): first-run CLI commands
+die with cryptic errors instead of resolving aid via lbl-config. Both are onboarding blockers.
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 64 | plans/phase-64.md | **`grim host list` remote mode** — clients (no `GRIMOIRE_ROOT`) throw `local KB required` instead of fetching from aid. Add `GET /api/hosts/inventory` + a `list()` remote fallback mirroring `gen-hosts` (phase 54). Byte-identical local vs remote | queued (hierophant, 2026-08-06) — Track K |
+| 65 | plans/phase-65.md | **`grim rig` `Invalid URL` fix** — `resolveRigHub` destructures `URL.host` (hostname:port) and appends `:18081` → double-port `http://aid:3663:18081`. Use `.hostname`. Real bug (masked on aid by local path); also the true cause of phase 60's rig-test failure | queued (hierophant, 2026-08-06) — Track K |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
