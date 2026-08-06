@@ -38,8 +38,9 @@ Two coupled defects:
 - Don't `--no-verify` around the hostname pre-commit hook for real code; a **fixture** hostname belongs in
   a test constant the hook can be taught to allow — if you must bypass, say so explicitly in the report
   (as you did) and keep it to fixtures only.
-- **Aside, escalated not fixed here:** a **stale `blip` host** is still in the KB (phase 43 was meant to
-  kill it). That's a KB-hygiene item, not part of this revise — note it, leave it.
+- **`blip` is a REAL, live host** (the user's workstation — they SSH into aid from it). Do **not** prune
+  it or treat it as stale. It coming first in the list is *correct* — which is exactly why the test must
+  not assume `aid` is first. (Phase 43 only dropped a stale `.141` IP on blip, never the host.)
 
 ## Success checks
 
