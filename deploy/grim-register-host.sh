@@ -43,12 +43,14 @@ _build_description() {
   node -e "
     const e = process.env;
     const gpus = JSON.parse(e.GPU_JSON || '[]');
+    const bat = e.BATTERY_JSON && e.BATTERY_JSON !== 'null' ? JSON.parse(e.BATTERY_JSON) : null;
     process.stdout.write([
       'CPU: ' + e.CPU_MODEL + ' (' + e.CPU_CORES + 'c/' + e.CPU_THREADS + 't)',
-      'RAM: ' + e.MEM_TOTAL_GB + 'GB',
+      'RAM: ' + (e.MEM_TOTAL_GB < 1 ? e.MEM_TOTAL_MB + 'MB' : e.MEM_TOTAL_GB + 'GB'),
       gpus.length ? 'GPU: ' + gpus.map(g => g.name + (g.vram_mb ? ' ' + Math.round(g.vram_mb/1024) + 'GB' : '')).join(', ') : null,
-      (e.MOBO_VENDOR && e.MOBO_NAME) ? 'MB: ' + e.MOBO_VENDOR + ' ' + e.MOBO_NAME : null,
+      (e.MOBO_VENDOR && e.MOBO_NAME) ? 'MB: ' + e.MOBO_VENDOR + ' ' + e.MOBO_NAME : (e.MOBO_NAME ? 'MB: ' + e.MOBO_NAME : null),
       'OS: ' + e.OS_PRETTY,
+      (e.IS_LAPTOP == 'true' && bat) ? 'Battery: ' + (bat.model || 'Battery') + ' ' + (bat.health_pct != null ? bat.health_pct + '%' : '') : null,
     ].filter(Boolean).join(' · '));
   "
 }
@@ -69,7 +71,10 @@ _build_remember_payload() {
       description: e.DESC,
       hardware: {
         cpu: { model: e.CPU_MODEL, sockets: +e.CPU_SOCKETS, cores: +e.CPU_CORES, threads: +e.CPU_THREADS, mhz: +e.CPU_MHZ||null },
-        memory: { total_gb: +e.MEM_TOTAL_GB },
+        memory: { total_gb: +e.MEM_TOTAL_GB, total_mb: +e.MEM_TOTAL_MB },
+        battery: e.BATTERY_JSON && e.BATTERY_JSON !== 'null' ? JSON.parse(e.BATTERY_JSON) : null,
+        product: e.PRODUCT_NAME || null,
+        is_laptop: e.IS_LAPTOP === 'true',
         gpu: gpus,
         vram_total_gb,
         motherboard: { vendor: e.MOBO_VENDOR||null, model: e.MOBO_NAME||null, product: e.MOBO_PRODUCT||null },
@@ -139,7 +144,8 @@ _main() {
 
   step "Memory"
   _gather_mem
-  ok "${MEM_TOTAL_GB}GB"
+  if [[ "$MEM_TOTAL_GB" -lt 1 ]]; then ok "${MEM_TOTAL_MB}MB"
+  else ok "${MEM_TOTAL_GB}GB"; fi
 
   step "GPU"
   _gather_gpu
@@ -149,11 +155,20 @@ _main() {
     if (!gpus.length) { process.stdout.write('none detected'); process.exit(); }
     process.stdout.write(gpus.map(g => g.name + (g.vram_mb ? ' ' + Math.round(g.vram_mb/1024) + 'GB VRAM' : '')).join(', '));
   " 2>/dev/null || echo 'none')"
-  [[ "$gpu_summary" == "none detected" ]] && warn "$gpu_summary" || ok "$gpu_summary"
+  [[ "$gpu_summary" == "none detected" ]] && ok "no discrete GPU" || ok "$gpu_summary"
 
   step "Motherboard"
   _gather_mobo
-  [[ -n "$MOBO_VENDOR" ]] && ok "${MOBO_VENDOR} ${MOBO_NAME}" || warn "DMI unavailable"
+  [[ -n "$MOBO_VENDOR" || -n "$MOBO_NAME" ]] && ok "${MOBO_VENDOR:+$MOBO_VENDOR }${MOBO_NAME}" || ok "no board info"
+
+  _gather_power
+  if [[ "$BATTERY_JSON" != "null" ]]; then
+    step "Power"
+    local bat_model bat_health
+    bat_model="$(node -e "console.log(JSON.parse(process.env.BATTERY_JSON).model || 'Battery')" 2>/dev/null || echo 'Battery')"
+    bat_health="$(node -e "const b=JSON.parse(process.env.BATTERY_JSON); console.log(b.health_pct != null ? b.health_pct+'%' : '')" 2>/dev/null || echo '')"
+    ok "${bat_model}${bat_health:+ $bat_health}"
+  fi
 
   step "Storage"
   _gather_storage
