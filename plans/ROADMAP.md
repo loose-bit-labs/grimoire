@@ -306,7 +306,7 @@ is unrunnable as a whole. Cruft, not features. This restores a trustworthy `node
 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
-| 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. **Success = `node --test test/` green + self-terminating.** | queued (hierophant, 2026-08-06) — Track P |
+| 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. | ✅ accepted (hierophant-verified 2026-08-06) — Track P; `node --test` 373/373 green + self-terminating, hang killed, dups + phase 32 reconciled |
 
 ## Track Q — HMM Tracking ("The Guild Hall") (phases 61–63)
 

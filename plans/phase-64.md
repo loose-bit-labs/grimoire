@@ -58,6 +58,7 @@ existing `/api/hosts` at :171).
   message, non-zero exit, **no stack trace**.
 - Note in the phase report that the endpoint requires a **`grimoire.service` restart on aid** to go live
   (deploy step is user-gated — surface it, don't attempt it).
-- `node --test test/` green + self-terminating (phase 60's bar holds).
+- `node --test` from the repo root (auto-discovers `test/*.test.js`) green + self-terminating — **not**
+  `node --test test/` (a bare dir errors `Cannot find module` on this Node; that's not a real failure).
 - Footprint: `bin/grim-server.js` (new `/api/hosts/inventory`), `bin/grim-host.js` (`list()` remote
   fallback + format/get split), `test/` (endpoint shape + remote-mode list renders + graceful no-source).

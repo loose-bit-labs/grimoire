@@ -58,6 +58,7 @@ masked (aid is `isLocal`, reads the fleet locally, never calls `resolveRigHub`);
 - **On aid:** `grim rig` output unchanged (regression — still local path).
 - **`test/rig.test.js` passes** with only the genuinely live-hub-dependent assertion mocked/tagged; the
   URL-shape assertion runs for real. Cross-check phase 60 didn't mask this.
-- `node --test test/` green + self-terminating.
+- `node --test` from the repo root (auto-discovers `test/*.test.js`) green + self-terminating — **not**
+  `node --test test/` (bare dir errors `Cannot find module` on this Node).
 - Footprint: `bin/grim-rig.js` (`resolveRigHub`), `test/rig.test.js` (URL-shape unit + mock only the
   live call).
