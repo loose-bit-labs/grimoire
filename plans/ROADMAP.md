@@ -302,7 +302,15 @@ Sequence: durability now (protects against irreversible loss), then pieces 2–3
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
+- **A test existing (or a module loading) is not acceptance — the behavior must be
+  observed in its real invocation path.** For a guard/safety feature, demonstrate it
+  *triggers* (e.g. the drive preflight refuses a placeholder identity), not just that its
+  function is defined. (Phase 58's guard passed review while dead via a circular-dep —
+  never again.)
+- **Warnings in your own run are findings, not noise** — a circular-dependency /
+  deprecation warning is chased before you report green.
 - `git diff --stat` in **both** repos matches the brief's declared footprint exactly.
+  Out-of-scope finds are **escalated, not silently committed** (no unbriefed commits).
 - Moved code matches grimoire lib style (`'use strict'`, doc-block header — see
   `lib/a1111-client.js`); shims stay under ~20 lines each.
 - Briefs may declare `requires: permission` in a header line; `grim mm next` will
