@@ -23,14 +23,49 @@
  *   grim mm drive --role <r> --session <s> --budget-exceeded
  */
 
-const { spawnSync } = require('node:child_process')
+const { spawnSync, execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
-// Late-bound: grim-mm.js requires this module at its top (before its own
-// module.exports is assigned), so destructuring here would capture `undefined`
-// from the half-loaded circular dep. Hold the module object and read the
-// property at call time, when grim-mm.js has finished loading.
-const mm = require('./grim-mm')
+// Identity check inlined to avoid circular dep with grim-mm.js (which
+// requires this module at its top, before its exports are assigned).
+function assertRealIdentity(cwd) {
+  let name, email
+  try {
+    name  = execFileSync('git', ['config', 'user.name'],  { cwd, encoding: 'utf8' }).trim()
+    email = execFileSync('git', ['config', 'user.email'], { cwd, encoding: 'utf8' }).trim()
+  } catch (e) {
+    throw new Error(
+      `grim mm: git identity check failed — ${e.message}. ` +
+      `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+    )
+  }
+  // Empty name or email
+  if (!name || !email) throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+  // Name is a single short token (≤ 2 chars) — e.g. "T", "a"
+  if (name.split(/\s+/).length === 1 && name.length <= 2) throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+  // Trivial email shapes
+  if (email === 't@t' || email === 'test@test' || email === 'a@a') throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+  // Single-char local + single-char domain
+  const [local, domain] = email.split('@')
+  if (local.length <= 1 && domain.length <= 1) throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+  // No dot in domain (catches localhost, host, etc.)
+  if (!domain.includes('.')) throw new Error(
+    `grim mm: refusing to commit: git identity looks like a placeholder ('${name} <${email}>'). ` +
+    `Set a real identity (\`git config user.name/email\`) or unset a bad local override — the pact never invents one.`
+  )
+}
 
 // Decision-scope tags the hierophant must never rule on — those belong to the
 // user. If drive sees an ACT with a direction command while the thread's latest
@@ -74,7 +109,7 @@ function drive({ role, session, budgetExceeded, cwd, dir }) {
     // Identity preflight: refuse to proceed if git identity is a placeholder.
     // This catches the model-improvised `git config user.name T` incident pattern
     // before any pact commit can poison history.
-    try { mm.assertRealIdentity(cwd) } catch (e) {
+    try { assertRealIdentity(cwd) } catch (e) {
       console.error(`grim mm drive: ${e.message}`)
       process.exit(1)
     }
