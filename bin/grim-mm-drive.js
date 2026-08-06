@@ -39,7 +39,11 @@ const mm = require('./grim-mm')
 const DECISION_SCOPES = new Set(['scope', 'product', 'external'])
 
 function drive({ role, session, budgetExceeded, cwd, dir }) {
-  const args = ['bin/grim-mm.js', 'next', '--role', role, '--session', session, '--json']
+  // Resolve grim-mm.js relative to this script's location, not cwd.
+  // The .mm pact lives in arbitrary repos; bin/grim-mm.js is only in the
+  // grimoire install, never in the target repo.
+  const mmScript = path.resolve(__dirname, 'grim-mm.js')
+  const args = [mmScript, 'next', '--role', role, '--session', session, '--json']
   if (dir) args.push('--dir', dir)
   if (budgetExceeded) args.push('--budget-exceeded')
 
