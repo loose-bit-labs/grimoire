@@ -2,8 +2,9 @@
 
 **Authority:** hierophant, 2026-07-08; extended 2026-07-17, 2026-07-19, 2026-07-22,
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
-containerization ruling), 2026-08-04 (Tracks K, H, I, O). Binding for all phases.
-Last updated 2026-08-05.
+containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
+commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
+Binding for all phases. Last updated 2026-08-06.
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -220,7 +221,7 @@ dialogue: 2026-07-23; backlog fixture: `tmp/hi/idk.md`.
 | 56 | fLimfLaMs `plans/swandive.md` (Phase 8) | **Swandive idea intake** — drop a "new idea" → she asks 2-3 focused questions (embeds w/ project buttons/select) → drafts a routed feature-request → files to `grim features` on 👍. User-initiated goal creation (complements Phase 3 dive-scouting) | queued (hierophant, 2026-08-04) — Track H cont.; depends on 3/5/7; user-designed |
 | 57 | plans/phase-57.md | **`grim librarian` — KB durability cadence** — the KB defaulted to *never* pushed (513 uncommitted found live 2026-08-04); aid is a SPOF. `grim librarian commit` (skip-if-clean, code-generated `N new / M updated` message, push, non-fatal on failure, never `--force`, **KB-only**) + nightly user timer on aid + best-effort `grim save` hook. v1 durability only; curation deferred to v2 | ✅ accepted (loop, `230a5c2`+`ea7154c`+`fa4c410`) — 6/6 tests; **follow-up:** `grim-librarian.js` CLI runs on `require()` (breaks `grim save`); fix: wrap in `if (require.main === module)` + save/restore `process.argv` in session hooks |
 | 58 | plans/phase-58.md | **pact commit guard** — no pact verb commits phase *code*, so a local model improvised `git config T; git add -A; git commit -m init` and poisoned `.git/config` (3 commits re-authored + force-pushed to fix). Add `assertRealIdentity()` (refuse placeholder identities, never *set* one) + hardened `grim mm commit --phase N --files …` (explicit staging, structured message, never `git add -A`) + wire the gate into `archive`/`drive` + point skills at the verb | ✅ accepted (`d04ef18`) — 27/28 tests (1 pre-existing legacy-format failure); **follow-up:** circular dep `grim-mm.js`↔`grim-mm-drive.js` from reverse require; move `assertRealIdentity` to `lib/git.js` |
-| 59 | plans/phase-59.md | **heterogeneous host inventory** — vier (Pi Zero 2 W) registered but inventory is x86-centric (`CPU: unknown`, `RAM: 0GB`, `DMI unavailable`); fleet also has laptops with no battery info. ARM device-tree fallbacks (CPU/board model, sub-1GB RAM in MB) + laptop battery/chassis via **sysfs only, no sudo** (`/sys/class/power_supply/BAT*`, `/sys/class/dmi/id`) + entity schema (`battery`, `total_mb`, `is_laptop`) + softer GPU/mobo labels. Graceful; x86 unchanged | queued (hierophant, 2026-08-05) — Track K; found onboarding vier |
+| 59 | plans/phase-59.md | **heterogeneous host inventory** — vier (Pi Zero 2 W) registered but inventory is x86-centric (`CPU: unknown`, `RAM: 0GB`, `DMI unavailable`); fleet also has laptops with no battery info. ARM device-tree fallbacks (CPU/board model, sub-1GB RAM in MB) + laptop battery/chassis via **sysfs only, no sudo** (`/sys/class/power_supply/BAT*`, `/sys/class/dmi/id`) + entity schema (`battery`, `total_mb`, `is_laptop`) + softer GPU/mobo labels. Graceful; x86 unchanged | ✅ accepted (loop, `f69a41f`+`7637f4e`) — 23/23 tests (librarian 6/6, session 5/5, platform-gather 12/12); x86 regression verified on aid; **follow-up:** on-hardware verification on vier (Pi Zero 2 W) + a laptop |
 
 **Track L (future, not yet briefed):** manage the fleet's **user-level systemd units via API**
 (replace the ad-hoc manual `systemctl --user` management) + **fleet-wide config invalidation**
