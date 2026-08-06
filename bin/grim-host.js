@@ -124,8 +124,32 @@ class GrimHost {
 
   // ── list ──────────────────────────────────────────────────────────────────────
 
-  async list() {
-    const hosts = this._scanEntities()
+  /**
+   * Fetch host entities: local KB when config.root is set, otherwise remote
+   * inventory endpoint. Returns the raw entity array (formatting is separate).
+   */
+  async _fetchHosts() {
+    if (config.root) return this._scanEntities()
+    if (!config.host) {
+      const e = new Error(
+        'No local KB and no grimoire server resolved; ' +
+        'run the client setup so lbl-config knows where the grimoire is.'
+      )
+      e.code = 'NO_SOURCE'
+      throw e
+    }
+    try {
+      const res = await axios.get(`${config.host}/api/hosts/inventory`, { timeout: 5000 })
+      return Array.isArray(res.data) ? res.data : []
+    } catch (e) {
+      throw Object.assign(new Error(`Could not fetch host inventory from ${config.host}/api/hosts/inventory — ${e.message}`), { code: 'REMOTE_FAIL' })
+    }
+  }
+
+  /**
+   * Render a host-entities array to stdout (same formatting regardless of source).
+   */
+  _renderHostList(hosts) {
     if (!hosts.length) {
       console.log('No registered hosts. Run: grim host register')
       return
@@ -137,6 +161,20 @@ class GrimHost {
       console.log(`  ${(h.name || '?').padEnd(W)}  ${ip.padEnd(16)}  ${h.description || ''}`)
     }
     console.log()
+  }
+
+  async list() {
+    try {
+      const hosts = await this._fetchHosts()
+      this._renderHostList(hosts)
+    } catch (e) {
+      if (e.code === 'NO_SOURCE') {
+        console.error(e.message)
+        process.exit(1)
+      }
+      console.error(e.message)
+      process.exit(1)
+    }
   }
 
   // ── gen-hosts ─────────────────────────────────────────────────────────────────

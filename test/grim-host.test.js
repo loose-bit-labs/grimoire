@@ -1,6 +1,6 @@
 'use strict'
 
-const { describe, it } = require('node:test')
+const { describe, it, afterEach } = require('node:test')
 const assert = require('node:assert')
 
 const { _canonicalIP, _isUsableIP, HOSTS_BEGIN, HOSTS_END, buildHostsOutput, GrimHost } = require('../bin/grim-host.js')
@@ -199,6 +199,113 @@ describe('genHosts uid-0 guard', () => {
       process.stderr.write = origStderr
       if (origEnv === undefined) delete process.env.SUDO_USER
       else process.env.SUDO_USER = origEnv
+    }
+  })
+})
+
+// ── list remote mode ──────────────────────────────────────────────────────────
+
+describe('list remote mode', () => {
+  const { config } = require('../lib/env')
+  const origRoot = config.root
+  const origHost = config.host
+
+  afterEach(() => {
+    config.root = origRoot
+    config.host = origHost
+  })
+
+  it('_fetchHosts uses local KB when config.root is set', async () => {
+    config.root = '/home/vgvm/data/grimoire-kb'
+    config.host = null
+    const h = new GrimHost()
+    const hosts = await h._fetchHosts()
+    assert.ok(Array.isArray(hosts))
+    assert.ok(hosts.length > 0)
+    assert.equal(hosts[0].tags.includes('hardware/inventory'), true)
+  })
+
+  it('_fetchHosts falls back to remote when config.root is null', async () => {
+    config.root = null
+    config.host = 'http://aid:3663'
+    const h = new GrimHost()
+    const hosts = await h._fetchHosts()
+    assert.ok(Array.isArray(hosts))
+    assert.ok(hosts.length > 0)
+    assert.equal(hosts[0].name, 'aid')
+  })
+
+  it('_fetchHosts throws NO_SOURCE when neither root nor host available', async () => {
+    config.root = null
+    config.host = null
+    const h = new GrimHost()
+    try {
+      await h._fetchHosts()
+      assert.fail('should have thrown')
+    } catch (e) {
+      assert.equal(e.code, 'NO_SOURCE')
+      assert.ok(e.message.includes('No local KB and no grimoire server resolved'))
+    }
+  })
+
+  it('_fetchHosts throws REMOTE_FAIL on unreachable server', async () => {
+    config.root = null
+    config.host = 'http://127.0.0.1:1/nonexistent'
+    const h = new GrimHost()
+    try {
+      await h._fetchHosts()
+      assert.fail('should have thrown')
+    } catch (e) {
+      assert.equal(e.code, 'REMOTE_FAIL')
+      assert.ok(e.message.includes('Could not fetch host inventory'))
+    }
+  })
+
+  it('_renderHostList prints nothing for empty array', async () => {
+    const h = new GrimHost()
+    const origStdout = process.stdout.write
+    let out = ''
+    process.stdout.write = (chunk) => { out += chunk; return true }
+    try {
+      h._renderHostList([])
+      assert.ok(out.includes('No registered hosts'))
+    } finally {
+      process.stdout.write = origStdout
+    }
+  })
+
+  it('_renderHostList formats hosts with IP and description', async () => {
+    const h = new GrimHost()
+    const origStdout = process.stdout.write
+    let out = ''
+    process.stdout.write = (chunk) => { out += chunk; return true }
+    try {
+      h._renderHostList([
+        { name: 'aid', network: { addresses: [{ ip: '192.168.0.202' }] }, description: 'test host' },
+      ])
+      assert.ok(out.includes('aid'))
+      assert.ok(out.includes('192.168.0.202'))
+      assert.ok(out.includes('test host'))
+    } finally {
+      process.stdout.write = origStdout
+    }
+  })
+
+  it('list() exits 1 with actionable message when no source', async () => {
+    config.root = null
+    config.host = null
+    const h = new GrimHost()
+    const origExit = process.exit
+    let exitCode = null
+    process.exit = (code) => { exitCode = code; throw Object.assign(new Error('exit ' + code), { code }) }
+    try {
+      await h.list()
+      assert.fail('should have thrown')
+    } catch (e) {
+      assert.equal(e.message, 'exit 1')
+      assert.equal(exitCode, 1)
+    } finally {
+      process.exit = origExit
     }
   })
 })

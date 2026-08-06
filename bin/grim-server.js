@@ -177,6 +177,22 @@ app.get('/api/hosts', async (req, res) => {
   }
 })
 
+// GET /api/hosts/inventory — host entities as JSON, so clients (no GRIMOIRE_ROOT)
+// can run `grim host list` by fetching the raw entities and rendering them
+// identically to the local path. Same source (scanHostEntities), so remote bytes
+// == local bytes.
+app.get('/api/hosts/inventory', async (req, res) => {
+  if (!config.root) {
+    return res.status(503).json({ error: 'no local KB root — server not configured for inventory' })
+  }
+  try {
+    const hosts = scanHostEntities(config.root)
+    res.json(hosts)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/api/divine', async (req, res) => {
   try {
     const graph   = await getGraph()
