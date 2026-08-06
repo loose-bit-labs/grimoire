@@ -310,6 +310,19 @@ is unrunnable as a whole. Cruft, not features. This restores a trustworthy `node
 |-------|-------|------|--------|
 | 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. **Success = `node --test test/` green + self-terminating.** | queued (hierophant, 2026-08-06) — Track P |
 
+## Track Q — HMM Tracking ("The Guild Hall") (phases 61–63)
+
+Design: `plans/track-hmm-tracking.md`. Live visibility into the h/m/m pact loops across the fleet —
+who's working/waiting/done — as a cute 3D-meeple viewer. Beside Track F: telemetry watches *GPUs*,
+this watches *sessions*. User-designed (`/tmp/hmm.md`). Decisions (user, 2026-08-06): grimoire REST+WS
+primary (Prometheus for history) · inlined Three.js meeples · **thin vertical slice first**.
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 61 | plans/phase-61.md | **thin vertical slice, aid only** — `lib/hmm.js` status state machine (parse `.mm` + `grim roadmap`), `grim rig` `GET /hmm`, grimoire `GET /api/hmm` (aid-only) + `/hall`, `grim hmm` CLI, rough Three.js Guild Hall. Proves the whole pipe end-to-end | queued (hierophant, 2026-08-06) — Track Q |
+| 62 | (brief TBD) | **fleet fan-out + WS + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`), WS push-on-change, `hmm_*` gauges, host/project switcher | planned — Track Q |
+| 63 | (brief TBD) | **Guild Hall polish** — full 8-status meeple animations, idle-cycle tour, gray-out on inactivity, info-panel, distinct per-role avatars | planned — Track Q |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
