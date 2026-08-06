@@ -301,6 +301,15 @@ The SPOF decomposes into three pieces, cheapest-highest-value first:
 
 Sequence: durability now (protects against irreversible loss), then pieces 2–3 as a later arc.
 
+## Track P — repo hygiene (phase 60)
+
+Found live 2026-08-06: `node --test test/` **hangs** (leaky server test) and 5 files fail — the suite
+is unrunnable as a whole. Cruft, not features. This restores a trustworthy `node --test test/`.
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. **Success = `node --test test/` green + self-terminating.** | queued (hierophant, 2026-08-06) — Track P |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
