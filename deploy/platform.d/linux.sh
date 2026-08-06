@@ -9,6 +9,15 @@ _gather_cpu() {
   # fallback gets *concatenated* ("0\n1") and breaks later arithmetic. Instead:
   # swallow the failure with `|| true` and apply the default via `${var:-default}`.
   CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || true)"
+  # ARM fallback: device-tree model, then cpuinfo ^Model line
+  if [[ "$CPU_MODEL" == "unknown" ]]; then
+    if [[ -r /proc/device-tree/model ]]; then
+      CPU_MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null | xargs || true)"
+    fi
+    if [[ "$CPU_MODEL" == "unknown" ]]; then
+      CPU_MODEL="$(grep -m1 '^Model' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xargs || true)"
+    fi
+  fi
   CPU_MODEL="${CPU_MODEL:-unknown}"
   CPU_THREADS="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || true)"
   CPU_THREADS="${CPU_THREADS:-0}"
@@ -26,7 +35,8 @@ _gather_mem() {
   local total_kb
   total_kb="$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo 0)"
   MEM_TOTAL_GB=$(( total_kb / 1024 / 1024 ))
-  export MEM_TOTAL_GB
+  MEM_TOTAL_MB=$(( total_kb / 1024 ))
+  export MEM_TOTAL_GB MEM_TOTAL_MB
 }
 
 _gather_gpu() {
@@ -93,10 +103,61 @@ _gather_mobo() {
     MOBO_VENDOR="$(dmidecode -s baseboard-manufacturer 2>/dev/null | xargs || echo '')"
     MOBO_NAME="$(dmidecode -s baseboard-product-name 2>/dev/null | xargs || echo '')"
     MOBO_PRODUCT=""
+  elif [[ -r /proc/device-tree/model ]]; then
+    MOBO_VENDOR=""
+    MOBO_NAME="$(cat /proc/device-tree/model 2>/dev/null | xargs || echo '')"
+    MOBO_PRODUCT=""
   else
     MOBO_VENDOR="" MOBO_NAME="" MOBO_PRODUCT=""
   fi
   export MOBO_VENDOR MOBO_NAME MOBO_PRODUCT
+}
+
+_gather_power() {
+  # Battery — first BAT* found (all sources world-readable, no sudo)
+  local bat_dir=""
+  for d in /sys/class/power_supply/BAT*; do
+    [[ -d "$d" ]] || continue
+    bat_dir="$d"
+    break
+  done
+
+  if [[ -n "$bat_dir" ]]; then
+    local model_name capacity_pct charge_full charge_full_design health_pct energy_now
+    model_name="$(cat "$bat_dir/model_name" 2>/dev/null | xargs || echo '')"
+    capacity_pct="$(cat "$bat_dir/capacity" 2>/dev/null || echo '0')"
+    charge_full="$(cat "$bat_dir/charge_full" 2>/dev/null || echo '')"
+    charge_full_design="$(cat "$bat_dir/charge_full_design" 2>/dev/null || echo '')"
+    energy_now="$(cat "$bat_dir/energy_now" 2>/dev/null || echo '')"
+
+    local health_pct="null"
+    if [[ -n "$charge_full" && -n "$charge_full_design" && "$charge_full_design" != "0" ]]; then
+      health_pct=$(( charge_full * 100 / charge_full_design ))
+    fi
+
+    local energy_json=""
+    if [[ -n "$energy_now" ]]; then
+      energy_json=",\"energy_now_wh\":$(( energy_now / 3600000 ))"
+    fi
+
+    BATTERY_JSON="{\"model\":\"${model_name}\",\"capacity_pct\":${capacity_pct:-0}${energy_json:-},\"health_pct\":${health_pct}}"
+  else
+    BATTERY_JSON="null"
+  fi
+
+  # Machine identity (world-readable DMI)
+  PRODUCT_NAME=""
+  IS_LAPTOP="false"
+  if [[ -r /sys/class/dmi/id/product_name ]]; then
+    PRODUCT_NAME="$(cat /sys/class/dmi/id/product_name 2>/dev/null | xargs || echo '')"
+  fi
+  local chassis_type
+  chassis_type="$(cat /sys/class/dmi/id/chassis_type 2>/dev/null | xargs || echo '')"
+  case "$chassis_type" in
+    8|9|10|14) IS_LAPTOP="true" ;;
+  esac
+
+  export BATTERY_JSON PRODUCT_NAME IS_LAPTOP
 }
 
 _gather_storage() {
