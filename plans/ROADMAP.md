@@ -307,6 +307,7 @@ is unrunnable as a whole. Cruft, not features. This restores a trustworthy `node
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. | ✅ accepted (hierophant-verified 2026-08-06) — Track P; `node --test` 373/373 green + self-terminating, hang killed, dups + phase 32 reconciled |
+| 66 | plans/phase-66.md | **finish phase 60's "no live services" bar** — `platform-gather.test.js` "aid registers cleanly" does `execSync('bash deploy/grim-register-host.sh')`, which POSTs to the live grimoire server → fails with `grimoire.service` stopped (surfaced by phase 64's hermeticity run). Mock/stub the register→server call (or split the x86-regression check off the live exec) so the suite is genuinely green **with the service down**. | queued (hierophant, 2026-08-06) — Track P; found via phase 64 |
 
 ## Track Q — HMM Tracking ("The Guild Hall") (phases 61–63)
 
@@ -328,7 +329,7 @@ die with cryptic errors instead of resolving aid via lbl-config. Both are onboar
 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
-| 64 | plans/phase-64.md | **`grim host list` remote mode** — clients (no `GRIMOIRE_ROOT`) throw `local KB required` instead of fetching from aid. Add `GET /api/hosts/inventory` + a `list()` remote fallback mirroring `gen-hosts` (phase 54). Byte-identical local vs remote | queued (hierophant, 2026-08-06) — Track K |
+| 64 | plans/phase-64.md | **`grim host list` remote mode** — clients (no `GRIMOIRE_ROOT`) throw `local KB required` instead of fetching from aid. Add `GET /api/hosts/inventory` + a `list()` remote fallback mirroring `gen-hosts` (phase 54). Byte-identical local vs remote | ✅ accepted (hierophant-verified 2026-08-06) — Track K; endpoint + remote fallback + byte-identical confirmed, tests made hermetic after a revise (0267) |
 | 65 | plans/phase-65.md | **`grim rig` `Invalid URL` fix** — `resolveRigHub` destructures `URL.host` (hostname:port) and appends `:18081` → double-port `http://aid:3663:18081`. Use `.hostname`. Real bug (masked on aid by local path); also the true cause of phase 60's rig-test failure | queued (hierophant, 2026-08-06) — Track K |
 
 ## Acceptance bar (mage enforces per phase)
