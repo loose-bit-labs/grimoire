@@ -205,34 +205,49 @@ describe('genHosts uid-0 guard', () => {
 
 // ── list remote mode ──────────────────────────────────────────────────────────
 
+// Fixed fixture hosts — used by all remote-mode tests so they never hit the
+// live server or depend on readdir order.
+const FIXTURE_HOSTS = [
+  { '@id': 'host_blip', name: 'blip', description: 'blip desc', network: { addresses: [{ ip: '192.168.0.141' }] }, tags: ['hardware/inventory'] },
+  { '@id': 'host_aid',  name: 'aid',  description: 'aid desc',  network: { addresses: [{ ip: '192.168.0.202' }] }, tags: ['hardware/inventory'] },
+]
+
+/**
+ * Stub axios.get for the duration of a test. Restores on afterEach.
+ */
+function stubAxiosGet(resolver) {
+  const axios = require('axios')
+  const orig = axios.get
+  axios.get = async (url, opts) => resolver(url, opts)
+  return { restore: () => { axios.get = orig } }
+}
+
 describe('list remote mode', () => {
   const { config } = require('../lib/env')
   const origRoot = config.root
   const origHost = config.host
+  let axiosStub = null
 
   afterEach(() => {
     config.root = origRoot
     config.host = origHost
+    if (axiosStub) { axiosStub.restore(); axiosStub = null }
   })
 
-  it('_fetchHosts uses local KB when config.root is set', async () => {
-    config.root = '/home/vgvm/data/grimoire-kb'
-    config.host = null
-    const h = new GrimHost()
-    const hosts = await h._fetchHosts()
-    assert.ok(Array.isArray(hosts))
-    assert.ok(hosts.length > 0)
-    assert.equal(hosts[0].tags.includes('hardware/inventory'), true)
-  })
-
-  it('_fetchHosts falls back to remote when config.root is null', async () => {
+  it('_fetchHosts uses remote fallback and returns fixture hosts', async () => {
     config.root = null
-    config.host = 'http://aid:3663'
+    config.host = 'http://any-host:9999'
+    axiosStub = stubAxiosGet(async (url) => {
+      assert.equal(url, 'http://any-host:9999/api/hosts/inventory')
+      return { data: FIXTURE_HOSTS }
+    })
     const h = new GrimHost()
     const hosts = await h._fetchHosts()
     assert.ok(Array.isArray(hosts))
-    assert.ok(hosts.length > 0)
-    assert.equal(hosts[0].name, 'aid')
+    assert.equal(hosts.length, 2)
+    // assert presence, not position — readdir order is nondeterministic
+    assert.ok(hosts.some(h => h.name === 'aid'))
+    assert.ok(hosts.some(h => h.name === 'blip'))
   })
 
   it('_fetchHosts throws NO_SOURCE when neither root nor host available', async () => {
