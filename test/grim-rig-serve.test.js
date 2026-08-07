@@ -165,9 +165,8 @@ describe('toPrometheusText()', () => {
 
 describe('serve()', () => {
   it('/status returns JSON, /metrics returns Prometheus text, 404 for unknown', async () => {
-    const port = 19876
     const { server, stop, getSnapshot } = rig.serve({
-      port,
+      port: 0,                       // ephemeral — never collide (EADDRINUSE hang)
       interval: 10,
       listen: '127.0.0.1',
       boxes: [{ host: 'x', label: 'x', aliases: ['x'], services: [] }],
@@ -175,6 +174,7 @@ describe('serve()', () => {
 
     try {
       await new Promise(r => server.once('listening', r))
+      const port = server.address().port
 
       // /status
       const statusRes = await httpGet(`http://127.0.0.1:${port}/status`)
@@ -200,9 +200,8 @@ describe('serve()', () => {
   })
 
   it('server stays alive across multiple polls with dead services', async () => {
-    const port = 19877
     const { server, stop, getSnapshot } = rig.serve({
-      port,
+      port: 0,                       // ephemeral — never collide (EADDRINUSE hang)
       interval: 1,
       listen: '127.0.0.1',
       boxes: [{ host: 'survivor', label: 'survivor', aliases: ['survivor'], services: [
@@ -214,6 +213,7 @@ describe('serve()', () => {
 
     try {
       await new Promise(r => server.once('listening', r))
+      const port = server.address().port
       // Wait for a few poll cycles
       await new Promise(r => setTimeout(r, 3500))
 
@@ -235,9 +235,8 @@ describe('serve()', () => {
     try {
       process.env.DISPLAY = 'localhost:99.0'
       process.env.XAUTHORITY = '/nonexistent/.Xauthority'
-      const port = 19879
       const { server, stop } = rig.serve({
-        port,
+        port: 0,                     // ephemeral — never collide (EADDRINUSE hang)
         interval: 10,
         listen: '127.0.0.1',
         boxes: [{ host: 'x', label: 'x', aliases: ['x'], services: [] }],
@@ -273,15 +272,15 @@ describe('serve()', () => {
 
 describe('serveDashboard()', () => {
   it('/cluster returns HTML, /fleet returns JSON, /status and /metrics return 404', async () => {
-    const port = 19880
     const { server, stop } = rig.serveDashboard({
-      port,
+      port: 0,                       // ephemeral — never collide (EADDRINUSE hang)
       listen: '127.0.0.1',
       boxes: [{ host: 'x', label: 'x', aliases: ['x'], services: [] }],
     })
 
     try {
       await new Promise(r => server.once('listening', r))
+      const port = server.address().port
 
       // /cluster — HTML
       const clusterRes = await httpGet(`http://127.0.0.1:${port}/cluster`)
