@@ -3,7 +3,7 @@
 const { describe, it } = require('node:test')
 const assert = require('node:assert')
 
-const { classify, cells, shortTitle, trackOf } = require('../bin/grim-roadmap.js')
+const { classify, cells, shortTitle, trackOf, stateWord } = require('../bin/grim-roadmap.js')
 
 // ── classify: the tricky prose false-positives that bit us live ────────────────
 

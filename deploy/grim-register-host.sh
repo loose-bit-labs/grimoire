@@ -192,6 +192,13 @@ _main() {
 
   echo ""
   step "Registering in KB (${GRIMOIRE_HOST})..."
+  if [[ "${DRY_RUN:-false}" == "true" ]]; then
+    echo ""
+    echo "--- DRY RUN — entity payload ---"
+    _build_remember_payload "$(_build_description)"
+    echo ""
+    return
+  fi
   _register
   echo ""
 }

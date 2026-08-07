@@ -55,11 +55,21 @@ function shortTitle(what) {
   return t.replace(/[`*]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64)
 }
 
+// Known workflow-status words. A ROADMAP whose last column is a *status* cell
+// starts with one of these (grimoire's convention). A ROADMAP whose last column
+// is prose (wantan's "Gate to pass") starts with something else ("USER eyeball…",
+// "tests green…") — for those we must NOT print the scraped prose word as a
+// state; fall back to the neutral 'open'.
+const STATE_WORDS = new Set([
+  'queued', 'open', 'blocked', 'done', 'accepted', 'wip', 'todo',
+  'planned', 'reserved', 'review', 'revise', 'draft', 'active',
+])
 function stateWord(status) {
   if (BLOCKED_RE.test(status)) return 'blocked'
   if (DONE_RE.test(status))    return 'done'
   const m = /^[\s✅⛔*]*([A-Za-z]+)/.exec(status)
-  return m ? m[1].toLowerCase() : 'open'
+  const w = m ? m[1].toLowerCase() : ''
+  return STATE_WORDS.has(w) ? w : 'open'
 }
 
 function trackOf(status, what) {
