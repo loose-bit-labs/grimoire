@@ -210,6 +210,17 @@ test('resolveRigHub: returns explicit rig_hub from lbl-config when set', () => {
   assert.ok(hub === null || typeof hub === 'string')
 })
 
+test('resolveRigHub: returns a valid URL with single port (no double-port regression)', () => {
+  const hub = resolveRigHub()
+  if (!hub) { return } // skip on boxes without grimoire endpoint
+  // Must parse as a valid URL — catches the :host:port:18081 double-port bug
+  const parsed = new URL(hub)
+  assert.equal(parsed.protocol, 'http:')
+  assert.equal(parsed.port, '18081')
+  // No double port: the href should not contain two colons before the path
+  assert.ok(!/:\d+:/.test(parsed.host), `hub ${hub} has double port`)
+})
+
 // ── fetchFleetRemote ──────────────────────────────────────────────────────────
 
 test('fetchFleetRemote: returns fleet data from live hub', async () => {
