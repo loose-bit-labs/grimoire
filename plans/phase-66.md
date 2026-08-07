@@ -1,6 +1,30 @@
-# Phase 66 — finish phase 60's bar: make `platform-gather` hermetic (green with the service down)
+# Phase 66 — make the suite genuinely, deterministically green (finish phase 60's bar)
 
 **Authority:** hierophant, 2026-08-06. **Repo:** grimoire. **Track P (repo hygiene).**
+Two phase-60 residues surfaced by phases 64/65: phase 60 claimed *"the default suite passes with no live
+services"* and *"the hang is killed,"* but neither is fully true. **Part A** — a test isn't hermetic
+(needs the live server). **Part B** — a server test binds hardcoded ports and **intermittently hangs**
+on `EADDRINUSE` (~1 run in 3). Both must be fixed for the suite to be trustworthy.
+
+## Part B — kill the intermittent `EADDRINUSE` hang (`test/grim-rig-serve.test.js`)
+
+Verified: a full-suite run hung with `grim rig serve: server error: listen EADDRINUSE: address already
+in use 127.0.0.1:18082`; two other runs passed 380/380. The server tests bind **hardcoded ports**
+(19876, 19877, and a default 18082 when none is passed) — under `node --test`'s concurrency, or with a
+leftover bind, those collide → the test waits on a server that never came up → **hang** (not a clean
+fail). Phase 60 closed the listeners but left the fixed ports, so "no hang" is flaky.
+
+**Fix:** every server the tests start must bind an **ephemeral port (`port: 0`)** and read the actual
+assigned port back from the listening server (`server.address().port`) for its requests — never a
+hardcoded or defaulted port. Ensure each server is closed in `after`/`t.after` (keep phase 60's
+teardown). No fixed test ports anywhere a bind happens.
+
+**Success (Part B):** run `node --test 'test/*.test.js'` **10×** — 380/380 every time, **zero**
+`EADDRINUSE`, **zero** hangs (each run self-terminates well under the timeout). `grep` shows no
+hardcoded bind port in `test/grim-rig-serve.test.js` (ephemeral `0` + `address().port`).
+
+## Part A — finish phase 60's "no live services" bar (`platform-gather.test.js`)
+
 Surfaced by phase 64's hermeticity run: phase 60 claimed *"the default suite passes with no live
 services,"* but it was never actually run with `grimoire.service` stopped — and one test isn't hermetic.
 
@@ -44,4 +68,7 @@ Make this test hermetic so the whole suite is green **with the service down** (p
   *(Coordinate the stop/start with the user — don't leave the KB offline.)*
 - x86 inventory still asserted (CPU/RAM/no-warning/no-battery/not-laptop) against gather output.
 - `grep` shows no test path reaches the network with the service down.
-- Footprint: `test/platform-gather.test.js` (+ optional `deploy/grim-register-host.sh` `--dry-run`).
+- **(Part B)** `node --test 'test/*.test.js'` 10× → all 380/380, no `EADDRINUSE`, no hang; no hardcoded
+  bind ports remain in `test/grim-rig-serve.test.js`.
+- Footprint: `test/platform-gather.test.js`, `test/grim-rig-serve.test.js` (ephemeral ports),
+  (+ optional `deploy/grim-register-host.sh` `--dry-run`).
