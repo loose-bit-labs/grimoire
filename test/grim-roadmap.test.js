@@ -57,3 +57,17 @@ describe('trackOf', () => {
   it('pulls the track letter from the status', () => assert.equal(trackOf('queued — Track K; found vier', ''), 'K'))
   it('empty when no track', () => assert.equal(trackOf('queued', ''), ''))
 })
+
+// ── stateWord: only emit a real workflow word, never scraped prose ──────────────
+// wantan's last column is prose ("Gate to pass"), not a status. Its first word
+// ("USER…", "tests…", "upscale…") must NOT surface as a state — that was the
+// "no idea what this is trying to tell me" garbage column. Fall back to 'open'.
+
+describe('stateWord', () => {
+  it('keeps a real status word', () => assert.equal(stateWord('queued (hierophant, 2026-08-06) — Track Q'), 'queued'))
+  it('blocked wins', () => assert.equal(stateWord('⛔ BLOCKED — creds not'), 'blocked'))
+  it('done wins', () => assert.equal(stateWord('✅ accepted (#0242)'), 'done'))
+  it('"USER eyeball: KILL/CONTINUE" → open, not "user"', () => assert.equal(stateWord('**USER eyeball: KILL/CONTINUE.**'), 'open'))
+  it('"tests green + live expand" → open, not "tests"', () => assert.equal(stateWord('tests green + live expand of hamster-disco'), 'open'))
+  it('"upscale-gate rejection…" → open, not "upscale"', () => assert.equal(stateWord('upscale-gate rejection demonstrated'), 'open'))
+})
