@@ -9,9 +9,17 @@ fleet fan-out or avatar polish. If the pipe works for aid's own pact projects, 6
 
 **A. Status core — `lib/hmm.js` (new, the deterministic heart, Rule 13 — no model).**
 - `scanProjects(root)` — for each `${root}/*/` that has a `.mm/` dir (default `root = ~/src/me`), read
-  the thread. Each `.mm/*.md` message is YAML-frontmatter (`from`,`to`,`phase`,`state`); file mtime =
-  timestamp. **Reuse, don't re-derive:** import `NEXT_OWNER`/state list from `bin/grim-mm.js`, and the
-  open-phase count from `bin/grim-roadmap.js` (`parse()` of that project's `plans/ROADMAP.md` if present).
+  the thread. Each `.mm/*.md` message is YAML-frontmatter (`id`,`ts`,`from`,`to`,`phase`,`state`).
+  **Reuse, don't re-derive (Rule 13):** parse threads with `bin/grim-mm.js`'s **exported** `readThread`
+  + `parseHeader` (they already exist in `module.exports` — do NOT hand-roll a `.mm` parser). Use the
+  frontmatter **`ts:` field** as the authoritative timestamp (fall back to file mtime only if `ts` is
+  absent). Get the open-phase count from `bin/grim-roadmap.js` `parse()` (exported) of that project's
+  `plans/ROADMAP.md` if present.
+- **`NEXT_OWNER` / `STATES` are defined in `bin/grim-mm.js` but not yet exported.** Add them to its
+  `module.exports` (a trivial, safe export addition — explicitly in-footprint) and import them here;
+  do not duplicate the maps. `lib/hmm` uses `NEXT_OWNER` (+ `TERMINAL` states) to decide who owes the
+  next message → `working` vs `waiting`/`waiting-on-user`. If `TERMINAL` isn't exported either, export
+  it the same way rather than re-deriving it.
 - `projectStatus(thread, roadmapOpen, now)` → `{ project, roadmapOpen, retired, participants: [{ role,
   status, lastActivitySec }] }` implementing the state machine in the design doc exactly: `done/retired`
   (roadmapOpen==0), `working`, `conversing`, `waiting-on-user`, `waiting`, `sleeping`. Windows
@@ -26,14 +34,19 @@ fleet fan-out or avatar polish. If the pipe works for aid's own pact projects, 6
 - `GET /api/hmm` — **slice scope: aid only.** The server runs on aid, so it calls `lib/hmm` directly
   (localhost) and returns `{ boxes: [{ host: 'aid', projects }] }`. **Fleet fan-out to other boxes'
   `:18081/hmm` is phase 62** — leave a one-line `// TODO(62): fan out over rig.json like /fleet`.
-- `GET /hall` — serve the viewer HTML (D).
+- `GET /hall` — serve the viewer HTML (D). **Note:** `bin/grim-server.js` currently serves **no static
+  files** — there is no `public/` handler. Add a minimal, same-origin static route for `/hall` (and the
+  one vendored asset it needs) beside the existing `/api/*` routes; don't pull in a static-file
+  framework, a tiny `readFileSync` + content-type is enough (mirror `serveStatic` in `bin/grim-rig.js`).
 
 **D. Viewer — "The Guild Hall"** (`public/guild-hall.html` + vendored `public/vendor/three.min.js`).
 - Self-contained page the grimoire serves at `/hall`. Fetches `/api/hmm`, renders **one screen per
   project**, a **3D meeple per participant** (Three.js), status shown as text now + a *basic*
   status-driven pose/animation (full 8-state animation set is phase 63). A project/host switcher is fine
   to stub. **Vendor Three.js locally, serve same-origin — no CDN hotlink** (local-first value; grep
-  checks for external `src=`/`http` in the page).
+  checks for external `src=`/`http` in the page). Vendoring is a **build-time** step: download
+  `three.min.js` **once** (aid has network), commit it under `public/vendor/`, and load it same-origin.
+  The runtime page must never fetch from a CDN — the committed file is the only source.
 
 **E. Terminal parity — `grim hmm`** (`bin/grim-hmm.js` new + register in `bin/grim.js` COMMANDS).
 - Prints the same data `lib/hmm` produces as a readable table (host · project · role · status · idle-age).
@@ -63,4 +76,5 @@ fleet fan-out or avatar polish. If the pipe works for aid's own pact projects, 6
 - `grep` proves `lib/hmm.js` never writes `.mm`, and `guild-hall.html` has no external/CDN `src`.
 - The default suite still runs green + self-terminating (don't reintroduce phase-60's hang).
 - Footprint: `lib/hmm.js`, `test/hmm.test.js`, `bin/grim-rig.js`, `bin/grim-server.js`, `bin/grim-hmm.js`,
-  `bin/grim.js`, `public/guild-hall.html`, `public/vendor/three.min.js`.
+  `bin/grim.js`, `bin/grim-mm.js` (export `NEXT_OWNER`/`STATES`/`TERMINAL` only — no behavior change),
+  `public/guild-hall.html`, `public/vendor/three.min.js`.
