@@ -860,4 +860,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
