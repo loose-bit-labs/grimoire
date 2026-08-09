@@ -156,8 +156,10 @@ describe('hmm: status core', () => {
     const tmp = fs.mkdtempSync('/tmp/hmm-test-')
     try {
       const mmDir = mkProject(tmp, 'proj-sleep', 1)
-      const t = ago(IDLE_SEC + 60) // > 20 min ago
-      writeThread(mmDir, 1, 'mage', 'minion', 1, 'brief', t)
+      // Build a local-time ts string IDLE_SEC + 60 seconds ago
+      const d = new Date(Date.now() - (IDLE_SEC + 60) * 1000)
+      const localTs = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+      writeThread(mmDir, 1, 'mage', 'minion', 1, 'brief', localTs)
       // latest.from=mage, NEXT_OWNER[mage]=minion → minion owns next but idle > IDLE
       const projects = scanProjects(tmp)
       const ps = projectStatus(projects[0], Math.floor(Date.now() / 1000))
@@ -218,5 +220,55 @@ describe('hmm: status core', () => {
     const hmmSrc = fs.readFileSync('lib/hmm.js', 'utf8')
     assert.ok(!/writeFile.*\.mm/.test(hmmSrc), 'lib/hmm.js should not write .mm files')
     assert.ok(!/writeSync.*\.mm/.test(hmmSrc), 'lib/hmm.js should not write .mm files')
+  })
+
+  it('working: real local ts (not UTC) shows fresh activity as working', () => {
+    // Regression test for timezone skew bug: ts fields are local time,
+    // not UTC. If parsed as UTC, age is inflated by TZ offset and
+    // working/conversing become unreachable.
+    const tmp = fs.mkdtempSync('/tmp/hmm-test-')
+    try {
+      const mmDir = mkProject(tmp, 'proj-tz', 1)
+      // Build a ts in local time format, ~30 seconds ago
+      const d = new Date(Date.now() - 30 * 1000)
+      const yy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mi = String(d.getMinutes()).padStart(2, '0')
+      const ss = String(d.getSeconds()).padStart(2, '0')
+      const localTs = `${yy}-${mm}-${dd}_${hh}:${mi}:${ss}`
+      writeThread(mmDir, 1, 'mage', 'minion', 1, 'brief', localTs)
+      const projects = scanProjects(tmp)
+      const now = Math.floor(Date.now() / 1000)
+      const ps = projectStatus(projects[0], now)
+      const minion = ps.participants.find(p => p.role === 'minion')
+      assert.equal(minion.status, 'working', `minion should be working (fresh local ts), got ${minion.status}`)
+      assert.ok(minion.lastActivitySec < ACTIVE_SEC, `minion age ${minion.lastActivitySec}s should be < ACTIVE_SEC ${ACTIVE_SEC}s`)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('mtime fallback: ts-less message shows sane age from file mtime', () => {
+    // Regression test for basename bug: msg.file is a bare basename,
+    // so fs.statSync(msg.file) fails and returns epoch 0 → age ≈ 56 years.
+    // Fix: scanProjects attaches absolute _path to each message.
+    const tmp = fs.mkdtempSync('/tmp/hmm-test-')
+    try {
+      const mmDir = mkProject(tmp, 'proj-mtime', 1)
+      // Write a thread file WITHOUT a ts: field
+      const content = `---\nid: msg-0001\nfrom: mage\nto: minion\nphase: 1\nstate: brief\n---\n\nbody`
+      fs.writeFileSync(path.join(mmDir, '0001-from-mage-to-minion.md'), content)
+      const projects = scanProjects(tmp)
+      const now = Math.floor(Date.now() / 1000)
+      const ps = projectStatus(projects[0], now)
+      const minion = ps.participants.find(p => p.role === 'minion')
+      // Age should be small (seconds from file creation), not ~epoch-0 (~56 years)
+      // Age can be 0 if file was just created (mtime == now), but must be << 1 year
+      assert.ok(minion.lastActivitySec < 86400, `minion age ${minion.lastActivitySec}s should be < 1 day (mtime fallback working)`)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })
