@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Guild Hall — HMM Tracking</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; }
+  h1 { text-align: center; padding: 1rem; color: #ffd700; letter-spacing: 0.1em; }
+  #switcher { text-align: center; padding: 0.5rem; }
+  #switcher select { padding: 0.4rem 1rem; font-size: 1rem; background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; }
+  .project { margin: 1rem auto; max-width: 900px; }
+  .project h2 { color: #ffd700; padding: 0.5rem 1rem; background: #16213e; border-radius: 4px; margin-bottom: 0.5rem; }
+  .project.retired h2 { color: #666; }
+  .meeple-row { display: flex; gap: 1rem; padding: 0.5rem 1rem; flex-wrap: wrap; }
+  .meeple-card { background: #16213e; border-radius: 8px; padding: 0.75rem; min-width: 180px; flex: 1; }
+  .meeple-card .role { font-weight: bold; color: #ffd700; margin-bottom: 0.25rem; }
+  .meeple-card .status { font-size: 0.85rem; padding: 0.2rem 0.5rem; border-radius: 3px; display: inline-block; }
+  .meeple-card .age { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+  .status.working { background: #2d6a4f; color: #95d5b2; }
+  .status.conversing { background: #1d3557; color: #a8dadc; }
+  .status.waiting-on-user { background: #6b2f1b; color: #f4a261; }
+  .status.waiting { background: #3d3d3d; color: #aaa; }
+  .status.sleeping { background: #2d2d2d; color: #666; }
+  .status.retired { background: #1a1a1a; color: #444; }
+  #canvas-container { width: 100%; height: 300px; background: #0f0f23; border-radius: 8px; margin: 1rem 0; }
+  canvas { display: block; }
+  #loading { text-align: center; padding: 2rem; color: #888; }
+  #error { text-align: center; padding: 2rem; color: #e63946; }
+</style>
+</head>
+<body>
+<h1>⚔ The Guild Hall ⚔</h1>
+<div id="switcher">
+  <label for="host-select">Host: </label>
+  <select id="host-select"><option value="aid">aid</option></select>
+  <label for="project-select">Project: </label>
+  <select id="project-select"><option value="all">all</option></select>
+</div>
+<div id="canvas-container"><div id="loading">Loading meeples…</div></div>
+<div id="projects"></div>
+<div id="error" style="display:none"></div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+(function() {
+  'use strict'
+
+  const STATUS_COLORS = {
+    working: 0x2d6a4f,
+    conversing: 0x1d3557,
+    'waiting-on-user': 0x6b2f1b,
+    waiting: 0x3d3d3d,
+    sleeping: 0x2d2d2d,
+    retired: 0x1a1a1a,
+  }
+
+  const ROLE_COLORS = {
+    hierophant: 0xffd700,
+    mage: 0x4a90d9,
+    minion: 0xe74c3c,
+  }
+
+  let scene, camera, renderer, meeples = []
+  let allData = { boxes: [{ host: 'aid', projects: [] }] }
+
+  // ── Three.js setup ──────────────────────────────────────────────────────────
+  function initScene() {
+    const container = document.getElementById('canvas-container')
+    scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x0f0f23)
+
+    camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 1000)
+    camera.position.set(0, 5, 10)
+    camera.lookAt(0, 0, 0)
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+    scene.add(ambient)
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8)
+    dir.position.set(5, 10, 7)
+    scene.add(dir)
+
+    renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(container.clientWidth, container.clientHeight)
+    container.innerHTML = ''
+    container.appendChild(renderer.domElement)
+
+    // Ground plane
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(50, 50),
+      new THREE.MeshStandardMaterial({ color: 0x0f0f23, roughness: 1 })
+    )
+    ground.rotation.x = -Math.PI / 2
+    ground.position.y = -0.01
+    scene.add(ground)
+
+    animate()
+  }
+
+  function animate() {
+    requestAnimationFrame(animate)
+    meeples.forEach((m, i) => {
+      if (m.mesh) {
+        m.mesh.position.y = m.baseY + Math.sin(Date.now() * 0.002 + i) * 0.05
+      }
+    })
+    renderer.render(scene, camera)
+  }
+
+  function buildMeeple(color, scale) {
+    const group = new THREE.Group()
+    // Head
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3, 16, 16),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.5 })
+    )
+    head.position.y = 0.8
+    group.add(head)
+    // Body
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25, 0.3, 0.5, 16),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.5 })
+    )
+    body.position.y = 0.3
+    group.add(body)
+    // Legs
+    const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8)
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 })
+    const leftLeg = new THREE.Mesh(legGeo, legMat)
+    leftLeg.position.set(-0.12, -0.15, 0)
+    group.add(leftLeg)
+    const rightLeg = new THREE.Mesh(legGeo, legMat)
+    rightLeg.position.set(0.12, -0.15, 0)
+    group.add(rightLeg)
+    group.scale.setScalar(scale || 1)
+    return group
+  }
+
+  function renderMeeples(projects) {
+    // Clear old
+    meeples.forEach(m => scene.remove(m.mesh))
+    meeples = []
+
+    let x = -4
+    projects.forEach((proj, pi) => {
+      const retired = proj.retired
+      proj.participants.forEach((p, i) => {
+        const color = retired ? 0x333333 : (ROLE_COLORS[p.role] || 0x888888)
+        const mesh = buildMeeple(color, 0.8)
+        mesh.position.set(x, 0, 0)
+        scene.add(mesh)
+        meeples.push({ mesh, baseY: 0, role: p.role, status: p.status })
+        x += 2.5
+      })
+    })
+    if (projects.length === 0) {
+      const empty = buildMeeple(0x333333, 0.8)
+      empty.position.set(0, 0, 0)
+      scene.add(empty)
+      meeples.push({ mesh: empty, baseY: 0, role: '?', status: 'retired' })
+    }
+  }
+
+  // ── DOM rendering ───────────────────────────────────────────────────────────
+  function renderProjects(projects) {
+    const container = document.getElementById('projects')
+    container.innerHTML = ''
+    projects.forEach(proj => {
+      const div = document.createElement('div')
+      div.className = 'project' + (proj.retired ? ' retired' : '')
+      div.innerHTML = `<h2>${proj.project}${proj.retired ? ' (retired)' : ''}</h2>`
+      const row = document.createElement('div')
+      row.className = 'meeple-row'
+      proj.participants.forEach(p => {
+        const ageMin = Math.round(p.lastActivitySec / 60)
+        const card = document.createElement('div')
+        card.className = 'meeple-card'
+        card.innerHTML = `
+          <div class="role">${p.role}</div>
+          <div class="status ${p.status}">${p.status}</div>
+          <div class="age">${ageMin}m ago</div>
+        `
+        row.appendChild(card)
+      })
+      div.appendChild(row)
+      container.appendChild(div)
+    })
+  }
+
+  // ── Data loading ────────────────────────────────────────────────────────────
+  async function loadData() {
+    try {
+      const resp = await fetch('/api/hmm')
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      allData = await resp.json()
+      document.getElementById('loading').style.display = 'none'
+      populateSwitcher()
+      renderCurrent()
+    } catch (e) {
+      document.getElementById('loading').style.display = 'none'
+      document.getElementById('error').style.display = 'block'
+      document.getElementById('error').textContent = 'Failed to load: ' + e.message
+    }
+  }
+
+  function populateSwitcher() {
+    const hostSel = document.getElementById('host-select')
+    const projSel = document.getElementById('project-select')
+    hostSel.innerHTML = allData.boxes.map(b => `<option value="${b.host}">${b.host}</option>`).join('')
+    const projects = currentProjects()
+    projSel.innerHTML = '<option value="all">all</option>' +
+      projects.map(p => `<option value="${p.project}">${p.project}</option>`).join('')
+  }
+
+  function currentProjects() {
+    const host = document.getElementById('host-select').value
+    const box = allData.boxes.find(b => b.host === host)
+    return box ? box.projects : []
+  }
+
+  function renderCurrent() {
+    const projFilter = document.getElementById('project-select').value
+    let projects = currentProjects()
+    if (projFilter !== 'all') projects = projects.filter(p => p.project === projFilter)
+    renderMeeples(projects)
+    renderProjects(projects)
+  }
+
+  document.getElementById('host-select').addEventListener('change', renderCurrent)
+  document.getElementById('project-select').addEventListener('change', renderCurrent)
+
+  // ── Boot ────────────────────────────────────────────────────────────────────
+  initScene()
+  loadData()
+  // Poll every 10s
+  setInterval(loadData, 10000)
+})()
+</script>
+</body>
+</html>

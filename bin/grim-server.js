@@ -35,6 +35,7 @@
  */
 
 const fs      = require('node:fs')
+const os      = require('node:os')
 const path    = require('node:path')
 const express = require('express')
 const cors    = require('cors')
@@ -47,6 +48,7 @@ const { recall, remember, update, relate, annotate, forget } = require('./grim-t
 const { crawlText } = require('./grim-crawl')
 const { config, requireMode } = require('../lib/env')
 const { scanHostEntities, buildHostsOutput } = require('./grim-host')
+const { scanProjects, projectStatus } = require('../lib/hmm')
 const { semanticSearch, indexReady } = require('../lib/vectors')
 
 requireMode('local')
@@ -304,6 +306,31 @@ app.get('/config/lbl', (req, res) => {
     res.json({ path: req.query.path, value })
   } catch (e) {
     res.status(500).json({ error: e.message })
+  }
+})
+
+// ── HMM Tracking (Track Q) ────────────────────────────────────────────────────
+
+app.get('/api/hmm', (req, res) => {
+  try {
+    const root = path.join(os.homedir(), 'src', 'me')
+    const projects = scanProjects(root).map(p => projectStatus(p, Math.floor(Date.now() / 1000)))
+    // TODO(62): fan out over rig.json like /fleet
+    res.json({ boxes: [{ host: 'aid', projects }] })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/hall', (req, res) => {
+  const htmlPath = path.join(__dirname, '..', 'public', 'guild-hall.html')
+  try {
+    const body = fs.readFileSync(htmlPath, 'utf8')
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end(body)
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('hall not found\n')
   }
 })
 

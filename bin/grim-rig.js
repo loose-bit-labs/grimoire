@@ -39,6 +39,7 @@ const os         = require('node:os')
 const path       = require('node:path')
 const minimist   = require('minimist')
 const { config, isLocal, lblEndpoint } = require('../lib/env')
+const { scanProjects, projectStatus } = require('../lib/hmm')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
 
@@ -1217,6 +1218,19 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
       return
     }
 
+    if (req.url === '/hmm' && req.method === 'GET') {
+      try {
+        const root = path.join(os.homedir(), 'src', 'me')
+        const projects = scanProjects(root).map(p => projectStatus(p, Math.floor(Date.now() / 1000)))
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ host: os.hostname().toLowerCase(), projects }))
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: e.message }))
+      }
+      return
+    }
+
     if (req.url === '/metrics' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end(toPrometheusText(snapshot))
@@ -1259,6 +1273,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   server.listen(port, listen, () => {
     console.log(`grim rig serve: listening on ${listen}:${port}`)
     console.log(`  /status  — JSON snapshot`)
+    console.log(`  /hmm     — pact project statuses (JSON)`)
     console.log(`  /metrics — Prometheus text`)
     console.log(`  /cluster — instrument cluster (HTML)`)
     console.log(`  /fleet   — aggregate fleet status (JSON)`)
