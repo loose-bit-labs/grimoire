@@ -25,10 +25,12 @@ const path = require('node:path')
 const minimist = require('minimist')
 
 // Real done-markers in these ROADMAPs are the ✅ tick, "accepted"/"done live",
-// or the wantan-style "CLOSED <date>" (date-anchored so prose like "closed the
-// phase-24 gap" can't false-positive). A bare "done" in prose (e.g. "infra done,
-// creds not") must NOT count, and BLOCKED always wins over done (see below).
-const DONE_RE    = /✅|\baccepted\b|done live|CLOSED \d{4}-\d{2}-\d{2}/i
+// or the wantan-style bold **CLOSED** marker (with or without a trailing date).
+// The bold markup is the signal: prose like "closed the phase-24 gap" is neither
+// bold nor uppercase, so it can't false-positive. (An unbold "CLOSED <date>" is
+// also accepted, date-anchored, as a defensive fallback.) A bare "done" in prose
+// (e.g. "infra done, creds not") must NOT count, and BLOCKED wins over done (below).
+const DONE_RE    = /✅|\baccepted\b|done live|\*\*CLOSED\b|CLOSED \d{4}-\d{2}-\d{2}/i
 const BLOCKED_RE = /⛔|blocked/i
 // A row is "external" when its Brief cell points at a plans/ file that is NOT
 // this repo's own phase brief (e.g. "fLimfLaMs `plans/swandive.md`").

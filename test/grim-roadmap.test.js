@@ -25,8 +25,11 @@ describe('classify', () => {
   // wantan closes a phase with "**CLOSED <date>**" in the last cell, not ✅/accepted
   it('"CLOSED 2026-08-05" → done',
     () => assert.equal(classify('frontier blocking demonstrated; suite green — **CLOSED 2026-08-05**'), 'done'))
-  // but a prose "closed <thing>" with no date must NOT count as done
-  it('"closes the phase-24 gap" (no date) → open',
+  // wantan phases 1–6 use a BARE bold **CLOSED** (no date) — must still count as done
+  it('bare "**CLOSED**" (no date) → done',
+    () => assert.equal(classify('USER eyeball: KILL/CONTINUE — **CLOSED** (CONTINUE)'), 'done'))
+  // but a prose "closed <thing>" with no date/bold must NOT count as done
+  it('"closes the phase-24 gap" (no date, no bold) → open',
     () => assert.equal(classify('roll the unit; closed the phase-24 aid pin gap'), 'open'))
 })
 
