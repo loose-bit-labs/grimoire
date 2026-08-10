@@ -397,6 +397,62 @@ describe('drive identity guard reachability', () => {
   })
 })
 
+// news — role-agnostic "is it my turn?" verdict from the LATEST message's
+// addressing, so `/loop … /grimoire:news` works for every role.
+describe('news verdict', () => {
+  const { news } = require('../bin/grim-mm')
+
+  // write a new-format message: NNNN-from-<from>-to-<to>.md with frontmatter
+  function msg(dir, num, from, to, state, phase) {
+    fs.mkdirSync(dir, { recursive: true })
+    const file = `${String(num).padStart(4, '0')}-from-${from}-to-${to}.md`
+    fs.writeFileSync(path.join(dir, file),
+      `---\nfrom: ${from}\nto: ${to}\nphase: ${phase}\nstate: ${state}\n---\n\nbody\n`, 'utf8')
+  }
+  function verdictFor(dir, role) {
+    let cap = ''
+    const orig = console.log
+    console.log = s => { cap += s }
+    try { news({ dir, role, json: true }) } finally { console.log = orig }
+    return JSON.parse(cap)
+  }
+
+  it('ACT when the latest is addressed to me and I did not send it', () => {
+    const dir = mktmp()
+    msg(dir, 1, 'minion', 'mage', 'report', '62')
+    try { assert.equal(verdictFor(dir, 'mage').verdict, 'ACT') }
+    finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('WAIT when I sent the latest message', () => {
+    const dir = mktmp()
+    msg(dir, 1, 'mage', 'minion', 'brief', '62')
+    try { assert.equal(verdictFor(dir, 'mage').verdict, 'WAIT') }
+    finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('WAIT when the latest is between the other two roles', () => {
+    const dir = mktmp()
+    msg(dir, 1, 'minion', 'mage', 'report', '62')
+    try { assert.equal(verdictFor(dir, 'hierophant').verdict, 'WAIT') }
+    finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('catches a report to the hierophant (drive would WAIT here) → ACT', () => {
+    const dir = mktmp()
+    msg(dir, 1, 'mage', 'hierophant', 'report', '62')
+    try { assert.equal(verdictFor(dir, 'hierophant').verdict, 'ACT') }
+    finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('WAIT on an empty thread', () => {
+    const dir = mktmp()
+    fs.mkdirSync(dir, { recursive: true })
+    try { assert.equal(verdictFor(dir, 'mage').verdict, 'WAIT') }
+    finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 // --session defaults to CLAUDE_CODE_SESSION_ID so callers don't spell it every
 // time (token waste). stampRole writes .mm/.role-<session> — a clean probe for
 // which session id actually flowed through.

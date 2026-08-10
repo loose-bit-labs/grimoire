@@ -210,6 +210,48 @@ function stampRole(dir, role, session) {
   fs.writeFileSync(path.join(dir, `.role-${session}`), `${role}\n`, 'utf8')
 }
 
+// Read the role a session previously stamped (see stampRole). Lets `news` figure
+// out "who am I" from CLAUDE_CODE_SESSION_ID alone, so one command works for every
+// role. null if the session never stamped a role (never ran read/write here).
+function readRoleMarker(dir, session) {
+  if (!session) return null
+  try { return (fs.readFileSync(path.join(dir, `.role-${session}`), 'utf8').trim() || null) }
+  catch { return null }
+}
+
+// news — role-agnostic "is it my turn?" for `/loop … /grimoire:news`. Verdict is
+// purely about the LATEST message's addressing (not drive's escalate-gated logic),
+// so it catches reports AND escalations AND briefs for every role:
+//   ACT  — latest is addressed to me and I didn't send it → my move.
+//   WAIT — I sent the latest, or it's between the other two roles → quiet.
+function news({ dir, role, json }) {
+  const thread = readThread(dir)
+  const latest = thread[thread.length - 1] || null
+  const pad = n => String(n).padStart(4, '0')
+
+  let verdict, reason
+  if (!latest) {
+    verdict = 'WAIT'; reason = 'no messages in this thread yet'
+  } else if (latest.from === role) {
+    verdict = 'WAIT'; reason = `you sent #${pad(latest.num)} (${latest.state}); awaiting a reply`
+  } else if ((latest.to || []).includes(role)) {
+    verdict = 'ACT'
+    reason = `#${pad(latest.num)} from ${latest.from} (${latest.state}${latest.phase ? `, phase ${latest.phase}` : ''}) is addressed to you`
+  } else {
+    verdict = 'WAIT'
+    reason = `latest #${pad(latest.num)} is ${latest.from}→${(latest.to || []).join('/')} — not your turn`
+  }
+
+  if (json) {
+    console.log(JSON.stringify({
+      verdict, role, reason,
+      latest: latest && { num: latest.num, from: latest.from, to: latest.to, state: latest.state, phase: latest.phase, scope: latest.scope },
+    }, null, 2))
+    return
+  }
+  console.log(`${verdict === 'ACT' ? '📬' : '📭'} news[${role}]: ${verdict} — ${reason}`)
+}
+
 // ── Next-move footer ─────────────────────────────────────────────────────────
 //
 // Who legally replies to what, and with which states. Mirrors the pact's actual
@@ -803,6 +845,18 @@ function main() {
     return
   }
 
+  // news resolves its own role (from --role or the session's stamped marker) so a
+  // single `/loop … /grimoire:news` works in any pact session. Handle before the
+  // strict --role gate below.
+  if (verb === 'news') {
+    const newsRole = (args.role || readRoleMarker(dir, args.session) || '').toLowerCase()
+    if (!ROLES.includes(newsRole)) {
+      fail(`news: could not resolve role — pass --role <${ROLES.join('|')}>, or run your role's skill once so the session stamps its role`)
+    }
+    news({ dir, role: newsRole, json: args.json })
+    return
+  }
+
   const role = (args.role || '').toLowerCase()
   if (!ROLES.includes(role)) {
     fail(`--role must be one of: ${ROLES.join(', ')}`)
@@ -853,7 +907,7 @@ function main() {
     return
   }
 
-  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next | drive | commit`)
+  fail(`unknown verb '${verb || ''}'. Use: read | write | status | archive | next | drive | news | commit`)
 }
 
 function fail(msg) {
@@ -866,4 +920,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
+module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, news, readRoleMarker, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
