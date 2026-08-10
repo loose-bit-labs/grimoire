@@ -160,8 +160,12 @@ function main() {
     console.error('grim mm drive: --role is required')
     process.exit(1)
   }
+  // Default --session to the ambient CLAUDE_CODE_SESSION_ID (explicit flag wins).
+  if (!flags.session && process.env.CLAUDE_CODE_SESSION_ID) {
+    flags.session = process.env.CLAUDE_CODE_SESSION_ID
+  }
   if (!flags.session) {
-    console.error('grim mm drive: --session is required')
+    console.error('grim mm drive: --session is required (or set CLAUDE_CODE_SESSION_ID)')
     process.exit(1)
   }
 

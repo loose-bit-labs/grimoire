@@ -779,6 +779,12 @@ function main() {
     alias:   { d: 'dir' },
   })
 
+  // Default --session to the ambient CLAUDE_CODE_SESSION_ID so callers don't have
+  // to spell it on every invocation. An explicit --session always wins.
+  if (!args.session && process.env.CLAUDE_CODE_SESSION_ID) {
+    args.session = process.env.CLAUDE_CODE_SESSION_ID
+  }
+
   const cwd = process.cwd()
   const dir = path.join(cwd, MM)
   ensureDir(dir)

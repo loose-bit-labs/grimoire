@@ -396,3 +396,37 @@ describe('drive identity guard reachability', () => {
       'circular-dep warning present — drive guard would be undefined:\n' + r.stderr)
   })
 })
+
+// --session defaults to CLAUDE_CODE_SESSION_ID so callers don't spell it every
+// time (token waste). stampRole writes .mm/.role-<session> — a clean probe for
+// which session id actually flowed through.
+describe('--session defaults to CLAUDE_CODE_SESSION_ID', () => {
+  const { execFileSync } = require('node:child_process')
+  const mmBin = path.join(__dirname, '..', 'bin', 'grim-mm.js')
+
+  function readInTmp(env) {
+    const tmp = mktmp()
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync(process.execPath, [mmBin, 'read', '--role', 'hierophant'],
+      { cwd: tmp, stdio: 'ignore', env: { ...process.env, ...env } })
+    return tmp
+  }
+
+  it('uses the env session when --session is omitted', () => {
+    const tmp = readInTmp({ CLAUDE_CODE_SESSION_ID: 'env-sess-abc' })
+    try { assert.ok(fs.existsSync(path.join(tmp, '.mm', '.role-env-sess-abc')),
+      'role marker should carry the ambient session id') }
+    finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  it('explicit --session still wins over the env', () => {
+    const tmp = mktmp()
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' })
+    execFileSync(process.execPath, [mmBin, 'read', '--role', 'hierophant', '--session', 'explicit-xyz'],
+      { cwd: tmp, stdio: 'ignore', env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'env-sess-abc' } })
+    try {
+      assert.ok(fs.existsSync(path.join(tmp, '.mm', '.role-explicit-xyz')), 'explicit session should win')
+      assert.ok(!fs.existsSync(path.join(tmp, '.mm', '.role-env-sess-abc')), 'env must not override explicit')
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+})
