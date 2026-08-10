@@ -60,6 +60,7 @@ const PORT = config.port
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
+app.use(express.static(path.join(__dirname, '..', 'public')))
 
 // ── Graph cache (reload every 30s or on-demand) ───────────────────────────────
 
