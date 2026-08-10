@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-08 (phase 61 accepted).
+Binding for all phases. Last updated 2026-08-10 (phase 62 accepted).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -319,10 +319,10 @@ primary (Prometheus for history) · inlined Three.js meeples · **thin vertical 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 61 | plans/phase-61.md | **thin vertical slice, aid only** — `lib/hmm.js` status state machine (parse `.mm` + `grim roadmap`), `grim rig` `GET /hmm`, grimoire `GET /api/hmm` (aid-only) + `/hall`, `grim hmm` CLI, rough Three.js Guild Hall. Proves the whole pipe end-to-end | ✅ accepted (hierophant, 2026-08-08) — Track Q; shipped 9159594 + 54cc5a8 |
-| 62 | plans/phase-62.md | **fleet fan-out + WS + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`, down-box tolerant), WS push-on-change, `hmm_*` gauges, host/project switcher | queued (hierophant, 2026-08-06) — Track Q; depends on 61 |
+| 62 | plans/phase-62.md | **fleet fan-out + SSE + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`, down-box tolerant), SSE push-on-change (no ws dep), `hmm_*` gauges, host/project switcher + live updates | ✅ accepted (hierophant, 2026-08-10) — Track Q; shipped; SSE ruling (no ws dep) |
 | 63 | plans/phase-63.md | **Guild Hall polish** — full status→meeple animations, idle-cycle tour, gray-out on inactivity, `/api/hmm/:host/:project` info-panel, distinct per-role avatars | queued (hierophant, 2026-08-06) — Track Q; depends on 62 |
 
-## Track K cont. — fresh-client robustness (phases 64–65)
+## Track K cont. — fresh-client robustness (phases 64–65, 67)
 
 Found live on the **new box joining the fleet** (same way vier gave us 53/54/59): first-run CLI commands
 die with cryptic errors instead of resolving aid via lbl-config. Both are onboarding blockers.
@@ -331,6 +331,7 @@ die with cryptic errors instead of resolving aid via lbl-config. Both are onboar
 |-------|-------|------|--------|
 | 64 | plans/phase-64.md | **`grim host list` remote mode** — clients (no `GRIMOIRE_ROOT`) throw `local KB required` instead of fetching from aid. Add `GET /api/hosts/inventory` + a `list()` remote fallback mirroring `gen-hosts` (phase 54). Byte-identical local vs remote | ✅ accepted (hierophant-verified 2026-08-06) — Track K; endpoint + remote fallback + byte-identical confirmed, tests made hermetic after a revise (0267) |
 | 65 | plans/phase-65.md | **`grim rig` `Invalid URL` fix** — `resolveRigHub` destructures `URL.host` (hostname:port) and appends `:18081` → double-port `http://aid:3663:18081`. Use `.hostname`. Real bug (masked on aid by local path); also the true cause of phase 60's rig-test failure | ✅ accepted (hierophant-verified 2026-08-06) — Track K; **code fix landed early in phase 60 (`ac3b501`)**, phase 65 added the URL-shape guard test (`75586d3`). Track K complete — new box unblocked |
+| 67 | plans/phase-67.md | **auto-onboard a registered host to fleet + telemetry** — a new host registers → KB entity written, but invisible to telemetry until a manual rig.json edit + scrape/dashboard regen + Prometheus reload (the tbona dance, 2026-08-10). Add `upsertBox` + `reconcileTelemetry` (`grim rig reconcile`) + server `POST /api/hosts/onboard` (server-only, reconcile must run on aid) + register-script onboard call (dry-run aware). Idempotent; graceful if Prometheus down | queued (hierophant, 2026-08-10) — Track K; **depends on phase 62 accept**; brief ready |
 
 ## Acceptance bar (mage enforces per phase)
 
