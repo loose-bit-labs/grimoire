@@ -116,7 +116,9 @@
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0f0f23)
 
-    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / (container.clientHeight || 340), 0.1, 1000)
+    const W = container.clientWidth || 800
+    const H = container.clientHeight || 340
+    const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 1000)
     camera.position.set(0, 5, 10)
     camera.lookAt(0, 0, 0)
 
@@ -127,7 +129,7 @@
     scene.add(dir)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setSize(container.clientWidth, container.clientHeight || 340)
+    renderer.setSize(W, H)
     container.appendChild(renderer.domElement)
 
     const ground = new THREE.Mesh(
@@ -137,6 +139,20 @@
     ground.rotation.x = -Math.PI / 2
     ground.position.y = -0.01
     scene.add(ground)
+
+    // Resize observer: the container may have width:100% but clientWidth is 0
+    // at creation time before the browser lays out the parent. Re-size on first
+    // paint and on any resize so the camera aspect ratio stays correct.
+    const ro = new ResizeObserver(() => {
+      const w = container.clientWidth || W
+      const h = container.clientHeight || H
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+        renderer.setSize(w, h)
+      }
+    })
+    ro.observe(container)
 
     return { scene, camera, renderer, meeples: [], container }
   }
