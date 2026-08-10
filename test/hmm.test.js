@@ -14,7 +14,7 @@ const assert = require('node:assert')
 const fs     = require('node:fs')
 const path   = require('node:path')
 
-const { scanProjects, projectStatus, ACTIVE_SEC, IDLE_SEC } = require('../lib/hmm')
+const { scanProjects, projectStatus, toPrometheus, ACTIVE_SEC, IDLE_SEC } = require('../lib/hmm')
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -270,5 +270,69 @@ describe('hmm: status core', () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('hmm: toPrometheus', () => {
+  it('emits bounded gauges per participant', () => {
+    const projects = [
+      {
+        project: 'grimoire',
+        roadmapOpen: 1,
+        retired: false,
+        participants: [
+          { role: 'hierophant', status: 'waiting', lastActivitySec: 360 },
+          { role: 'mage', status: 'sleeping', lastActivitySec: 1200 },
+          { role: 'minion', status: 'working', lastActivitySec: 60 },
+        ],
+      },
+    ]
+    const out = toPrometheus(projects, 'aid')
+    // Should have 6 lines: 3 status + 3 activity
+    const lines = out.trim().split('\n')
+    assert.equal(lines.length, 6, 'should emit 2 gauges × 3 participants')
+    assert.ok(out.includes('hmm_participant_status{host="aid",project="grimoire",role="hierophant",status="waiting"} 0'), 'waiting → 0')
+    assert.ok(out.includes('hmm_participant_status{host="aid",project="grimoire",role="minion",status="working"} 1'), 'working → 1')
+    assert.ok(out.includes('hmm_last_activity_seconds{host="aid",project="grimoire",role="minion"} 60'), 'age 60')
+  })
+
+  it('retired participants emit status 0', () => {
+    const projects = [
+      {
+        project: 'wantan',
+        roadmapOpen: 0,
+        retired: true,
+        participants: [
+          { role: 'hierophant', status: 'retired', lastActivitySec: 50000 },
+          { role: 'mage', status: 'retired', lastActivitySec: 50000 },
+          { role: 'minion', status: 'retired', lastActivitySec: 50000 },
+        ],
+      },
+    ]
+    const out = toPrometheus(projects, 'aid')
+    assert.ok(!out.includes(' 1\n'), 'no participant should emit 1 for retired project')
+    for (const role of ['hierophant', 'mage', 'minion']) {
+      assert.ok(out.includes(`status="retired"} 0`), `${role} retired should emit 0`)
+    }
+  })
+
+  it('sanitizes project names with hyphens', () => {
+    const projects = [
+      {
+        project: 'grim-npc',
+        roadmapOpen: 0,
+        retired: true,
+        participants: [
+          { role: 'minion', status: 'retired', lastActivitySec: 100 },
+        ],
+      },
+    ]
+    const out = toPrometheus(projects, 'aid')
+    assert.ok(out.includes('project="grim_npc"'), 'hyphen should be sanitized to underscore')
+    assert.ok(!out.includes('project="grim-npc"'), 'hyphen should not appear in label')
+  })
+
+  it('exports toPrometheus', () => {
+    assert.ok(typeof toPrometheus === 'function', 'toPrometheus should be exported')
   })
 })

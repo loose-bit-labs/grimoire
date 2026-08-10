@@ -48,7 +48,9 @@ const { recall, remember, update, relate, annotate, forget } = require('./grim-t
 const { crawlText } = require('./grim-crawl')
 const { config, requireMode } = require('../lib/env')
 const { scanHostEntities, buildHostsOutput } = require('./grim-host')
-const { scanProjects, projectStatus } = require('../lib/hmm')
+const { scanProjects, projectStatus, toPrometheus, ACTIVE_SEC, IDLE_SEC } = require('../lib/hmm')
+const rig = require('../bin/grim-rig')
+const http = require('node:http')
 const { semanticSearch, indexReady } = require('../lib/vectors')
 
 requireMode('local')
@@ -311,16 +313,107 @@ app.get('/config/lbl', (req, res) => {
 
 // ── HMM Tracking (Track Q) ────────────────────────────────────────────────────
 
-app.get('/api/hmm', (req, res) => {
+const HMM_POLL_SEC = 10 // SSE poll interval
+
+/**
+ * Fetch HMM data from a single box's rig agent.
+ * Returns { host, up, projects } — down box → up:false, projects:[].
+ */
+async function fetchBoxHmm(boxName) {
+  const port = config.ports?.grim_rig || 18081
+  const isLocal = boxName === os.hostname().toLowerCase() ||
+    (rig.loadBoxesGraceful().find(b => b.label === boxName)?.aliases || []).includes(os.hostname().toLowerCase())
+  const addr = isLocal ? `http://127.0.0.1:${port}/hmm` : `http://${boxName}:${port}/hmm`
   try {
+    const data = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 3000)
+      http.get(addr, { signal: AbortSignal.timeout(3000) }, res => {
+        clearTimeout(timer)
+        if (res.statusCode !== 200) return resolve(null)
+        let body = ''
+        res.on('data', c => { body += c })
+        res.on('end', () => { try { resolve(JSON.parse(body)) } catch { resolve(null) } })
+      }).on('error', () => { clearTimeout(timer); resolve(null) })
+    })
+    if (!data || !data.host) return { host: boxName, up: false, projects: [] }
+    return { host: boxName, up: true, projects: data.projects || [] }
+  } catch {
+    return { host: boxName, up: false, projects: [] }
+  }
+}
+
+/**
+ * Fan out over rig.json boxes, merge into { boxes: [{ host, up, projects }] }.
+ * Down boxes are included as up:false — never 500.
+ */
+async function fetchFleetHmm() {
+  const boxes = rig.loadBoxesGraceful()
+  const results = await Promise.allSettled(
+    boxes.filter(b => !b.skip).map(b => fetchBoxHmm(b.label || b.host))
+  )
+  const boxesOut = results.map(r => r.status === 'fulfilled' ? r.value : { host: '?', up: false, projects: [] })
+  // If no boxes configured, fall back to local scan
+  if (boxesOut.length === 0) {
     const root = path.join(os.homedir(), 'src', 'me')
     const projects = scanProjects(root).map(p => projectStatus(p, Math.floor(Date.now() / 1000)))
-    // TODO(62): fan out over rig.json like /fleet
-    res.json({ boxes: [{ host: 'aid', projects }] })
+    return { boxes: [{ host: os.hostname().toLowerCase(), up: true, projects }] }
+  }
+  return { boxes: boxesOut }
+}
+
+// Shared state for SSE: last emitted snapshot
+let _hmmLastSnapshot = null
+let _hmmPollTimer = null
+
+function _startHmmPoll() {
+  if (_hmmPollTimer) return
+  _hmmPollTimer = setInterval(async () => {
+    try {
+      const snapshot = await fetchFleetHmm()
+      const serialized = JSON.stringify(snapshot)
+      if (_hmmLastSnapshot !== serialized) {
+        _hmmLastSnapshot = serialized
+        // Broadcast to all connected SSE clients
+        for (const client of ((_hmmSSEClients || []).slice())) {
+          try { client.write(`data: ${serialized}\n\n`) } catch { /* dead client, cleaned up on close */ }
+        }
+      }
+    } catch { /* poll error — next tick retries */ }
+  }, HMM_POLL_SEC * 1000)
+  // Unref so it doesn't keep the process alive
+  _hmmPollTimer.unref()
+}
+
+let _hmmSSEClients = []
+
+app.get('/api/hmm', async (req, res) => {
+  try {
+    const data = await fetchFleetHmm()
+    res.json(data)
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
+
+app.get('/api/hmm/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  })
+  _hmmSSEClients = _hmmSSEClients || []
+  _hmmSSEClients.push(res)
+  // Send current snapshot immediately
+  if (_hmmLastSnapshot) {
+    try { res.write(`data: ${_hmmLastSnapshot}\n\n`) } catch { /* ignore */ }
+  }
+  req.on('close', () => {
+    _hmmSSEClients = (_hmmSSEClients || []).filter(c => c !== res)
+  })
+})
+
+_startHmmPoll()
 
 app.get('/hall', (req, res) => {
   const htmlPath = path.join(__dirname, '..', 'public', 'guild-hall.html')

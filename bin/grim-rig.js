@@ -39,7 +39,7 @@ const os         = require('node:os')
 const path       = require('node:path')
 const minimist   = require('minimist')
 const { config, isLocal, lblEndpoint } = require('../lib/env')
-const { scanProjects, projectStatus } = require('../lib/hmm')
+const { scanProjects, projectStatus, toPrometheus } = require('../lib/hmm')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
 
@@ -1233,7 +1233,13 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
 
     if (req.url === '/metrics' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end(toPrometheusText(snapshot))
+      const root = path.join(os.homedir(), 'src', 'me')
+      let hmmLines = ''
+      try {
+        const projects = scanProjects(root).map(p => projectStatus(p, Math.floor(Date.now() / 1000)))
+        hmmLines = toPrometheus(projects, os.hostname().toLowerCase())
+      } catch { /* hmm metrics unavailable — skip */ }
+      res.end(toPrometheusText(snapshot) + (hmmLines ? hmmLines + '\n' : ''))
       return
     }
 

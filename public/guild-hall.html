@@ -230,11 +230,35 @@
   document.getElementById('host-select').addEventListener('change', renderCurrent)
   document.getElementById('project-select').addEventListener('change', renderCurrent)
 
+  // ── SSE live updates ────────────────────────────────────────────────────────
+  let evtSource = null
+  function connectSSE() {
+    evtSource = new EventSource('/api/hmm/stream')
+    evtSource.onmessage = (ev) => {
+      try {
+        allData = JSON.parse(ev.data)
+        document.getElementById('loading').style.display = 'none'
+        populateSwitcher()
+        renderCurrent()
+      } catch { /* ignore malformed events */ }
+    }
+    evtSource.onerror = () => {
+      // Fall back to polling — close and let setInterval handle it
+      evtSource.close()
+      evtSource = null
+    }
+  }
+
   // ── Boot ────────────────────────────────────────────────────────────────────
   initScene()
-  loadData()
-  // Poll every 10s
-  setInterval(loadData, 10000)
+  loadData().then(() => {
+    connectSSE()
+  }).catch(() => {
+    document.getElementById('loading').style.display = 'none'
+    document.getElementById('error').style.display = 'block'
+  })
+  // Fallback poll every 10s (SSE error handler closes the connection on failure)
+  setInterval(() => { if (!evtSource) loadData() }, 10000)
 })()
 </script>
 </body>
