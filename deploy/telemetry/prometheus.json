@@ -38,6 +38,14 @@
           "labels": {
             "box": "superack"
           }
+        },
+        {
+          "targets": [
+            "tbona:18081"
+          ],
+          "labels": {
+            "box": "tbona"
+          }
         }
       ]
     }
