@@ -4315,7 +4315,7 @@
             "x": 0,
             "y": 24
           },
-          "id": 3048,
+          "id": 3051,
           "title": "VRAM / GPU Compute (last 10m)",
           "type": "timeseries",
           "timeFrom": "10m",
