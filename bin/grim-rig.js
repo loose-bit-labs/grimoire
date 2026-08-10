@@ -1013,6 +1013,43 @@ function toPrometheusText(snapshot) {
 }
 
 /**
+ * Emit Prometheus metrics for every box in a /fleet response.
+ * Each box gets its own host+gpu-labeled series so Grafana sees all nodes.
+ * Down boxes get up=0 with no GPU/service series.
+ */
+function fleetToPrometheusText(fleetData, skipNode = null) {
+  const lines = []
+  for (const b of (fleetData.boxes || [])) {
+    if (b.name === skipNode) continue
+    const node = b.name
+    if (!b.up) {
+      lines.push(`gen_host_cpu_percent{node="${node}"} 0`)
+      lines.push(`gen_host_mem_used_mb{node="${node}"} 0`)
+      lines.push(`gen_host_mem_total_mb{node="${node}"} 0`)
+      lines.push(`gen_host_disk_used_percent{node="${node}"} 0`)
+      lines.push(`gen_service_up{node="${node}",service="_"} 0`)
+      continue
+    }
+    // Host metrics — fleet aggregates VRAM to totals; emit what we have
+    lines.push(`gen_host_cpu_percent{node="${node}"} ${b.util}`)
+    lines.push(`gen_host_mem_used_mb{node="${node}"} 0`)
+    lines.push(`gen_host_mem_total_mb{node="${node}"} 0`)
+    lines.push(`gen_host_disk_used_percent{node="${node}"} 0`)
+    // GPU — fleet gives aggregated totals; emit as gpu="0" for compatibility
+    // (per-GPU breakdown requires each box's /status; this is best-effort)
+    lines.push(`gen_gpu_vram_total_mb{node="${node}",gpu="0"} ${Math.round(b.vramTotal * 1024)}`)
+    lines.push(`gen_gpu_vram_used_mb{node="${node}",gpu="0"} ${Math.round(b.vramUsed * 1024)}`)
+    lines.push(`gen_gpu_util_percent{node="${node}",gpu="0"} ${b.util}`)
+    lines.push(`gen_gpu_temp_c{node="${node}",gpu="0"} ${b.temp || 0}`)
+    // Service up
+    lines.push(`gen_service_up{node="${node}",service="rig"} 1`)
+    lines.push(`gen_queue_pending{node="${node}",service="rig"} 0`)
+    lines.push(`gen_requests_running{node="${node}",service="rig"} 0`)
+  }
+  return lines.join('\n') + '\n'
+}
+
+/**
  * Start the telemetry serve loop.
  * @param {object} opts
 /**
@@ -1239,7 +1276,15 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
         const projects = scanProjects(root).map(p => projectStatus(p, Math.floor(Date.now() / 1000)))
         hmmLines = toPrometheus(projects, os.hostname().toLowerCase())
       } catch { /* hmm metrics unavailable — skip */ }
-      res.end(toPrometheusText(snapshot) + (hmmLines ? hmmLines + '\n' : ''))
+      // Emit local snapshot + fleet-wide metrics so Grafana sees all boxes
+      // Skip the local node in fleet output to avoid duplicates
+      let fleetLines = ''
+      try {
+        const fleet = await getFleet(boxes)
+        const localNode = os.hostname().toLowerCase()
+        fleetLines = fleetToPrometheusText(fleet, localNode)
+      } catch { /* fleet unavailable — skip */ }
+      res.end(toPrometheusText(snapshot) + fleetLines + (hmmLines ? hmmLines + '\n' : ''))
       return
     }
 
