@@ -397,6 +397,26 @@ describe('drive identity guard reachability', () => {
   })
 })
 
+// strayEntries — .mm is for messages only; flag artifact dirs/files that belong
+// outside (a gitignored reviews/), so bots stop dumping review HTML into .mm.
+describe('strayEntries', () => {
+  const { strayEntries } = require('../bin/grim-mm')
+  it('ignores messages, role markers, .escalated, .gitignore; flags the rest', () => {
+    const dir = mktmp()
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, '0001-from-mage-to-minion.md'), 'x')
+    fs.writeFileSync(path.join(dir, '0002-minion.md'), 'x')          // legacy message
+    fs.writeFileSync(path.join(dir, '.role-abc'), 'mage')
+    fs.writeFileSync(path.join(dir, '.escalated'), '1')
+    fs.writeFileSync(path.join(dir, '.gitignore'), '*')
+    fs.mkdirSync(path.join(dir, 'review'))                           // stray artifact dir
+    fs.writeFileSync(path.join(dir, 'scratch.html'), '<html>')       // stray file
+    try {
+      assert.deepEqual(strayEntries(dir), ['review', 'scratch.html'])
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 // news — role-agnostic "is it my turn?" verdict from the LATEST message's
 // addressing, so `/loop … /grimoire:news` works for every role.
 describe('news verdict', () => {

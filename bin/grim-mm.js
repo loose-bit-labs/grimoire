@@ -456,22 +456,43 @@ ${body.trim()}\n`
   }
 }
 
+// Entries in .mm/ that are NOT part of the pact: thread messages (NNNN-*.md),
+// session role markers (.role-*), the .escalated signal, and .gitignore are legit.
+// Anything else — review/ artifact dirs, generated HTML, stray files — is bloat that
+// belongs OUTSIDE .mm (a gitignored reviews/ or docs/). .mm is messages, not a scratch
+// dir. (Bots kept dumping 30M of review HTML into wantan's .mm — Rule 13, code nudges.)
+function strayEntries(dir) {
+  let names = []
+  try { names = fs.readdirSync(dir) } catch { return [] }
+  return names.filter(n =>
+    !/^\d+-.*\.md$/.test(n) &&
+    !/^\.role-/.test(n) &&
+    n !== '.escalated' &&
+    n !== '.gitignore',
+  ).sort()
+}
+
 function status({ dir, json }) {
   const thread = readThread(dir)
   const latest = thread[thread.length - 1] || null
   const owner  = latest ? (TERMINAL.includes(latest.state) ? latest.from : NEXT_OWNER[latest.from]) : null
+  const stray  = strayEntries(dir)
 
   if (json) {
     console.log(JSON.stringify({
       count: thread.length,
       latest: latest && { num: latest.num, from: latest.from, to: latest.to, state: latest.state, phase: latest.phase },
       owner,
+      stray,
     }, null, 2))
     return
   }
 
-  if (!latest) { console.log(`[grim-mm] status: EMPTY — no messages yet.`); return }
-  console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
+  if (!latest) console.log(`[grim-mm] status: EMPTY — no messages yet.`)
+  else console.log(`[grim-mm] status: ${thread.length} message(s) — latest #${String(latest.num).padStart(PAD, '0')}-${latest.from}→${latest.to.join(',')} (${latest.state}, phase ${latest.phase}) — next move: ${owner}`)
+  if (stray.length) {
+    console.log(`[grim-mm] ⚠ .mm/ is for messages only — move these out (e.g. a gitignored reviews/ or docs/): ${stray.join(', ')}`)
+  }
 }
 
 // Concatenate messages to plans/reviews/<name>.md and commit it.
@@ -920,4 +941,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, archive, write, computeNextMove, next, news, readRoleMarker, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
+module.exports = { readThread, parseName, parseHeader, status, strayEntries, archive, write, computeNextMove, next, news, readRoleMarker, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
