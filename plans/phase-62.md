@@ -18,13 +18,19 @@ This phase turns the single-box slice into a **fleet-wide, live** view. No new a
   `boxes` like the rest).
 - Boxes come from `rig.json` (aid/chonko/meinherz/superack/…) — resolve, don't hardcode.
 
-**B. WS push — grimoire `WS /api/hmm/ws`** (`bin/grim-server.js`).
-- On connect, send the current merged payload; then **poll the fan-out on an interval** (`HMM_POLL_SEC`
-  ≈ 5–10, a named const), diff against the last sent payload, and **broadcast only on change**. Keep it
-  dead simple — poll + shallow-diff + broadcast; no per-box push plumbing. One shared poll timer feeds
-  all connected clients (don't spin a timer per socket). Clean up the interval when the last client
-  disconnects.
-- The viewer prefers WS; if WS is unavailable it falls back to polling `GET /api/hmm` (keeps 61's path
+**B. Live push — grimoire `GET /api/hmm/stream` (Server-Sent Events)** (`bin/grim-server.js`).
+- **Architecture ruling (overrides the design doc's "WS"):** use **SSE, not WebSocket.** Verified
+  2026-08-09: the grimoire server is Express with **no `ws` dependency installed** and no upgrade
+  handling. The push here is strictly **server → browser** (the viewer never sends), which is exactly
+  what SSE is for. SSE needs **zero new dependencies** — an `app.get` route that sets
+  `Content-Type: text/event-stream` and holds the response open, writing `data: <json>\n\n` frames.
+  This keeps the local-first / minimal-dep value and is simpler than a WS handshake. Do **not** add
+  `ws` or any WebSocket lib.
+- On connect, send the current merged payload as the first event; then **poll the fan-out on an
+  interval** (`HMM_POLL_SEC` ≈ 5–10, a named const), diff against the last sent payload, and **emit an
+  event only on change**. One shared poll timer feeds all connected clients (don't spin a timer per
+  connection). Clean up the timer/interval when the last client disconnects (`req.on('close', …)`).
+- The viewer prefers the SSE stream; if it drops, fall back to polling `GET /api/hmm` (keeps 61's path
   working). Don't break the plain REST endpoint.
 
 **C. Prometheus history — `hmm_*` gauges in each rig agent `/metrics`** (`bin/grim-rig.js`, helper in
@@ -39,9 +45,9 @@ This phase turns the single-box slice into a **fleet-wide, live** view. No new a
   Prometheus (decision 1); it exists for time-series/Grafana only.
 
 **D. Viewer — host/project switcher + live updates** (`public/guild-hall.html`).
-- Consume the multi-box payload: a **host switch** and a **project switch** (spec pt 4). Subscribe to
-  `/api/hmm/ws`; when a broadcast arrives, update the meeples in place (a participant going
-  `working→waiting` changes on screen within a poll interval). Still rough visuals — polish is 63.
+- Consume the multi-box payload: a **host switch** and a **project switch** (spec pt 4). Subscribe via
+  `new EventSource('/api/hmm/stream')`; when an event arrives, update the meeples in place (a participant
+  going `working→waiting` changes on screen within a poll interval). Still rough visuals — polish is 63.
 
 ## Out of scope / do NOT
 
@@ -57,14 +63,16 @@ This phase turns the single-box slice into a **fleet-wide, live** view. No new a
 - **`curl -s http://aid:3663/api/hmm`** returns `boxes[]` covering the reachable fleet, each with its
   projects; **kill one box's rig agent** (or point at a dead host) and confirm the response still returns
   200 with that box `up:false` — the others unaffected. Capture both runs.
-- **WS liveness:** connect a WS client to `/api/hmm/ws`, cause a real pact status change on some box
-  (e.g. a `.mm` write flips whose-turn), and observe the broadcast arrive within one `HMM_POLL_SEC`.
-  Show it. *"WS connects" is not acceptance — a real status change must propagate.*
+- **SSE liveness:** connect to `/api/hmm/stream` (e.g. `curl -N http://aid:3663/api/hmm/stream`), cause
+  a real pact status change on some box (a `.mm` write flips whose-turn), and observe the `data:` event
+  arrive within one `HMM_POLL_SEC`. Show it. *"stream connects" is not acceptance — a real status
+  change must propagate.* Confirm no `ws`/WebSocket dependency was added (`grep -i ws package.json`).
 - **`curl -s http://<box>:18081/metrics | grep hmm_`** shows the `hmm_participant_status` /
   `hmm_last_activity_seconds` lines with sane labels; confirm Prometheus scrapes them (query
   `hmm_participant_status` returns series). Bounded cardinality — no phase/id labels.
 - The Guild Hall page switches hosts/projects and updates meeples live off WS (user eyeballs).
 - Default `node --test test/` still green + self-terminating (phase 60's bar holds).
-- Footprint: `bin/grim-server.js` (fan-out + WS), `bin/grim-rig.js` (hmm_* in /metrics),
-  `lib/hmm.js` (`toPrometheus` helper), `public/guild-hall.html` (switcher + WS client),
-  `test/hmm.test.js` (fan-out merge + toPrometheus shape + down-box tolerance).
+- Footprint: `bin/grim-server.js` (fan-out + SSE stream), `bin/grim-rig.js` (hmm_* in /metrics),
+  `lib/hmm.js` (`toPrometheus` helper), `public/guild-hall.html` (switcher + EventSource client),
+  `test/hmm.test.js` (fan-out merge + toPrometheus shape + down-box tolerance). **No new npm
+  dependency** — if you think you need one, escalate instead.
