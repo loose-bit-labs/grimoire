@@ -8,26 +8,47 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; }
   h1 { text-align: center; padding: 1rem; color: #ffd700; letter-spacing: 0.1em; }
-  #switcher { text-align: center; padding: 0.5rem; }
+  #switcher { text-align: center; padding: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
   #switcher select { padding: 0.4rem 1rem; font-size: 1rem; background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; }
-  .project { margin: 1rem auto; max-width: 900px; }
-  .project h2 { color: #ffd700; padding: 0.5rem 1rem; background: #16213e; border-radius: 4px; margin-bottom: 0.5rem; }
+  #tour-toggle { padding: 0.4rem 0.8rem; font-size: 0.85rem; background: #16213e; color: #aaa; border: 1px solid #0f3460; border-radius: 4px; cursor: pointer; }
+  #tour-toggle.active { color: #ffd700; border-color: #ffd700; }
+  .project { margin: 1rem auto; max-width: 900px; transition: filter 0.8s ease, opacity 0.8s ease; }
+  .project.quiet { filter: grayscale(1) brightness(0.6); }
+  .project h2 { color: #ffd700; padding: 0.5rem 1rem; background: #16213e; border-radius: 4px 4px 0 0; margin-bottom: 0; display: flex; align-items: center; gap: 0.5rem; }
   .project.retired h2 { color: #666; }
-  .meeple-row { display: flex; gap: 1rem; padding: 0.5rem 1rem; flex-wrap: wrap; }
-  .meeple-card { background: #16213e; border-radius: 8px; padding: 0.75rem; min-width: 180px; flex: 1; }
-  .meeple-card .role { font-weight: bold; color: #ffd700; margin-bottom: 0.25rem; }
-  .meeple-card .status { font-size: 0.85rem; padding: 0.2rem 0.5rem; border-radius: 3px; display: inline-block; }
-  .meeple-card .age { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+  .project h2 .live-phase { font-size: 0.75rem; color: #888; font-weight: normal; margin-left: auto; }
+  .info-icon { cursor: pointer; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #0f3460; color: #a8dadc; font-size: 0.75rem; display: inline-flex; align-items: center; justify-content: center; user-select: none; flex-shrink: 0; }
+  .info-icon:hover { background: #1d3557; }
+  #canvas-container { width: 100%; height: 340px; background: #0f0f23; border-radius: 0 0 8px 8px; position: relative; }
+  canvas { display: block; }
+  #screen-header { max-width: 900px; margin: 1rem auto 0; }
+  #loading { text-align: center; padding: 2rem; color: #888; }
+  #error { text-align: center; padding: 2rem; color: #e63946; }
+  #tooltip {
+    position: fixed; display: none; pointer-events: none; z-index: 20;
+    background: #16213e; border: 1px solid #0f3460; border-radius: 6px;
+    padding: 0.5rem 0.75rem; font-size: 0.8rem; color: #e0e0e0; max-width: 220px;
+  }
+  #tooltip .role { color: #ffd700; font-weight: bold; }
+  #panel-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 30;
+    align-items: center; justify-content: center;
+  }
+  #panel {
+    background: #16213e; border: 1px solid #0f3460; border-radius: 10px; padding: 1.25rem 1.5rem;
+    min-width: 300px; max-width: 90vw;
+  }
+  #panel h3 { color: #ffd700; margin-bottom: 0.75rem; }
+  #panel .row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; font-size: 0.9rem; border-bottom: 1px solid #0f3460; }
+  #panel .row:last-child { border-bottom: none; }
+  #panel .label { color: #888; }
+  #panel-close { margin-top: 1rem; padding: 0.4rem 1rem; background: #0f3460; color: #e0e0e0; border: none; border-radius: 4px; cursor: pointer; float: right; }
   .status.working { background: #2d6a4f; color: #95d5b2; }
   .status.conversing { background: #1d3557; color: #a8dadc; }
   .status.waiting-on-user { background: #6b2f1b; color: #f4a261; }
   .status.waiting { background: #3d3d3d; color: #aaa; }
   .status.sleeping { background: #2d2d2d; color: #666; }
   .status.retired { background: #1a1a1a; color: #444; }
-  #canvas-container { width: 100%; height: 300px; background: #0f0f23; border-radius: 8px; margin: 1rem 0; }
-  canvas { display: block; }
-  #loading { text-align: center; padding: 2rem; color: #888; }
-  #error { text-align: center; padding: 2rem; color: #e63946; }
 </style>
 </head>
 <body>
@@ -37,15 +58,28 @@
   <select id="host-select"><option value="aid">aid</option></select>
   <label for="project-select">Project: </label>
   <select id="project-select"><option value="all">all</option></select>
+  <button id="tour-toggle" title="Auto-cycle through active projects when idle">🔄 tour</button>
 </div>
-<div id="canvas-container"><div id="loading">Loading meeples…</div></div>
-<div id="projects"></div>
+<div id="screens"></div>
 <div id="error" style="display:none"></div>
+<div id="tooltip"></div>
+<div id="panel-overlay"><div id="panel"></div></div>
 
 <script src="vendor/three.min.js"></script>
 <script>
 (function() {
   'use strict'
+
+  // ── Status → animation map (every status lib/hmm.js can emit MUST appear here —
+  // guarded by test/hmm.test.js so an unmapped status never renders a frozen meeple) ──
+  const STATUS_ANIM = {
+    working: 'typing',
+    conversing: 'talking',
+    'waiting-on-user': 'looking-up',
+    waiting: 'idle-shift',
+    sleeping: 'slumped',
+    retired: 'fade-out',
+  }
 
   const STATUS_COLORS = {
     working: 0x2d6a4f,
@@ -56,22 +90,33 @@
     retired: 0x1a1a1a,
   }
 
-  const ROLE_COLORS = {
-    hierophant: 0xffd700,
-    mage: 0x4a90d9,
-    minion: 0xe74c3c,
+  // Role → { color, headScale, bodyScale, crown } — the silhouette cue that
+  // makes hierophant/mage/minion distinguishable at a glance across projects.
+  const ROLE_STYLE = {
+    hierophant: { color: 0xffd700, scale: 1.15, crown: true },
+    mage:       { color: 0x4a90d9, scale: 1.0,  crown: false },
+    minion:     { color: 0xe74c3c, scale: 0.8,  crown: false },
   }
 
-  let scene, camera, renderer, meeples = []
-  let allData = { boxes: [{ host: 'aid', projects: [] }] }
+  const GRAY_AFTER_SEC = 30 * 60 // whole-screen desaturate when the project's been quiet this long
+  const IDLE_TOUR_SEC  = 45      // no user interaction for this long → attract mode kicks in
+  const TOUR_STEP_MS   = 6000    // dwell time per project while touring
 
-  // ── Three.js setup ──────────────────────────────────────────────────────────
-  function initScene() {
-    const container = document.getElementById('canvas-container')
-    scene = new THREE.Scene()
+  let allData = { boxes: [{ host: 'aid', projects: [] }] }
+  let screens = {} // project key -> { scene, camera, renderer, meeples, container }
+  let lastInteraction = Date.now()
+  let tourEnabled = true
+  let tourIndex = 0
+  let tourTimer = null
+  let raycaster, mouse
+
+  // ── Three.js: one scene per visible project screen ─────────────────────────
+
+  function makeScreen(container) {
+    const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0f0f23)
 
-    camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 1000)
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / (container.clientHeight || 340), 0.1, 1000)
     camera.position.set(0, 5, 10)
     camera.lookAt(0, 0, 0)
 
@@ -81,12 +126,10 @@
     dir.position.set(5, 10, 7)
     scene.add(dir)
 
-    renderer = new THREE.WebGLRenderer({ antialias: true })
-    renderer.setSize(container.clientWidth, container.clientHeight)
-    container.innerHTML = ''
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(container.clientWidth, container.clientHeight || 340)
     container.appendChild(renderer.domElement)
 
-    // Ground plane
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(50, 50),
       new THREE.MeshStandardMaterial({ color: 0x0f0f23, roughness: 1 })
@@ -95,36 +138,37 @@
     ground.position.y = -0.01
     scene.add(ground)
 
-    animate()
+    return { scene, camera, renderer, meeples: [], container }
   }
 
-  function animate() {
-    requestAnimationFrame(animate)
-    meeples.forEach((m, i) => {
-      if (m.mesh) {
-        m.mesh.position.y = m.baseY + Math.sin(Date.now() * 0.002 + i) * 0.05
-      }
-    })
-    renderer.render(scene, camera)
-  }
-
-  function buildMeeple(color, scale) {
+  function buildMeeple(role, retired) {
+    const style = ROLE_STYLE[role] || { color: 0x888888, scale: 0.9, crown: false }
+    const color = retired ? 0x333333 : style.color
     const group = new THREE.Group()
-    // Head
+
     const head = new THREE.Mesh(
       new THREE.SphereGeometry(0.3, 16, 16),
       new THREE.MeshStandardMaterial({ color, roughness: 0.5 })
     )
     head.position.y = 0.8
     group.add(head)
-    // Body
+
+    if (style.crown && !retired) {
+      const crown = new THREE.Mesh(
+        new THREE.ConeGeometry(0.18, 0.22, 6),
+        new THREE.MeshStandardMaterial({ color: 0xffe75c, roughness: 0.3 })
+      )
+      crown.position.y = 1.15
+      group.add(crown)
+    }
+
     const body = new THREE.Mesh(
       new THREE.CylinderGeometry(0.25, 0.3, 0.5, 16),
       new THREE.MeshStandardMaterial({ color, roughness: 0.5 })
     )
     body.position.y = 0.3
     group.add(body)
-    // Legs
+
     const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 8)
     const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 })
     const leftLeg = new THREE.Mesh(legGeo, legMat)
@@ -133,85 +177,169 @@
     const rightLeg = new THREE.Mesh(legGeo, legMat)
     rightLeg.position.set(0.12, -0.15, 0)
     group.add(rightLeg)
-    group.scale.setScalar(scale || 1)
-    return group
+
+    // status bubble (?, !, z z z) — text sprite via canvas texture
+    const bubble = makeBubbleSprite()
+    bubble.position.set(0, 1.5, 0)
+    bubble.visible = false
+    group.add(bubble)
+
+    group.scale.setScalar(style.scale || 1)
+    return { group, head, body, bubble }
   }
 
-  function renderMeeples(projects) {
-    // Clear old
-    meeples.forEach(m => scene.remove(m.mesh))
-    meeples = []
+  function makeBubbleSprite() {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 64
+    const tex = new THREE.CanvasTexture(canvas)
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true })
+    const sprite = new THREE.Sprite(mat)
+    sprite.scale.set(0.5, 0.5, 1)
+    sprite._canvas = canvas
+    sprite._tex = tex
+    return sprite
+  }
 
-    let x = -4
-    projects.forEach((proj, pi) => {
-      const retired = proj.retired
-      proj.participants.forEach((p, i) => {
-        const color = retired ? 0x333333 : (ROLE_COLORS[p.role] || 0x888888)
-        const mesh = buildMeeple(color, 0.8)
-        mesh.position.set(x, 0, 0)
-        scene.add(mesh)
-        meeples.push({ mesh, baseY: 0, role: p.role, status: p.status })
-        x += 2.5
-      })
-    })
-    if (projects.length === 0) {
-      const empty = buildMeeple(0x333333, 0.8)
-      empty.position.set(0, 0, 0)
-      scene.add(empty)
-      meeples.push({ mesh: empty, baseY: 0, role: '?', status: 'retired' })
+  function setBubbleText(sprite, text, color) {
+    const ctx = sprite._canvas.getContext('2d')
+    ctx.clearRect(0, 0, 64, 64)
+    ctx.fillStyle = color || '#f4a261'
+    ctx.font = 'bold 22px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, 32, 32)
+    sprite._tex.needsUpdate = true
+  }
+
+  // ── Animation: per-status pose/motion applied every frame ──────────────────
+
+  function animateMeeple(m, t, i) {
+    const { group, head, bubble } = m
+    group.position.y = 0 // reset before per-status offsets
+    group.rotation.y = 0
+    head.rotation.x = 0
+    bubble.visible = false
+
+    switch (m.status) {
+      case 'working':
+        // heads-down typing bob
+        head.rotation.x = 0.35
+        group.position.y = Math.sin(t * 6 + i) * 0.04
+        break
+      case 'conversing':
+        // turn toward counterpart + alternating talk bob
+        group.rotation.y = m.faceSign * 0.5
+        group.position.y = Math.abs(Math.sin(t * 5 + i)) * 0.06
+        break
+      case 'waiting-on-user':
+        head.rotation.x = -0.3
+        bubble.visible = true
+        setBubbleText(bubble, m.escalateBubble || '?', '#f4a261')
+        bubble.position.y = 1.5 + Math.sin(t * 2 + i) * 0.05
+        break
+      case 'waiting':
+        group.rotation.y = m.faceSign * 0.25
+        group.position.x = m.baseX + Math.sin(t * 2 + i) * 0.03 // foot-tap shimmy
+        break
+      case 'sleeping':
+        group.rotation.z = 0.18
+        head.rotation.x = 0.5
+        bubble.visible = true
+        setBubbleText(bubble, 'z z z', '#888')
+        bubble.position.y = 1.6 + Math.sin(t * 1.5 + i) * 0.06
+        break
+      case 'retired':
+        // fade handled by material opacity in updateRetired()
+        break
+      default:
+        // Unmapped status: keep the meeple visible and idle rather than frozen mid-pose.
+        group.position.y = Math.sin(t * 2 + i) * 0.03
     }
   }
 
-  // ── DOM rendering ───────────────────────────────────────────────────────────
-  function renderProjects(projects) {
-    const container = document.getElementById('projects')
-    container.innerHTML = ''
+  function animateAll() {
+    const t = Date.now() * 0.001
+    Object.values(screens).forEach(screen => {
+      screen.meeples.forEach((m, i) => animateMeeple(m, t, i))
+      screen.renderer.render(screen.scene, screen.camera)
+    })
+    requestAnimationFrame(animateAll)
+  }
+
+  // ── Build/refresh screens from project data ─────────────────────────────────
+
+  function renderScreens(host, projects) {
+    const container = document.getElementById('screens')
+
+    // Remove screens for projects no longer present (retired-and-gone, or filtered out)
+    const keep = new Set(projects.map(p => p.project))
+    for (const key of Object.keys(screens)) {
+      if (!keep.has(key)) {
+        screens[key].container.closest('.project')?.remove()
+        delete screens[key]
+      }
+    }
+
     projects.forEach(proj => {
-      const div = document.createElement('div')
-      div.className = 'project' + (proj.retired ? ' retired' : '')
-      div.innerHTML = `<h2>${proj.project}${proj.retired ? ' (retired)' : ''}</h2>`
-      const row = document.createElement('div')
-      row.className = 'meeple-row'
-      proj.participants.forEach(p => {
-        const ageMin = Math.round(p.lastActivitySec / 60)
-        const card = document.createElement('div')
-        card.className = 'meeple-card'
-        card.innerHTML = `
-          <div class="role">${p.role}</div>
-          <div class="status ${p.status}">${p.status}</div>
-          <div class="age">${ageMin}m ago</div>
+      let div = document.getElementById('screen-' + proj.project)
+      if (!div) {
+        div = document.createElement('div')
+        div.id = 'screen-' + proj.project
+        div.className = 'project'
+        div.innerHTML = `
+          <h2>
+            <span class="title">${proj.project}</span>
+            <span class="info-icon" title="Details">ⓘ</span>
+            <span class="live-phase"></span>
+          </h2>
+          <div id="canvas-container"></div>
         `
-        row.appendChild(card)
-      })
-      div.appendChild(row)
-      container.appendChild(div)
+        div.querySelector('.info-icon').addEventListener('click', () => openPanel(host, proj.project))
+        container.appendChild(div)
+        screens[proj.project] = makeScreen(div.querySelector('#canvas-container'))
+      }
+
+      const screen = screens[proj.project]
+      div.classList.toggle('retired', !!proj.retired)
+      div.querySelector('.title').textContent = proj.project + (proj.retired ? ' (retired)' : '')
+      div.querySelector('.live-phase').textContent = proj.livePhase ? `phase ${proj.livePhase} · ${proj.latestState || ''}` : ''
+
+      const quiet = typeof proj.lastActivitySec === 'number' && proj.lastActivitySec > GRAY_AFTER_SEC
+      div.classList.toggle('quiet', quiet)
+
+      rebuildMeeples(screen, proj)
     })
   }
 
-  // ── Data loading ────────────────────────────────────────────────────────────
-  async function loadData() {
-    try {
-      const resp = await fetch('/api/hmm')
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      allData = await resp.json()
-      document.getElementById('loading').style.display = 'none'
-      populateSwitcher()
-      renderCurrent()
-    } catch (e) {
-      document.getElementById('loading').style.display = 'none'
-      document.getElementById('error').style.display = 'block'
-      document.getElementById('error').textContent = 'Failed to load: ' + e.message
-    }
+  function rebuildMeeples(screen, proj) {
+    screen.meeples.forEach(m => screen.scene.remove(m.group))
+    screen.meeples = []
+
+    const roles = ['hierophant', 'mage', 'minion']
+    const xs = { hierophant: -3, mage: 0, minion: 3 }
+    const pair = proj.conversingPair || []
+
+    roles.forEach(role => {
+      const p = (proj.participants || []).find(pp => pp.role === role)
+      if (!p) return
+      const built = buildMeeple(role, proj.retired)
+      built.group.position.x = xs[role]
+      screen.scene.add(built.group)
+      screen.meeples.push({
+        ...built,
+        role,
+        status: p.status,
+        model: p.model || role,
+        lastActivitySec: p.lastActivitySec,
+        baseX: xs[role],
+        faceSign: pair.includes(role) ? (xs[pair[0]] > xs[role] ? 1 : -1) : 1,
+        escalateBubble: proj.latestState === 'escalate' ? '!' : '?',
+      })
+    })
   }
 
-  function populateSwitcher() {
-    const hostSel = document.getElementById('host-select')
-    const projSel = document.getElementById('project-select')
-    hostSel.innerHTML = allData.boxes.map(b => `<option value="${b.host}">${b.host}</option>`).join('')
-    const projects = currentProjects()
-    projSel.innerHTML = '<option value="all">all</option>' +
-      projects.map(p => `<option value="${p.project}">${p.project}</option>`).join('')
-  }
+  // ── DOM: switcher, tooltip, info panel ──────────────────────────────────────
 
   function currentProjects() {
     const host = document.getElementById('host-select').value
@@ -219,46 +347,180 @@
     return box ? box.projects : []
   }
 
-  function renderCurrent() {
-    const projFilter = document.getElementById('project-select').value
-    let projects = currentProjects()
-    if (projFilter !== 'all') projects = projects.filter(p => p.project === projFilter)
-    renderMeeples(projects)
-    renderProjects(projects)
+  function populateSwitcher() {
+    const hostSel = document.getElementById('host-select')
+    const projSel = document.getElementById('project-select')
+    const prevHost = hostSel.value
+    hostSel.innerHTML = allData.boxes.map(b => `<option value="${b.host}">${b.host}${b.up ? '' : ' (down)'}</option>`).join('')
+    if ([...hostSel.options].some(o => o.value === prevHost)) hostSel.value = prevHost
+    const projects = currentProjects()
+    const prevProj = projSel.value
+    projSel.innerHTML = '<option value="all">all</option>' +
+      projects.map(p => `<option value="${p.project}">${p.project}</option>`).join('')
+    if ([...projSel.options].some(o => o.value === prevProj)) projSel.value = prevProj
   }
 
-  document.getElementById('host-select').addEventListener('change', renderCurrent)
-  document.getElementById('project-select').addEventListener('change', renderCurrent)
+  function renderCurrent() {
+    const host = document.getElementById('host-select').value
+    const projFilter = document.getElementById('project-select').value
+    let projects = currentProjects().filter(p => p.roadmapOpen > 0 || !p.retired ? true : false)
+    // Spec pt 5: a project with no open roadmap items no longer needs to be shown.
+    projects = projects.filter(p => p.roadmapOpen > 0)
+    if (projFilter !== 'all') projects = projects.filter(p => p.project === projFilter)
+    renderScreens(host, projects)
+  }
 
-  // ── SSE live updates ────────────────────────────────────────────────────────
+  function openPanel(host, project) {
+    const overlay = document.getElementById('panel-overlay')
+    const panel = document.getElementById('panel')
+    panel.innerHTML = '<h3>Loading…</h3>'
+    overlay.style.display = 'flex'
+    fetch(`/api/hmm/${encodeURIComponent(host)}/${encodeURIComponent(project)}`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => {
+        const rows = [
+          ['Project', d.project],
+          ['Host', d.host],
+          ['Roadmap open', d.roadmapOpen],
+          ['Live phase', d.livePhase || '—'],
+          ['Latest state', d.latestState || '—'],
+          ['Last activity', typeof d.lastActivitySec === 'number' ? Math.round(d.lastActivitySec / 60) + 'm ago' : '—'],
+        ]
+        const partRows = (d.participants || []).map(p =>
+          `<div class="row"><span class="label">${p.role}</span><span>${p.status} (${Math.round((p.lastActivitySec || 0) / 60)}m)</span></div>`
+        ).join('')
+        panel.innerHTML = `
+          <h3>${d.project} @ ${d.host}</h3>
+          ${rows.map(([k, v]) => `<div class="row"><span class="label">${k}</span><span>${v}</span></div>`).join('')}
+          ${partRows}
+          <button id="panel-close">Close</button>
+        `
+        panel.querySelector('#panel-close').addEventListener('click', closePanel)
+      })
+      .catch(e => {
+        panel.innerHTML = `<h3>Error</h3><p>${e.message}</p><button id="panel-close">Close</button>`
+        panel.querySelector('#panel-close').addEventListener('click', closePanel)
+      })
+  }
+
+  function closePanel() {
+    document.getElementById('panel-overlay').style.display = 'none'
+  }
+  document.getElementById('panel-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'panel-overlay') closePanel()
+  })
+
+  // ── Hover tooltip (raycast against all visible meeples) ─────────────────────
+
+  function initPointer() {
+    raycaster = new THREE.Raycaster()
+    mouse = new THREE.Vector2()
+    document.addEventListener('mousemove', onMouseMove)
+  }
+
+  function onMouseMove(ev) {
+    noteInteraction()
+    const tooltip = document.getElementById('tooltip')
+    let hit = null
+    for (const screen of Object.values(screens)) {
+      const rect = screen.renderer.domElement.getBoundingClientRect()
+      if (ev.clientX < rect.left || ev.clientX > rect.right || ev.clientY < rect.top || ev.clientY > rect.bottom) continue
+      mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(mouse, screen.camera)
+      for (const m of screen.meeples) {
+        const intersects = raycaster.intersectObject(m.group, true)
+        if (intersects.length) { hit = m; break }
+      }
+      if (hit) break
+    }
+    if (hit) {
+      const ageMin = typeof hit.lastActivitySec === 'number' && isFinite(hit.lastActivitySec) ? Math.round(hit.lastActivitySec / 60) : '—'
+      tooltip.innerHTML = `<div class="role">${hit.role}</div>${hit.model} · ${hit.status} · ${ageMin}m ago`
+      tooltip.style.left = (ev.clientX + 14) + 'px'
+      tooltip.style.top = (ev.clientY + 14) + 'px'
+      tooltip.style.display = 'block'
+    } else {
+      tooltip.style.display = 'none'
+    }
+  }
+
+  // ── Idle-cycle auto-tour ─────────────────────────────────────────────────────
+
+  function noteInteraction() {
+    lastInteraction = Date.now()
+  }
+
+  function tourTick() {
+    if (!tourEnabled) return
+    const idleSec = (Date.now() - lastInteraction) / 1000
+    if (idleSec < IDLE_TOUR_SEC) return
+    const projSel = document.getElementById('project-select')
+    const active = currentProjects().filter(p => p.roadmapOpen > 0)
+    if (active.length === 0) return
+    tourIndex = (tourIndex + 1) % (active.length + 1) // +1 slot for "all"
+    projSel.value = tourIndex === active.length ? 'all' : active[tourIndex].project
+    renderCurrent()
+  }
+
+  document.getElementById('tour-toggle').addEventListener('click', () => {
+    tourEnabled = !tourEnabled
+    document.getElementById('tour-toggle').classList.toggle('active', tourEnabled)
+    noteInteraction()
+  })
+  document.getElementById('tour-toggle').classList.add('active')
+
+  ;['click', 'mousemove', 'keydown', 'wheel'].forEach(evt =>
+    document.addEventListener(evt, noteInteraction, { passive: true })
+  )
+  document.getElementById('host-select').addEventListener('change', () => { noteInteraction(); renderCurrent() })
+  document.getElementById('project-select').addEventListener('change', () => { noteInteraction(); renderCurrent() })
+
+  // ── Data loading ─────────────────────────────────────────────────────────────
+
+  async function loadData() {
+    try {
+      const resp = await fetch('/api/hmm')
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      allData = await resp.json()
+      document.getElementById('error').style.display = 'none'
+      populateSwitcher()
+      renderCurrent()
+    } catch (e) {
+      document.getElementById('error').style.display = 'block'
+      document.getElementById('error').textContent = 'Failed to load: ' + e.message
+    }
+  }
+
+  // ── SSE live updates ─────────────────────────────────────────────────────────
+
   let evtSource = null
   function connectSSE() {
     evtSource = new EventSource('/api/hmm/stream')
     evtSource.onmessage = (ev) => {
       try {
         allData = JSON.parse(ev.data)
-        document.getElementById('loading').style.display = 'none'
+        document.getElementById('error').style.display = 'none'
         populateSwitcher()
         renderCurrent()
       } catch { /* ignore malformed events */ }
     }
     evtSource.onerror = () => {
-      // Fall back to polling — close and let setInterval handle it
       evtSource.close()
       evtSource = null
     }
   }
 
-  // ── Boot ────────────────────────────────────────────────────────────────────
-  initScene()
+  // ── Boot ─────────────────────────────────────────────────────────────────────
+  initPointer()
   loadData().then(() => {
     connectSSE()
   }).catch(() => {
-    document.getElementById('loading').style.display = 'none'
     document.getElementById('error').style.display = 'block'
   })
-  // Fallback poll every 10s (SSE error handler closes the connection on failure)
   setInterval(() => { if (!evtSource) loadData() }, 10000)
+  setInterval(tourTick, TOUR_STEP_MS)
+  animateAll()
 })()
 </script>
 </body>

@@ -395,6 +395,31 @@ app.get('/api/hmm', async (req, res) => {
   }
 })
 
+/**
+ * Pure lookup: pick a single project's detail out of a fleet snapshot.
+ * Returns null if the host is unknown/down or the project isn't found —
+ * no network, no side effects, so it's directly unit-testable.
+ */
+function pickProjectDetail(fleetData, host, project) {
+  const box = (fleetData.boxes || []).find(b => b.host === host)
+  if (!box || !box.up) return null
+  const proj = (box.projects || []).find(p => p.project === project)
+  if (!proj) return null
+  return { host, ...proj }
+}
+
+app.get('/api/hmm/:host/:project', async (req, res) => {
+  try {
+    const { host, project } = req.params
+    const data = await fetchFleetHmm()
+    const detail = pickProjectDetail(data, host, project)
+    if (!detail) return res.status(404).json({ error: `project not found: ${host}/${project}` })
+    res.json(detail)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/api/hmm/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -875,21 +900,25 @@ async function handleRPC(rpc) {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+// Guarded so `require('./grim-server')` (e.g. from tests) never binds the real
+// port — only running this file directly starts the listener.
 
-app.listen(PORT, '0.0.0.0', async () => {
-  try {
-    const graph = await getGraph()
-    const m     = graph._meta || {}
-    const _host = config.host || `http://localhost:${PORT}`
-    console.log(`\n  ░ Grimoire online.`)
-    console.log(`    http://0.0.0.0:${PORT}  (LAN: ${_host})`)
-    console.log(`    MCP endpoint: ${_host.replace(/\/$/, '')}/mcp`)
-    console.log(`    Entities: ${m.entityCount || '?'}  Edges: ${m.edgeCount || '?'}`)
-    console.log(`    Noise Floor: ${path.relative(process.cwd(), NOISE_FILE)}\n`)
-  } catch (e) {
-    console.log(`\n  ░ Grimoire online (graph not yet indexed — run grim scribe).`)
-    console.log(`    http://0.0.0.0:${PORT}\n`)
-  }
-})
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', async () => {
+    try {
+      const graph = await getGraph()
+      const m     = graph._meta || {}
+      const _host = config.host || `http://localhost:${PORT}`
+      console.log(`\n  ░ Grimoire online.`)
+      console.log(`    http://0.0.0.0:${PORT}  (LAN: ${_host})`)
+      console.log(`    MCP endpoint: ${_host.replace(/\/$/, '')}/mcp`)
+      console.log(`    Entities: ${m.entityCount || '?'}  Edges: ${m.edgeCount || '?'}`)
+      console.log(`    Noise Floor: ${path.relative(process.cwd(), NOISE_FILE)}\n`)
+    } catch (e) {
+      console.log(`\n  ░ Grimoire online (graph not yet indexed — run grim scribe).`)
+      console.log(`    http://0.0.0.0:${PORT}\n`)
+    }
+  })
+}
 
-module.exports = { app }
+module.exports = { app, pickProjectDetail }

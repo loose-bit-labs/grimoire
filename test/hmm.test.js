@@ -14,7 +14,7 @@ const assert = require('node:assert')
 const fs     = require('node:fs')
 const path   = require('node:path')
 
-const { scanProjects, projectStatus, toPrometheus, ACTIVE_SEC, IDLE_SEC } = require('../lib/hmm')
+const { scanProjects, projectStatus, toPrometheus, ACTIVE_SEC, IDLE_SEC, STATUSES } = require('../lib/hmm')
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -334,5 +334,113 @@ describe('hmm: toPrometheus', () => {
 
   it('exports toPrometheus', () => {
     assert.ok(typeof toPrometheus === 'function', 'toPrometheus should be exported')
+  })
+})
+
+describe('hmm: projectStatus detail fields (phase 63)', () => {
+  it('adds livePhase, latestState, lastActivitySec, conversingPair to the project object', () => {
+    const tmp = fs.mkdtempSync('/tmp/hmm-test-')
+    try {
+      const mmDir = mkProject(tmp, 'proj-detail', 1)
+      const t1 = ago(120)
+      const t2 = ago(60)
+      writeThread(mmDir, 1, 'mage', 'minion', 63, 'brief', t1)
+      writeThread(mmDir, 2, 'minion', 'mage', 63, 'report', t2)
+      const projects = scanProjects(tmp)
+      const ps = projectStatus(projects[0], Math.floor(Date.now() / 1000))
+      assert.equal(ps.livePhase, '63')
+      assert.equal(ps.latestState, 'report')
+      assert.ok(typeof ps.lastActivitySec === 'number')
+      assert.deepEqual(ps.conversingPair, ['minion', 'mage'], 'alternating pair within ACTIVE_SEC')
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('conversingPair is null when not conversing', () => {
+    const tmp = fs.mkdtempSync('/tmp/hmm-test-')
+    try {
+      const mmDir = mkProject(tmp, 'proj-noconv', 1)
+      writeThread(mmDir, 1, 'mage', 'minion', 1, 'brief', ago(60))
+      const projects = scanProjects(tmp)
+      const ps = projectStatus(projects[0], Math.floor(Date.now() / 1000))
+      assert.equal(ps.conversingPair, null)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('exports STATUSES covering the full state machine', () => {
+    assert.ok(Array.isArray(STATUSES))
+    for (const s of ['working', 'conversing', 'waiting-on-user', 'waiting', 'sleeping', 'retired']) {
+      assert.ok(STATUSES.includes(s), `STATUSES should include ${s}`)
+    }
+  })
+})
+
+describe('hmm: guild-hall viewer status→anim map (phase 63)', () => {
+  it('defines an animation key for every status the state machine can emit', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'guild-hall.html'), 'utf8')
+    const m = /STATUS_ANIM\s*=\s*\{([\s\S]*?)\n\s*\}/.exec(html)
+    assert.ok(m, 'guild-hall.html should define a STATUS_ANIM map')
+    for (const s of STATUSES) {
+      const key = /^[a-zA-Z]+$/.test(s) ? s : `'${s}'`
+      assert.ok(
+        m[1].includes(`${s}:`) || m[1].includes(`'${s}':`) || m[1].includes(`"${s}":`),
+        `STATUS_ANIM should map status "${s}"`
+      )
+    }
+  })
+})
+
+describe('hmm: /api/hmm/:host/:project detail lookup (phase 63)', () => {
+  const { pickProjectDetail } = require('../bin/grim-server.js')
+
+  it('returns the merged host+project detail object when found', () => {
+    const fleet = {
+      boxes: [{
+        host: 'aid',
+        up: true,
+        projects: [{ project: 'grimoire', roadmapOpen: 1, retired: false, participants: [] }],
+      }],
+    }
+    const detail = pickProjectDetail(fleet, 'aid', 'grimoire')
+    assert.equal(detail.host, 'aid')
+    assert.equal(detail.project, 'grimoire')
+    assert.equal(detail.roadmapOpen, 1)
+  })
+
+  it('returns null when the host is down', () => {
+    const fleet = { boxes: [{ host: 'aid', up: false, projects: [] }] }
+    assert.equal(pickProjectDetail(fleet, 'aid', 'grimoire'), null)
+  })
+
+  it('returns null when the project is not found on an up host', () => {
+    const fleet = { boxes: [{ host: 'aid', up: true, projects: [] }] }
+    assert.equal(pickProjectDetail(fleet, 'aid', 'nope'), null)
+  })
+
+  it('returns null when the host is not in the fleet at all', () => {
+    const fleet = { boxes: [] }
+    assert.equal(pickProjectDetail(fleet, 'ghost', 'grimoire'), null)
+  })
+})
+
+describe('hmm: guild-hall viewer is self-contained (phase 63)', () => {
+  it('has no external/CDN script or link src', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'guild-hall.html'), 'utf8')
+    const srcs = [...html.matchAll(/\b(?:src|href)=["']([^"']+)["']/g)].map(m => m[1])
+    for (const s of srcs) {
+      assert.ok(!/^https?:\/\//.test(s), `no external src/href: ${s}`)
+    }
+  })
+
+  it('only fetches same-origin /api/hmm* endpoints', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'guild-hall.html'), 'utf8')
+    const fetches = [...html.matchAll(/fetch\(['"`]([^'"`]+)['"`]/g)].map(m => m[1])
+    const sources = [...html.matchAll(/new EventSource\(['"`]([^'"`]+)['"`]/g)].map(m => m[1])
+    for (const url of [...fetches, ...sources]) {
+      assert.ok(url.startsWith('/api/hmm'), `unexpected fetch/EventSource target: ${url}`)
+    }
   })
 })
