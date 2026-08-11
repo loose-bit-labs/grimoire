@@ -42,6 +42,8 @@ grim mm drive --role minion --session "$CLAUDE_CODE_SESSION_ID"
 - `DRIVE: HALT <reason>` → print the reason and **stop the loop** (`ScheduleWakeup stop`).
   Do not reschedule.
 
+**`.mm/` is messages only.** Generated review artifacts — HTML proofs, clips, frame grids, contact sheets — go in a **gitignored `reviews/`** (or `docs/`) at the repo root, **never** `.mm/review/`. `.mm/` holds the thread + role markers; dumping media there bloats it (30M happened once). `grim mm status` warns about strays. In your report, reference the review by its `reviews/…` path.
+
 After a phase is `accepted`, land it with `grim mm commit --phase N --files <your declared footprint>` — never raw `git commit`, never `git config`, never `git add -A`. The pact commits locally after each accepted phase and **never pushes**.
 
 Budget: the harness tracks cumulative tokens. When over budget, pass
