@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-10 (phase 62 accepted).
+Binding for all phases. Last updated 2026-08-12 (phase 68 briefed; minion-report + config-migration captured).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -129,6 +129,16 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 | 5 | plans/phase-5.md | canonical `config/lbl-config.json` in repo + `GET /config/lbl` (+ `?path=`) + MCP `config_get` + `bin/grim-config.js` (`grim config get/sync`) | ✅ accepted (`plans/reviews/phase-5.md`) |
 | 6 | plans/phase-6.md | client precedence layer (env → fetch → cache → fallback) in `lib/env.js` + `model-ask.js` migrated as proof + KB entity update + noise-floor event on config commit | ✅ accepted (`plans/reviews/phase-6.md`) — Track B complete |
 
+**Track B cont. — retire the static config (migrate every reader to the dynamic endpoint first).**
+End-goal (user, 2026-08-12): **get rid of `~/.config/lbl-config.json` entirely**; all services + projects
+resolve endpoints from the **dynamic service endpoint** (grim-server, via `grim config`/`config_get`).
+**Blocker (why it's not done):** some readers still `readFileSync` the static file with NO server
+fallback — notably **fLimfLaMs `Handy._loadLblConfig`** (grimoire's `lib/env.js` already falls back to
+the repo copy, so grimoire is fine). Removing the file prematurely caused the **2026-08-11 outage**:
+swandive crash-looped ~119k× on `ENOENT open 'lbl/openai'` (Handy's null-lookup file-fallback). **Do
+NOT delete the static config until every direct reader is migrated** (fLimfLaMs first) and each fails
+legibly on a missing endpoint. Related KB: `concept_lbl_config_dynamic_endpoint_migration` (to file).
+
 ## Track C — memory-spec deltas (phase 7)
 
 | Phase | Brief | What lands | Status |
@@ -144,6 +154,7 @@ cache, not a source of truth. Every current reader keeps working unchanged.
 |-------|-------|-----------|--------|
 | 8 | plans/phase-8.md | `grim mm status` + `grim mm archive --phase N` + role-aware next-move footer on `read`; pact SKILL.md files slimmed to judgment only; briefing projection capped (≤20K chars) | ✅ accepted (`plans/reviews/phase-8.md`) — Track D complete, engagement done |
 | 9 | plans/phase-9.md | fix `grim tome <sub>` argv off-by-one (closes phase 0) + regression test + KB bug-list update | ✅ accepted (`plans/reviews/phase-9.md`) — board clean, engagement done |
+| 69 | plans/phase-69.md | **minion-report reliability** — the minion often finishes work but forgets to `grim mm write --state report`, so the thread stalls silently (owner=minion, no new message; e.g. stuck at #0315, 2026-08-11). Rule-13 fix: make "you're not done until you report" non-forgettable — a stalled-thread nudge (drive/`news` detects owner==me with my last ACT unreported), and/or the loop tick ends by running `grim mm news` which flags the owed report. Design pending. | queued (hierophant, 2026-08-12) — Track D; user-reported |
 
 ## Track E — typed clients + registry generators (phases 10–11)
 
@@ -248,6 +259,7 @@ via provenance-at-write.
 | 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | ✅ accepted (hierophant, 2026-07-29) |
 | 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | ✅ accepted (blocked on 33) — shipped `583846b` + `7817bd3` (timeout fix); 34/34 green |
 | 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | ✅ accepted — Track G-v2 complete |
+| 68 | plans/phase-68.md | **`grim research` — kill the pathological 60s cap.** Default whole-research budget is 60s, *shorter than the 5-min `digRepo` it invokes* → digs die at 60s (Swandive "Lost the signal — 60s no bottom"). Separate short per-fetch acquire timeout from a generous overall budget (named const ≥ `ARCHAEOLOGIST_TIMEOUT`); honor `--timeout 0` = no cap (fire-and-forget). Coupled: fLimfLaMs feature `concept_feature_request_decouple_the_researcher_from_swandive_standa` (standalone durable research queue). | queued (hierophant, 2026-08-11) — Track G; **PRIORITY: next after 62, ahead of 67** |
 
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
