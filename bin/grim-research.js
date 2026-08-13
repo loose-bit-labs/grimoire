@@ -190,6 +190,7 @@ function parseArxivId(url) {
 // returns the synthesis text. Degrades gracefully on failure — never throws.
 
 const ARCHAEOLOGIST_TIMEOUT = 300000 // 5 min for full dig pipeline
+const RESEARCH_TIMEOUT = 600000 // 10 min overall budget — must exceed ARCHAEOLOGIST_TIMEOUT
 
 function parseRepoUrl(url) {
   const m = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)/i.exec(url)
@@ -561,7 +562,7 @@ function fileEntity(judgment, drop, classification, acquired) {
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async function researchDrop(drop, opts = {}) {
-  const { json, dryRun, project: projectOverride, timeout = 60000, feature } = opts
+  const { json, dryRun, project: projectOverride, timeout = RESEARCH_TIMEOUT, feature } = opts
 
   // 1. Classify
   const classification = classify(drop, feature)
@@ -731,7 +732,7 @@ if (require.main === module) {
     json: args.json,
     dryRun: args['dry-run'],
     project: args.project,
-    timeout: parseInt(args.timeout, 10) || 60000,
+    timeout: args.timeout !== undefined && args.timeout !== '' ? parseInt(args.timeout, 10) : RESEARCH_TIMEOUT,
     feature: args.feature,
   }).catch(e => {
     console.error(`grim research: ${e.message}`)
