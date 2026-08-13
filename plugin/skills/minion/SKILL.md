@@ -42,7 +42,9 @@ grim mm drive --role minion --session "$CLAUDE_CODE_SESSION_ID"
 - `DRIVE: HALT <reason>` → print the reason and **stop the loop** (`ScheduleWakeup stop`).
   Do not reschedule.
 
-**`.mm/` is messages only.** Generated review artifacts — HTML proofs, clips, frame grids, contact sheets — go in a **gitignored `reviews/`** (or `docs/`) at the repo root, **never** `.mm/review/`. `.mm/` holds the thread + role markers; dumping media there bloats it (30M happened once). `grim mm status` warns about strays. In your report, reference the review by its `reviews/…` path.
+**`.mm/` is messages only.** Generated review artifacts — HTML proofs, clips, frame grids, contact sheets — go in a **gitignored `reviews/`** (or `docs/`) at the repo root, **never** `.mm/review/`. `.mm/` holds the thread + role markers; dumping media there bloats it (30M happened once). `grim mm status` warns about strays. In your report, reference the review by its `reviews/…` path. And never run a pact from inside a config dir Grafana provisions (`deploy/telemetry/provisioning/dashboards/`).
+
+**Editing a telemetry (Grafana) dashboard?** Read `/grimoire:grafana` first. Provisioned dashboards are file-owned: edit the JSON in `deploy/telemetry/provisioning/dashboards/`, wait ≤30s, **never** Import/Save in the browser (that makes an unmanaged ghost). Bare model + non-empty uid only; verify via `curl -s -u admin:grimoire http://localhost:3000/api/search?type=dash-db`.
 
 After a phase is `accepted`, land it with `grim mm commit --phase N --files <your declared footprint>` — never raw `git commit`, never `git config`, never `git add -A`. The pact commits locally after each accepted phase and **never pushes**.
 

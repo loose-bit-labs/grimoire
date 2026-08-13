@@ -35,6 +35,16 @@ proxy adds a SPOF ("it's always DNS" made load-bearing) for zero caller-visible 
 today. Revisit only when a non-Node consumer demonstrates need — the generated
 Caddyfile from phase 11 will be sitting there ready.
 
+**SUPERSEDED (2026-08-12, user decision):** DNS is going live after all — user is
+standing up **dnsmasq on aid** (LAN-only listen `192.168.0.202:53`; resolved stays on
+its loopback stubs, no conflict) because hand-syncing `/etc/hosts` blocks across boxes
+is the maintenance cost they're done paying. **User action item — not a pact phase.**
+Grimoire-side follow-through when it lands: repoint `grim host gen-hosts` from
+"copy a managed block to every box" to "emit one `addn-hosts` file aid's dnsmasq reads"
+(rig.json → generator → one dnsmasq), and drop the per-client `/etc/hosts` apply from
+`setup-client.sh`. Orthogonal to the Track B lbl-config→dynamic-service-endpoint
+migration (that's *service* resolution; this is *hostname* resolution).
+
 ## Ruling on the telemetry PoC (2026-07-22)
 
 Adopted, reshaped: the per-box agent is not a new `/poc` tree — it's `grim rig serve`
