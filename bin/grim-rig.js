@@ -1095,7 +1095,8 @@ function aggregateGpus(host) {
   return { vramTotal, vramUsed, util, temp, model }
 }
 
-async function getFleet(boxes) {
+async function getFleet(boxes, opts = {}) {
+  const { baseUrl } = opts
   const results = []
   for (const box of boxes) {
     if (box.skip) continue
@@ -1103,7 +1104,7 @@ async function getFleet(boxes) {
     // Find a reachable address for this box
     let addr = null
     if (boxName === LOCAL_HOSTNAME) {
-      addr = 'http://127.0.0.1:18081/status'
+      addr = baseUrl ? `${baseUrl}/status` : 'http://127.0.0.1:18081/status'
     } else {
       // Try box host on port 18081
       addr = `http://${boxName}:18081/status`

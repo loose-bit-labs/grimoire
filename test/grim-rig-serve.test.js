@@ -469,16 +469,18 @@ describe('aggregateGpus()', () => {
 
 describe('getFleet()', () => {
   let fleetServer
+  let fleetBaseUrl // ephemeral URL for the test server
 
   beforeEach(async () => {
     const hostname = os.hostname().toLowerCase()
     const { server, stop, getSnapshot } = rig.serve({
-      port: 18082,
+      port: 0,                       // ephemeral — never collide (EADDRINUSE hang)
       interval: 1,
       listen: '127.0.0.1',
       boxes: [{ host: hostname, label: hostname, aliases: [hostname], services: [] }],
     })
     await new Promise(r => server.once('listening', r))
+    fleetBaseUrl = `http://127.0.0.1:${server.address().port}`
     // Wait for first poll to populate real GPU/mem data (buildSnapshot calls si.graphics, rocm-smi, etc. — can take ~6s)
     // Poll getSnapshot until lastUpdated is set rather than guessing a fixed delay
     for (let i = 0; i < 30; i++) {
@@ -520,10 +522,11 @@ describe('getFleet()', () => {
       aliases: ['nonexistent'],
       services: [],
     }]
-    const fleet = await rig.getFleet(boxes)
+    // Pass baseUrl so getFleet hits the ephemeral test server, not a hardcoded port
+    const fleet = await rig.getFleet(boxes, { baseUrl: fleetBaseUrl })
     assert.ok(fleet.boxes)
 
-    // Local box should be up (agent running on 127.0.0.1:18082)
+    // Local box should be up (agent running on ephemeral test server)
     const local = fleet.boxes.find(b => b.name === hostname)
     assert.ok(local, 'local box should be in fleet')
     assert.strictEqual(local.up, true, 'local box should be up')
