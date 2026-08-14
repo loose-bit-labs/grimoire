@@ -123,6 +123,25 @@ _register() {
 
   if [[ "$ok_flag" == "ok" ]]; then
     ok "Registered  host_${HOSTNAME_S} in KB"
+    # Auto-onboard to fleet + telemetry (best-effort — don't fail register if it errors)
+    if [[ "${DRY_RUN:-false}" != "true" ]]; then
+      step "Onboarding to fleet..."
+      local onboard_resp
+      onboard_resp="$(curl -s --max-time 10 \
+        -X POST "${GRIMOIRE_HOST}/api/hosts/onboard" \
+        -H 'Content-Type: application/json' \
+        -d "{\"host\":\"${HOSTNAME_S}\"}" 2>/dev/null)"
+      local onboard_ok
+      onboard_ok="$(echo "$onboard_resp" | node -e "let d='';process.stdin.on('data',x=>d+=x);process.stdin.on('end',()=>{ try{process.stdout.write(JSON.parse(d).addedToFleet?'ok':'skip');}catch{process.stdout.write('skip');} })")"
+      if [[ "$onboard_ok" == "ok" ]]; then
+        ok "Fleet onboarded  host_${HOSTNAME_S}"
+      else
+        warn "Fleet onboard skipped or failed — response: $onboard_resp"
+      fi
+    else
+      echo ""
+      echo "--- DRY RUN — would call POST /api/hosts/onboard {\"host\":\"${HOSTNAME_S}\"}"
+    fi
     return
   fi
 

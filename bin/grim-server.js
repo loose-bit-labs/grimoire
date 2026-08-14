@@ -198,6 +198,29 @@ app.get('/api/hosts/inventory', async (req, res) => {
   }
 })
 
+// POST /api/hosts/onboard — auto-add a registered host to rig.json + reconcile telemetry
+app.post('/api/hosts/onboard', async (req, res) => {
+  if (!config.root) {
+    return res.status(501).json({ error: 'onboard requires local KB root (aid server only)' })
+  }
+  const { host, label, aliases } = req.body || {}
+  if (!host) {
+    return res.status(400).json({ error: 'host is required' })
+  }
+  try {
+    const rigPath = path.join(config.root, 'rig.json')
+    const upsert = rig.upsertBox(rigPath, { host, label, aliases })
+    let telemetryReloaded = false
+    if (upsert.added) {
+      const tel = await rig.reconcileTelemetry()
+      telemetryReloaded = tel.reloaded
+    }
+    res.json({ host, addedToFleet: upsert.added, telemetryReloaded })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/api/divine', async (req, res) => {
   try {
     const graph   = await getGraph()

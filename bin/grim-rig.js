@@ -84,6 +84,82 @@ function loadBoxes() {
 }
 
 /**
+ * Upsert a box into rig.json — idempotent, preserves existing formatting.
+ * If box already exists (match on host or any alias), no-op → { added: false }.
+ * Else appends { host, label, aliases:[host], services:[], note:"auto-onboarded <date>" }.
+ */
+function upsertBox(rigPath, box) {
+  const { host, label = host, aliases = [host] } = box
+  const now = new Date().toISOString().slice(0, 10)
+
+  // Read existing rig.json
+  let rigs
+  try {
+    rigs = JSON.parse(fs.readFileSync(rigPath, 'utf8'))
+  } catch (e) {
+    throw new Error(`upsertBox: failed to read ${rigPath} — ${e.message}`)
+  }
+
+  // Check for existing match on host or any alias
+  const existing = rigs.find(b => {
+    if (b.host === host) return true
+    const bAliases = Array.isArray(b.aliases) ? b.aliases : []
+    return bAliases.includes(host) || aliases.some(a => a === b.host || bAliases.includes(a))
+  })
+  if (existing) return { added: false }
+
+  // Append new box, preserving 2-space formatting
+  rigs.push({ host, label, aliases, services: [], note: `auto-onboarded ${now}` })
+  fs.writeFileSync(rigPath, JSON.stringify(rigs, null, 2) + '\n', 'utf8')
+  return { added: true }
+}
+
+/**
+ * Reconcile telemetry: regenerate scrape config + dashboards from rig.json,
+ * then best-effort reload Prometheus. Returns { regenerated, reloaded }.
+ */
+async function reconcileTelemetry() {
+  const telemetryDir = path.join(__dirname, '..', 'deploy', 'telemetry')
+  const rigPath = path.join(config.root || process.env.GRIMOIRE_ROOT || '', 'rig.json')
+
+  // Regenerate scrape config
+  let regenerated = false
+  try {
+    const { execSync } = require('node:child_process')
+    execSync(`bash "${path.join(telemetryDir, 'generate-scrape.sh')}" "${rigPath}"`, {
+      stdio: 'pipe', timeout: 30000,
+    })
+    regenerated = true
+  } catch (e) {
+    console.error(`grim rig reconcile: scrape generation failed: ${e.message}`)
+  }
+
+  // Regenerate dashboards
+  try {
+    const { execSync } = require('node:child_process')
+    execSync(`node "${path.join(telemetryDir, 'generate-dashboard.js')}" "${rigPath}"`, {
+      stdio: 'pipe', timeout: 30000,
+    })
+    regenerated = true
+  } catch (e) {
+    console.error(`grim rig reconcile: dashboard generation failed: ${e.message}`)
+  }
+
+  // Reload Prometheus — best effort
+  let reloaded = false
+  try {
+    const promUrl = lblEndpoint('prometheus') || 'http://localhost:9090'
+    const res = await fetch(`${promUrl}/-/reload`, { method: 'POST' })
+    if (res.ok) reloaded = true
+    else console.error(`grim rig reconcile: Prometheus reload returned ${res.status}`)
+  } catch (e) {
+    console.error(`grim rig reconcile: Prometheus unreachable — files regenerated but not reloaded: ${e.message}`)
+  }
+
+  return { regenerated, reloaded }
+}
+
+/**
  * Load box config gracefully — returns [] instead of exiting when missing.
  * Used by serve() so the agent boots without rig.json (client boxes).
  */
@@ -1343,7 +1419,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub, parseDuration, toEpoch, queryRange, summarize, fmt, history }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub, parseDuration, toEpoch, queryRange, summarize, fmt, history, upsertBox, reconcileTelemetry }
 
 // ── History (Prometheus query_range) ──────────────────────────────────────────
 
@@ -1510,6 +1586,7 @@ async function main() {
          grim rig history <host> [--last 10m | --from <ts> --to <ts>] [--metrics cpu,ram,gpu,vram] [--json]
          grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
          grim rig serve --dashboard [--port 3003] [--listen 0.0.0.0]
+         grim rig reconcile              Regenerate telemetry from rig.json + reload Prometheus
 
   Subcommands:
     status (default)   Show VRAM + service status for all boxes
@@ -1518,6 +1595,7 @@ async function main() {
     history <host>     Query Prometheus for host telemetry over a time range
     serve              Start resident telemetry agent (/status + /metrics)
     serve --dashboard  Fleet dashboard front-door (/cluster + /fleet)
+    reconcile          Regenerate Prometheus scrape config + Grafana dashboards from rig.json
 
   Options:
     --box <name>   Target a specific box (required when service is on multiple boxes)
@@ -1626,6 +1704,16 @@ async function main() {
       to:      args.to      || null,
       json:    args.json    || false,
     })
+    return
+  }
+
+  if (sub === 'reconcile') {
+    if (!config.root) {
+      console.error('grim rig reconcile: $GRIMOIRE_ROOT not set — cannot reconcile telemetry')
+      process.exit(1)
+    }
+    const result = await reconcileTelemetry()
+    console.log(`reconcile: regenerated=${result.regenerated} reloaded=${result.reloaded}`)
     return
   }
 
