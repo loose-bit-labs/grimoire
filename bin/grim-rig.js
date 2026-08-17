@@ -643,6 +643,92 @@ async function getSmiGpus() {
 }
 
 /**
+ * Parse `nvtop -s` JSON output into the same shape as `parseSmiGpus`:
+ * [{ index, memoryTotal, memoryUsed, util, temp, vendor, model }].
+ *
+ * VRAM is returned in MiB (bytes / 1048576) to match nvidia-smi's MiB units.
+ *
+ * Rules:
+ *   - Strip unit suffixes: `gpu_util "0%"` -> 0, `temp "30C"` -> 30.
+ *     Non-numeric or null -> null.
+ *   - VRAM: prefer `mem_used`/`mem_total` byte fields -> MiB.
+ *   - If `mem_total` bytes present but `mem_used` missing, compute
+ *     `memoryUsed = round(memoryTotal * mem_util / 100)` (graceful degradation).
+ *   - If no byte fields at all, leave memoryTotal/memoryUsed null.
+ *   - `index` = array position. `model`/`vendor` from `device_name` only as a
+ *     hint -- rig.json/KB model names stay authoritative for display.
+ */
+function parseNvtop(stdout) {
+  if (!stdout || !stdout.trim()) return []
+  let data
+  try {
+    data = JSON.parse(stdout)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(data)) return []
+  const gpus = []
+  for (const dev of data) {
+    const index = gpus.length
+    // Strip unit suffixes from string fields
+    const strip = (v) => {
+      if (v == null) return null
+      const s = String(v).trim()
+      if (!s) return null
+      const n = parseFloat(s)
+      return isNaN(n) ? null : n
+    }
+    const util = strip(dev.gpu_util)
+    const temp = strip(dev.temp)
+    // VRAM in bytes (bare numeric strings when present)
+    const memTotalBytes = dev.mem_total != null ? parseFloat(dev.mem_total) : null
+    const memUsedBytes = dev.mem_used != null ? parseFloat(dev.mem_used) : null
+    let memoryTotal = null
+    let memoryUsed = null
+    if (memTotalBytes != null && isFinite(memTotalBytes) && memTotalBytes > 0) {
+      memoryTotal = Math.round(memTotalBytes / 1048576) // bytes -> MiB
+      if (memUsedBytes != null && isFinite(memUsedBytes)) {
+        memoryUsed = Math.round(memUsedBytes / 1048576)
+      }
+    }
+    // Graceful degradation: mem_util % when mem_used bytes missing
+    if (memoryTotal != null && memoryUsed == null) {
+      const memUtil = strip(dev.mem_util)
+      if (memUtil != null && memUtil > 0) {
+        memoryUsed = Math.round(memoryTotal * memUtil / 100)
+      }
+    }
+    // Vendor/model hint from device_name — rig.json/KB names stay authoritative
+    const name = String(dev.device_name || '').toLowerCase()
+    const vendor = name.includes('nvidia') ? 'NVIDIA' : name.includes('amd') ? 'AMD' : null
+    gpus.push({
+      index,
+      vram: memoryTotal,
+      vramUsed: memoryUsed,
+      util,
+      temp,
+      vendor,
+      model: dev.device_name || null,
+    })
+  }
+  return gpus
+}
+
+/**
+ * Query nvtop for per-GPU memory totals/usage, utilization%, and temp.
+ * Graceful degradation: missing nvtop / exec error / unparseable JSON -> [].
+ */
+async function getNvtopGpus() {
+  return new Promise(resolve => {
+    const { exec } = require('node:child_process')
+    exec('nvtop -s 2>&1', { timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout) return resolve([])
+      resolve(parseNvtop(stdout))
+    })
+  })
+}
+
+/**
  * Select all compute GPUs from systeminformation's controller list, dropping BMC
  * / integrated display chips. Cross-reference with nvidia-smi per-GPU VRAM when
  * available (smi is the compute-truth source for VRAM totals).
@@ -911,9 +997,16 @@ async function buildSnapshot(boxes) {
     // `free`'s "available" column) is the real signal; fall back to mem.used
     // if a platform doesn't report it.
     if (mem) { memUsed = mem.available != null ? mem.total - mem.available : mem.used; memTotal = mem.total }
-    // Collect all real compute GPUs, not just index 0
-    const smiGpus = await getSmiGpus().catch(() => [])
-    allGpus = selectAllComputeGpus(graphics, smiGpus)
+    // Collect all real compute GPUs, not just index 0.
+    // nvtop -s is the primary source (cross-vendor, structured JSON);
+    // fall back to nvidia-smi + rocm-smi chain when nvtop is absent.
+    const nvtopGpus = await getNvtopGpus().catch(() => [])
+    if (nvtopGpus.length > 0) {
+      allGpus = nvtopGpus
+    } else {
+      const smiGpus = await getSmiGpus().catch(() => [])
+      allGpus = selectAllComputeGpus(graphics, smiGpus)
+    }
     gpuInfo = allGpus[0] || null
     gpuFallback = allGpus.length > 0 && (allGpus[0].vendor || '').includes('AMD')
       ? await getGpuMetricsFallback().catch(() => null)
@@ -1419,7 +1512,7 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
   }
 }
 
-module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub, parseDuration, toEpoch, queryRange, summarize, fmt, history, upsertBox, reconcileTelemetry }
+module.exports = { status, controlService, findBoxesForService, parseVRAM, parseBoxOutput, fmtGPU, fmtServices, serviceType, metricsUrl, pollService, discoverLocalServices, parseNvidiaSmi, parseRocmSmi, getComputeApps, getSmiGpus, parseSmiGpus, getNvtopGpus, parseNvtop, selectComputeGpu, selectAllComputeGpus, buildSnapshot, toPrometheusText, aggregateGpus, getFleet, serveStatic, serve, serveDashboard, loadBoxes, loadBoxesGraceful, fetchFleetRemote, fleetToDisplay, resolveRigHub, parseDuration, toEpoch, queryRange, summarize, fmt, history, upsertBox, reconcileTelemetry }
 
 // ── History (Prometheus query_range) ──────────────────────────────────────────
 

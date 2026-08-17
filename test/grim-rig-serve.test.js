@@ -619,6 +619,79 @@ describe('parseSmiGpus()', () => {
   })
 })
 
+describe('parseNvtop()', () => {
+  it('parses NVIDIA-style device with byte fields -> correct MiB', () => {
+    const stdout = JSON.stringify([{
+      device_name: 'NVIDIA A100',
+      gpu_util: '85%',
+      temp: '72C',
+      mem_total: '42949672960',
+      mem_used: '10737418240',
+      fan_speed: '100%',
+    }])
+    const r = rig.parseNvtop(stdout)
+    assert.strictEqual(r.length, 1)
+    assert.strictEqual(r[0].index, 0)
+    assert.strictEqual(r[0].vram, 40960) // 42949672960 / 1048576
+    assert.strictEqual(r[0].vramUsed, 10240) // 10737418240 / 1048576
+    assert.strictEqual(r[0].util, 85)
+    assert.strictEqual(r[0].temp, 72)
+  })
+
+  it('degrades gracefully when mem_util % present but no byte fields', () => {
+    const stdout = JSON.stringify([{
+      device_name: 'AMD GPU',
+      gpu_util: '45%',
+      temp: '58C',
+      mem_util: '94%',
+      fan_speed: null,
+      // no mem_total / mem_used / mem_free
+    }])
+    const r = rig.parseNvtop(stdout)
+    assert.strictEqual(r.length, 1)
+    assert.strictEqual(r[0].index, 0)
+    assert.strictEqual(r[0].vram, null)
+    assert.strictEqual(r[0].vramUsed, null)
+    assert.strictEqual(r[0].util, 45)
+    assert.strictEqual(r[0].temp, 58)
+  })
+
+  it('computes memoryUsed from mem_util when mem_total bytes present but mem_used missing', () => {
+    const stdout = JSON.stringify([{
+      device_name: 'AMD GPU',
+      gpu_util: '30%',
+      temp: '55C',
+      mem_total: '16106127360',
+      mem_util: '60%',
+      // no mem_used
+    }])
+    const r = rig.parseNvtop(stdout)
+    assert.strictEqual(r.length, 1)
+    assert.strictEqual(r[0].vram, 15360) // 16106127360 / 1048576
+    assert.strictEqual(r[0].vramUsed, 9216) // 15360 * 0.6
+  })
+
+  it('returns [] for empty, garbage, or non-JSON input', () => {
+    assert.deepStrictEqual(rig.parseNvtop(''), [])
+    assert.deepStrictEqual(rig.parseNvtop('not json'), [])
+    assert.deepStrictEqual(rig.parseNvtop('command not found\n'), [])
+    assert.deepStrictEqual(rig.parseNvtop('{"not": "array"}'), [])
+  })
+
+  it('handles null/missing fields without crashing', () => {
+    const stdout = JSON.stringify([{
+      device_name: 'Some GPU',
+      // all optional fields missing
+    }])
+    const r = rig.parseNvtop(stdout)
+    assert.strictEqual(r.length, 1)
+    assert.strictEqual(r[0].util, null)
+    assert.strictEqual(r[0].temp, null)
+    assert.strictEqual(r[0].vram, null)
+    assert.strictEqual(r[0].vramUsed, null)
+  })
+})
+
 describe('selectAllComputeGpus()', () => {
   it('returns two NVIDIA P40s with smi VRAM', () => {
     const g = { controllers: [
