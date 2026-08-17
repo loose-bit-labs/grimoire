@@ -355,6 +355,31 @@ die with cryptic errors instead of resolving aid via lbl-config. Both are onboar
 | 65 | plans/phase-65.md | **`grim rig` `Invalid URL` fix** — `resolveRigHub` destructures `URL.host` (hostname:port) and appends `:18081` → double-port `http://aid:3663:18081`. Use `.hostname`. Real bug (masked on aid by local path); also the true cause of phase 60's rig-test failure | ✅ accepted (hierophant-verified 2026-08-06) — Track K; **code fix landed early in phase 60 (`ac3b501`)**, phase 65 added the URL-shape guard test (`75586d3`). Track K complete — new box unblocked |
 | 67 | plans/phase-67.md | **auto-onboard a registered host to fleet + telemetry** — a new host registers → KB entity written, but invisible to telemetry until a manual rig.json edit + scrape/dashboard regen + Prometheus reload (the tbona dance, 2026-08-10). Add `upsertBox` + `reconcileTelemetry` (`grim rig reconcile`) + server `POST /api/hosts/onboard` (server-only, reconcile must run on aid) + register-script onboard call (dry-run aware). Idempotent; graceful if Prometheus down | queued (hierophant, 2026-08-10) — Track K; **depends on phase 62 accept**; brief ready |
 
+## Track F cont. — GPU collector (phase 70)
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 70 | plans/phase-70.md | **`nvtop -s` as primary GPU collector** — drop-in, cross-vendor JSON; nvtop primary, nvidia-smi/rocm-smi fallback; retires the fragile AMD `parseRocmSmi` text-scrape. Same gauges, dashboards untouched | queued (hierophant, 2026-08-13) — Track F; **PRIORITY: next after 62, ahead of 67** |
+
+## Track Bounty Board — grim-bounty-board (phases 71–77)
+
+Native, local-first hub-and-spoke execution-coordination layer: fleet workers ("bounty hunters") pull,
+atomically claim (lease + heartbeat + fencing epoch, poison hard-stop), work, and submit prioritized
+cross-repo bounties for peer review. Spec `docs/superpowers/specs/2026-08-15-grim-bounty-board-design.md`;
+plan `docs/superpowers/plans/2026-08-16-grim-bounty-board.md`. v1 = `kind=phase` only. Land 71→77 in order
+(71–73 pure/local, 74–75 server, 76 CLI, 77 telemetry). The board's own construction is the first work
+through the pact — and becomes the first bounties once it exists.
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 71 | plans/phase-71.md | **core state machine** (`lib/bounty.js`, pure) — model/timing, legal transitions, claim/heartbeat/submit/release with epoch fencing, `applyExpire` + poison→NEEDS_TRIAGE, `applyReview` (no self-approval) | queued (hierophant, 2026-08-16) — Track Bounty Board; no deps, start here |
+| 72 | plans/phase-72.md | **reputation + eligibility** (pure) — `deriveReputation` over `claim_history`, priority-sorted `nextEligible`. Reputation descriptive-only (must not gate) | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 71 |
+| 73 | plans/phase-73.md | **persistence store** (`lib/bounty-store.js`) — durable/ephemeral split (leases gitignored), atomic temp+rename, single-writer `mutate` lock, hunter registry. No new dep | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 71 |
+| 74 | plans/phase-74.md | **server routes** (`grim-server.js`) — create/list/claim/heartbeat/submit/release/review/register, sole-writer, 409 on conflict; export `app`. `broadcastBounty` stubbed | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 72+73 |
+| 75 | plans/phase-75.md | **reclaim sweep + SSE** — active `sweepBounties` (writes OPEN/NEEDS_TRIAGE back), `/api/bounty/stream` doorbell, real `broadcastBounty`, unref'd interval | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
+| 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
+| 77 | plans/phase-77.md | **telemetry + determinism gate** — `boardMetrics` + `/api/bounty/metrics` (`grim_bounty_*` gauges); suite passes N× and self-terminates | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74; closes track |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
