@@ -380,6 +380,15 @@ through the pact — and becomes the first bounties once it exists.
 | 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
 | 77 | plans/phase-77.md | **telemetry + determinism gate** — `boardMetrics` + `/api/bounty/metrics` (`grim_bounty_*` gauges); suite passes N× and self-terminates | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74; closes track |
 
+## Track B cont. — dynamic resolution (phase 78)
+
+DNS went live (user, 2026-08-16): dnsmasq on aid `:5335`, domain `home.lan`; resolved drop-in applied to
+every host manually. This phase automates it and retires the per-client `/etc/hosts` apply.
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 78 | plans/phase-78.md | **automate client DNS drop-in via setup-client** — `endpoints.dns` in lbl-config (single bootstrap literal), `deploy/resolved/99-lbl.conf.tmpl` rendered by an idempotent DRY_RUN-aware setup-client step (restart resolved only on change); retire the per-client `# BEGIN grimoire-hosts` apply. `requires: permission` (sudo write + service restart on every host) | queued (hierophant, 2026-08-16) — Track B cont.; supersedes the phase-43 /etc/hosts approach |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
