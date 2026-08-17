@@ -342,7 +342,7 @@ primary (Prometheus for history) · inlined Three.js meeples · **thin vertical 
 |-------|-------|------|--------|
 | 61 | plans/phase-61.md | **thin vertical slice, aid only** — `lib/hmm.js` status state machine (parse `.mm` + `grim roadmap`), `grim rig` `GET /hmm`, grimoire `GET /api/hmm` (aid-only) + `/hall`, `grim hmm` CLI, rough Three.js Guild Hall. Proves the whole pipe end-to-end | ✅ accepted (hierophant, 2026-08-08) — Track Q; shipped 9159594 + 54cc5a8 |
 | 62 | plans/phase-62.md | **fleet fan-out + SSE + Prometheus** — `/api/hmm` fans out to all `rig.json` boxes (mirror `/fleet`, down-box tolerant), SSE push-on-change (no ws dep), `hmm_*` gauges, host/project switcher + live updates | ✅ accepted (hierophant, 2026-08-10) — Track Q; shipped; SSE ruling (no ws dep) |
-| 63 | plans/phase-63.md | **Guild Hall polish** — full status→meeple animations, idle-cycle tour, gray-out on inactivity, `/api/hmm/:host/:project` info-panel, distinct per-role avatars | queued (hierophant, 2026-08-06) — Track Q; depends on 62 |
+| 63 | plans/phase-63.md | **Guild Hall polish** — full status→meeple animations, idle-cycle tour, gray-out on inactivity, `/api/hmm/:host/:project` info-panel, distinct per-role avatars | queued (hierophant, 2026-08-06) — Track Q; depends on 62; **DEFERRED — bottom of backlog (hierophant, 2026-08-16): do LAST, after all other open phases** |
 
 ## Track K cont. — fresh-client robustness (phases 64–65, 67)
 
