@@ -1,7 +1,13 @@
 # Phase 74 — Bounty Board: server routes + atomic mutations (`bin/grim-server.js`)
 
 **Authority:** hierophant, 2026-08-16. **Repo:** grimoire. **Track: Bounty Board.**
-**Depends on:** phases 72 + 73 accepted (uses `lib/bounty` + `lib/bounty-store`).
+**Depends on:** phases 72 + 73 + **79 (Commons presence registry)** accepted (uses `lib/bounty` + `lib/bounty-store` + the Commons registry).
+
+**Rides the Commons (2026-08-17 amendment):** do NOT build a board-private session registry. A hunter **is a
+presence entry with `role=hunter`** (register via the phase-79 `/api/presence` registry, not a separate
+`hunters.json`). `grim bounty claim` presence-registers the caller as a hunter; `GET /api/bounty/hunters`
+becomes a `role=hunter` view over `/api/presence` joined with `deriveReputation`. See
+`docs/superpowers/specs/2026-08-17-the-commons-design.md`.
 
 Master plan: `docs/superpowers/plans/2026-08-16-grim-bounty-board.md` **Task 4** — exact code + tests there.
 

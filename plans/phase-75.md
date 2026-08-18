@@ -1,7 +1,13 @@
 # Phase 75 — Bounty Board: active reclaim sweep + SSE doorbell (`bin/grim-server.js`)
 
 **Authority:** hierophant, 2026-08-16. **Repo:** grimoire. **Track: Bounty Board.**
-**Depends on:** phase 74 accepted (replaces its `broadcastBounty` stub; adds SSE + sweep).
+**Depends on:** phase 74 + **80 (Commons message channel + doorbell)** accepted.
+
+**Rides the Commons (2026-08-17 amendment):** do NOT build a board-private SSE hub. Board transitions
+(`bounty:claimed|reclaimed|submitted|…`) broadcast on the **Commons doorbell** (phase 80), and addressed
+events (e.g. a review owed) set the recipient's Commons doorbell so `grim … news` surfaces them. The reclaim
+*sweep* is still board-owned; only the broadcast transport is the shared Commons SSE. See
+`docs/superpowers/specs/2026-08-17-the-commons-design.md`.
 
 Master plan: `docs/superpowers/plans/2026-08-16-grim-bounty-board.md` **Task 5** — exact code + tests there.
 

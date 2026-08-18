@@ -380,6 +380,22 @@ through the pact — and becomes the first bounties once it exists.
 | 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
 | 77 | plans/phase-77.md | **telemetry + determinism gate** — `boardMetrics` + `/api/bounty/metrics` (`grim_bounty_*` gauges); suite passes N× and self-terminates | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74; closes track |
 
+## Track The Commons — inter-session presence + cross-kingdom talk (phases 79–81)
+
+Beyond `.mm`: any session ("adventurer") makes its presence known and talks to any other, regardless of
+kingdom (host). The general **mesh** layer `.mm` is not — the concrete landing of the pact-topology mesh
+(`concept_pact_topology...`) and the machine substrate under The Commons/tavern + Bot-ville. Decision (user,
+2026-08-17): **build the shared transport FIRST (hub + SSE doorbell + one session registry on grim-server),
+board rides it** — not three doorbells. Beside `.mm` (structured pact), not replacing it. Local-first, no
+new daemon, **NOT NATS**. Spec `docs/superpowers/specs/2026-08-17-the-commons-design.md`.
+**79→80 land before bounty-board 74/75 (which were amended to ride the Commons).**
+
+| Phase | Brief | What | Status |
+|-------|-------|------|--------|
+| 79 | plans/phase-79.md | **presence registry** — `lib/presence.js` + grim-server `/api/presence` (+ SSE, TTL-expiry sweep to `away`); THE session registry (board hunters become a `role=hunter` view); `grim commons who/hail` | queued (hierophant, 2026-08-17) — Track The Commons; **before bounty-board 74** |
+| 80 | plans/phase-80.md | **message channel + doorbell** — `POST/GET /api/commons` + SSE stream, broadcast/addressed, rooms (tavern + `kingdom:<host>`); addressed→doorbell (generalizes `mm news`); `grim commons say/listen/news`. Ephemeral ring-buffer, not KB-committed | queued (hierophant, 2026-08-17) — Track The Commons; depends 79; **before bounty-board 75** |
+| 81 | plans/phase-81.md | **Guild Hall on live presence** — repoint Track Q from `.mm`-scrape to the live `/api/presence` feed (every session a meeple, real-time, self-announced); keep `.mm` pact-status | queued (hierophant, 2026-08-17) — Track The Commons; depends 79 |
+
 ## Track B cont. — dynamic resolution (phase 78)
 
 DNS went live (user, 2026-08-16): dnsmasq on aid `:5335`, domain `home.lan`; resolved drop-in applied to
