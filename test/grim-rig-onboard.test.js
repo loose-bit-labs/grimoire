@@ -112,12 +112,12 @@ describe('upsertBox()', () => {
 
 describe('reconcileTelemetry()', () => {
   it('returns { regenerated, reloaded } without throwing', async () => {
-    // reconcileTelemetry should never throw — Prometheus may be up or down
+    // reconcileTelemetry should never throw — Prometheus reachability is env-dependent
     const result = await rig.reconcileTelemetry()
     assert.ok('regenerated' in result, 'should return regenerated flag')
     assert.ok('reloaded' in result, 'should return reloaded flag')
-    assert(typeof result.regenerated === 'boolean', 'regenerated should be boolean')
-    assert(typeof result.reloaded === 'boolean', 'reloaded should be boolean')
+    assert.strictEqual(typeof result.regenerated, 'boolean', 'regenerated should be boolean')
+    assert.strictEqual(typeof result.reloaded, 'boolean', 'reloaded should be boolean')
   })
 })
 
@@ -129,7 +129,7 @@ describe('POST /api/hosts/onboard', () => {
   let tmp
   let reconcileCalled
   let origReconcile
-  let origConfigRoot
+  let origConfigRoot = undefined
 
   beforeEach(async () => {
     reconcileCalled = 0
