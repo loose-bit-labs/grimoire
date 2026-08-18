@@ -230,6 +230,44 @@ EOF
     || warn "plugin install failed — run manually: claude plugin install grimoire --scope user"
 }
 
+# ── 6b. Claude Code status line (grim dungeon HUD) ───────────────────────────
+
+_install_statusline() {
+  step "Installing Claude Code status line..."
+
+  local src="$ENGINE_ROOT/deploy/claude-statusline.js"
+  local link="$HOME/.claude/statusline.js"
+  local settings="$HOME/.claude/settings.json"
+
+  mkdir -p "$HOME/.claude"
+
+  # Symlink the status line script (idempotent; repoints a stale link)
+  ln -sfn "$src" "$link"
+  ok "linked $link -> deploy/claude-statusline.js"
+
+  # Register it in settings.json — merge, never clobber an existing statusLine
+  local result
+  result=$(CLAUDE_SETTINGS="$settings" node <<'NODE'
+const fs = require('fs');
+const f = process.env.CLAUDE_SETTINGS;
+let s = {};
+try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { s = {}; }
+if (s && typeof s === 'object' && !s.statusLine) {
+  s.statusLine = { type: 'command', command: 'node ~/.claude/statusline.js' };
+  fs.writeFileSync(f, JSON.stringify(s, null, 2) + '\n');
+  process.stdout.write('added');
+} else {
+  process.stdout.write('present');
+}
+NODE
+)
+  if [[ "$result" == "added" ]]; then
+    ok "statusLine registered in settings.json"
+  else
+    ok "statusLine already configured"
+  fi
+}
+
 # ── 7. Symlink grim CLI into ~/bin ───────────────────────────────────────────
 
 _install_grim_link() {
@@ -617,6 +655,7 @@ _main() {
   _seed_bootstrap_and_hosts
   _activate_git_hooks
   _configure_claude_code
+  _install_statusline
   _install_grim_link
   _create_dotlink
   _install_boot_report_service
