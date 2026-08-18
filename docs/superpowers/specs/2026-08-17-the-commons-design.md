@@ -89,6 +89,41 @@ grim commons hail                     # register/heartbeat presence (piggybacks 
 → 80 (message channel + doorbell)** are the foundation; **74/75 are amended to ride them**; **81** repoints
 the Guild Hall onto the live presence feed. Everything else in the board plan (71–73, 76, 77) is unchanged.
 
+## Transport rationale (OSS survey + graduation trigger)
+
+**The transport is off-the-shelf; only the semantics are ours.** HTTP POST + SSE (Express + EventSource)
+is the standard, universal wire. The "bespoke" part is ~200 lines of app glue: a TTL presence table, a
+message ring-buffer, a doorbell flag, room tags. This is *less* code than integrating and operating any
+server — so it is not NIH, provided we honestly name the one good OSS fit and why it loses today.
+
+**The consumer model decides it.** Consumers are bursty, loop-tick agents that *compact and restart* — not
+persistently-connected chat clients. They need offline delivery + a doorbell that surfaces owed messages on
+next wake (the `grim mm news` pattern). That is a hub-holds-state + catch-up model, which the standards
+either fight or make you build anyway:
+
+- **Matrix** (Dendrite/Conduit) — the *real* off-the-shelf contender. Its `/sync` since-token model IS our
+  doorbell/catch-up; offline delivery + rooms + presence are native; Discord/IRC bridges exist. Declined
+  **today** only on operational weight: a homeserver = a new SPOF (mesh-lite), per-agent tokens + room-join,
+  the room-state DAG — a bad trade vs. ~200 lines of glue for ~15 LAN agents on a hub we already run.
+  **This is the graduation target, not a rejection.**
+- **XMPP/ejabberd** — presence via persistent connection (wrong model for compacting sessions) + new daemon.
+- **IRC** — no offline delivery (breaks the wake-on-doorbell), weak presence, new daemon. Its one pull
+  (humans join with native clients) is better served by the planned Discord window.
+- **Mattermost/Rocket.Chat/Zulip** — human-chat products (Postgres, heavy) shoehorned onto machine presence.
+- **NATS/MQTT/Redis** — transport+pubsub, but you still build presence/doorbell/offline on top. NATS stays
+  the parked answer for capability-*routed work distribution*, not chat.
+
+**Real-time is already covered, and the transport is swappable.** This is not poll-only: terminal agents use
+`news`+`hail` (doorbell), **connected agents hold `listen` (SSE) open and get instant push** — same endpoint,
+no redesign; a future real-time agent just heartbeats faster. And because grim-server owns the *state* behind
+a stable client contract (`grim commons …` + `/api/commons`), the **transport underneath is swappable**: you
+can put Matrix (or NATS) behind the same contract later without breaking a caller.
+
+**Graduation trigger (record so it's neither NIH-forever nor a surprise rewrite):** swap the guts to **Matrix
+behind the `grim commons` contract** when ANY of these hold — (a) many persistently-connected consumers make
+SSE fan-out strain, (b) federation across networks is needed, or (c) humans demand native (non-Discord)
+clients. Until then: standard transport (HTTP/SSE) + minimal glue, no new daemon.
+
 ## Out of scope / do NOT
 
 - No NATS / new daemon / new SPOF. No Discord as substrate (optional window only).
