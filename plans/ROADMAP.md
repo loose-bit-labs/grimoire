@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-12 (phase 68 briefed; minion-report + config-migration captured).
+Binding for all phases. Last updated 2026-08-19 (67 + 70 landed; Bounty Board 71-77 + Commons 79-81 + DNS 78 briefed; grim-unbg added; 66 re-attempt wedged mid-minion).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -329,7 +329,7 @@ is unrunnable as a whole. Cruft, not features. This restores a trustworthy `node
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 60 | plans/phase-60.md | **test-suite hygiene** — kill the `grim-rig-serve` hang (close listeners), de-couple the two roadmap-empty tests from the *live* `plans/ROADMAP.md` onto a fixture, `mkdir -p` the dashboard writer's dir, prune the stale mm brief-format test, mock/tag the live-hub `rig` test. Rides along: reconcile dup 53/54 rows, close superseded phase 32. | ✅ accepted (hierophant-verified 2026-08-06) — Track P; `node --test` 373/373 green + self-terminating, hang killed, dups + phase 32 reconciled |
-| 66 | plans/phase-66.md | **make the suite genuinely, deterministically green** — two phase-60 residues: (a) `platform-gather.test.js` "aid registers cleanly" `execSync`s the register script which POSTs to the live server → fails with `grimoire.service` down; (b) `grim-rig-serve.test.js` binds **hardcoded ports** → intermittent `EADDRINUSE` **hang** (~1/3 runs). Fix (a) hermetic (dry-run/stub the POST), (b) bind **ephemeral port 0** + read back. Suite must pass N× with the service **down** and never hang. | queued (hierophant, 2026-08-06) — Track P; found via phase 64/65 |
+| 66 | plans/phase-66.md | **make the suite genuinely, deterministically green** — two phase-60 residues: (a) `platform-gather.test.js` "aid registers cleanly" `execSync`s the register script which POSTs to the live server → fails with `grimoire.service` down; (b) `grim-rig-serve.test.js` binds **hardcoded ports** → intermittent `EADDRINUSE` **hang** (~1/3 runs). Fix (a) hermetic (dry-run/stub the POST), (b) bind **ephemeral port 0** + read back. Suite must pass N× with the service **down** and never hang. | 🔄 in progress (2026-08-19) — Track P; the original EADDRINUSE + platform-gather residues were fixed earlier, but a NEW flake surfaced: `config-cache.test.js` races on the real `~/.config/lbl-config.json` under `node --test` (~1/8) → re-briefed `#0372`. Minion made the fix (**uncommitted WIP:** `test/config-cache.test.js`, `bin/grim-config.js`, `lib/env.js`) but wedged before commit+report — needs a minion nudge to land |
 
 ## Track Q — HMM Tracking ("The Guild Hall") (phases 61–63)
 
@@ -353,13 +353,13 @@ die with cryptic errors instead of resolving aid via lbl-config. Both are onboar
 |-------|-------|------|--------|
 | 64 | plans/phase-64.md | **`grim host list` remote mode** — clients (no `GRIMOIRE_ROOT`) throw `local KB required` instead of fetching from aid. Add `GET /api/hosts/inventory` + a `list()` remote fallback mirroring `gen-hosts` (phase 54). Byte-identical local vs remote | ✅ accepted (hierophant-verified 2026-08-06) — Track K; endpoint + remote fallback + byte-identical confirmed, tests made hermetic after a revise (0267) |
 | 65 | plans/phase-65.md | **`grim rig` `Invalid URL` fix** — `resolveRigHub` destructures `URL.host` (hostname:port) and appends `:18081` → double-port `http://aid:3663:18081`. Use `.hostname`. Real bug (masked on aid by local path); also the true cause of phase 60's rig-test failure | ✅ accepted (hierophant-verified 2026-08-06) — Track K; **code fix landed early in phase 60 (`ac3b501`)**, phase 65 added the URL-shape guard test (`75586d3`). Track K complete — new box unblocked |
-| 67 | plans/phase-67.md | **auto-onboard a registered host to fleet + telemetry** — a new host registers → KB entity written, but invisible to telemetry until a manual rig.json edit + scrape/dashboard regen + Prometheus reload (the tbona dance, 2026-08-10). Add `upsertBox` + `reconcileTelemetry` (`grim rig reconcile`) + server `POST /api/hosts/onboard` (server-only, reconcile must run on aid) + register-script onboard call (dry-run aware). Idempotent; graceful if Prometheus down | queued (hierophant, 2026-08-10) — Track K; **depends on phase 62 accept**; brief ready |
+| 67 | plans/phase-67.md | **auto-onboard a registered host to fleet + telemetry** — a new host registers → KB entity written, but invisible to telemetry until a manual rig.json edit + scrape/dashboard regen + Prometheus reload (the tbona dance, 2026-08-10). Add `upsertBox` + `reconcileTelemetry` (`grim rig reconcile`) + server `POST /api/hosts/onboard` (server-only, reconcile must run on aid) + register-script onboard call (dry-run aware). Idempotent; graceful if Prometheus down | ✅ accepted (2026-08-18) — Track K; shipped `4a1c90b` + test fix `d305b5b` (idempotency assertion, env-aware reconcile), archived `1f6bb2e` |
 
 ## Track F cont. — GPU collector (phase 70)
 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
-| 70 | plans/phase-70.md | **`nvtop -s` as primary GPU collector** — drop-in, cross-vendor JSON; nvtop primary, nvidia-smi/rocm-smi fallback; retires the fragile AMD `parseRocmSmi` text-scrape. Same gauges, dashboards untouched | queued (hierophant, 2026-08-13) — Track F; **PRIORITY: next after 62, ahead of 67** |
+| 70 | plans/phase-70.md | **`nvtop -s` as primary GPU collector** — drop-in, cross-vendor JSON; nvtop primary, nvidia-smi/rocm-smi fallback; retires the fragile AMD `parseRocmSmi` text-scrape. Same gauges, dashboards untouched | ✅ accepted (2026-08-18) — Track F; shipped `c0f48fe` (`parseNvtop`/`getNvtopGpus`, primary in `buildSnapshot`; nvidia-smi/rocm fallback kept), archived `4ddec6f` |
 
 ## Track Bounty Board — grim-bounty-board (phases 71–77)
 
