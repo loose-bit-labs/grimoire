@@ -23,10 +23,11 @@ const os       = require('node:os')
 const path     = require('node:path')
 const axios    = require('axios')
 const minimist = require('minimist')
-const { config, refreshLblCache, clearLblCache, lblCacheMeta } = require('../lib/env')
+const { config, refreshLblCache, clearLblCache, lblCacheMeta, _cachePath, _repoConfigPath } = require('../lib/env')
 
-const LOCAL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'lbl-config.json')
-const CACHE_PATH        = path.join(os.homedir(), '.config', 'lbl-config.json')
+// Note: _cachePath() / _repoConfigPath() are called inline below so tests can
+// override them via LBL_CACHE_PATH / _repoConfigPath() env vars without
+// hitting Node's require cache.
 
 class GrimConfig {
 
@@ -43,12 +44,12 @@ class GrimConfig {
   _loadConfig() {
     let parsed
     try {
-      parsed = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'))
+      parsed = JSON.parse(fs.readFileSync(_repoConfigPath(), 'utf8'))
     } catch (e) {
-      throw new Error(`Invalid lbl-config.json at ${LOCAL_CONFIG_PATH}: ${e.message}`)
+      throw new Error(`Invalid lbl-config.json at ${_repoConfigPath()}: ${e.message}`)
     }
     if (!parsed.endpoints || !parsed.use) {
-      throw new Error(`Invalid lbl-config.json at ${LOCAL_CONFIG_PATH}: missing top-level 'endpoints' or 'use' object`)
+      throw new Error(`Invalid lbl-config.json at ${_repoConfigPath()}: missing top-level 'endpoints' or 'use' object`)
     }
     return parsed
   }
@@ -69,7 +70,7 @@ class GrimConfig {
       })
       result = dotPath ? res.data.value : res.data
     } catch (e) {
-      if (!fs.existsSync(LOCAL_CONFIG_PATH)) throw e
+      if (!fs.existsSync(_repoConfigPath())) throw e
       const cfg = this._loadLocal()
       result = dotPath ? this._dotGet(cfg, dotPath) : cfg
       if (dotPath && result === undefined) throw new Error(`path not found: ${dotPath}`)
@@ -84,7 +85,7 @@ class GrimConfig {
   async sync() {
     if (!config.host) { console.error('No server configured (endpoints.grimoire in ~/.config/lbl-config.json or GRIMOIRE_HOST).'); process.exit(1) }
 
-    const before = fs.existsSync(CACHE_PATH) ? this._safeParse(fs.readFileSync(CACHE_PATH, 'utf8')) : {}
+    const before = fs.existsSync(_cachePath()) ? this._safeParse(fs.readFileSync(_cachePath(), 'utf8')) : {}
     const fresh  = await refreshLblCache()
 
     const changed = this._changedKeys(before, fresh)
@@ -108,7 +109,7 @@ class GrimConfig {
     // canonical grimoire endpoint so resolution never returns null.
     if (isLocal) {
       try {
-        const repoCfg = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'))
+        const repoCfg = JSON.parse(fs.readFileSync(_repoConfigPath(), 'utf8'))
         const grimoireEndpoint = repoCfg.endpoints?.grimoire
         if (!grimoireEndpoint) {
           console.error('error: repo config has no endpoints.grimoire — cannot bootstrap')
@@ -119,9 +120,9 @@ class GrimConfig {
           endpoints: { grimoire: grimoireEndpoint },
           use:       { grimoire: 'grimoire' },
         }
-        fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true })
-        fs.writeFileSync(CACHE_PATH, JSON.stringify(bootstrap, null, 2) + '\n')
-        fs.writeFileSync(path.join(os.homedir(), '.config', 'lbl-config.json.meta'),
+        fs.mkdirSync(path.dirname(_cachePath()), { recursive: true })
+        fs.writeFileSync(_cachePath(), JSON.stringify(bootstrap, null, 2) + '\n')
+        fs.writeFileSync(path.join(path.dirname(_cachePath()), 'lbl-config.json.meta'),
           JSON.stringify({ fetchedAt: new Date().toISOString(), source: 'repo-bootstrap' }) + '\n')
         console.log('cache cleared (repo bootstrap preserved)')
         return
@@ -137,9 +138,9 @@ class GrimConfig {
         endpoints: { grimoire: process.env.GRIMOIRE_HOST },
         use:       { grimoire: 'grimoire' },
       }
-      fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true })
-      fs.writeFileSync(CACHE_PATH, JSON.stringify(bootstrap, null, 2) + '\n')
-      fs.writeFileSync(path.join(os.homedir(), '.config', 'lbl-config.json.meta'),
+      fs.mkdirSync(path.dirname(_cachePath()), { recursive: true })
+      fs.writeFileSync(_cachePath(), JSON.stringify(bootstrap, null, 2) + '\n')
+      fs.writeFileSync(path.join(path.dirname(_cachePath()), 'lbl-config.json.meta'),
         JSON.stringify({ fetchedAt: new Date().toISOString(), source: 'env-bootstrap' }) + '\n')
       console.log('cache cleared (GRIMOIRE_HOST bootstrap preserved)')
       return
@@ -158,9 +159,9 @@ class GrimConfig {
    */
   async status() {
     const meta = lblCacheMeta()
-    const hasCache = fs.existsSync(CACHE_PATH)
+    const hasCache = fs.existsSync(_cachePath())
 
-    console.log(`  cache:  ${CACHE_PATH}`)
+    console.log(`  cache:  ${_cachePath()}`)
     if (hasCache) {
       console.log(`  valid:  yes`)
     } else {
