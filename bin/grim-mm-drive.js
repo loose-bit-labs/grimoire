@@ -133,7 +133,7 @@ function drive({ role, session, budgetExceeded, cwd, dir }) {
   }
 
   // HALT
-  const reEntry = command || `grim mm read --role ${role} --session "${session}"`
+  const reEntry = command || `grim mm read --role ${role}`
   console.log(`DRIVE: HALT ${reason || 'unknown'}`)
   console.log(`Re-entry: ${reEntry}`)
   process.exit(4)

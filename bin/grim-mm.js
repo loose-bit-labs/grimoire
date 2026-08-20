@@ -29,11 +29,12 @@
  *   <body>
  *
  * CLI (called directly by the skills, or via `grim mm`):
- *   grim mm read  --role mage --session "$CLAUDE_CODE_SESSION_ID"
- *   grim mm read  --role hierophant --session "$ID" --all      # whole thread, cold start
- *   grim mm write --role minion --session "$ID" --state report --file /tmp/report.md
- *   echo "body" | grim mm write --role mage --session "$ID" --state revise --phase 3
- *   grim mm write --role mage --session "$ID" --state direction --file f.md --to minion,hierophant
+ *   --session defaults to $CLAUDE_CODE_SESSION_ID — never spell it; just pass --role.
+ *   grim mm read  --role mage
+ *   grim mm read  --role hierophant --all                      # whole thread, cold start
+ *   grim mm write --role minion --state report --file /tmp/report.md
+ *   echo "body" | grim mm write --role mage --state revise --phase 3
+ *   grim mm write --role mage --state direction --file f.md --to minion,hierophant
  *
  * read  → stamps role, prints unread inbox (messages above your last) + waiting status.
  * write → stamps from/to, writes YAML header, appends the next NNNN-from-<from>-to-<to>.md.
@@ -311,7 +312,7 @@ function computeNextMove({ role, latest, waiting, phaseComplete }) {
   const defaultTo = latest.from !== role ? latest.from : role
   return {
     states,
-    command: `grim mm write --role ${role} --session "$CLAUDE_CODE_SESSION_ID" --to ${defaultTo} --state <${states.join('|')}> --file <reply.md>`,
+    command: `grim mm write --role ${role} --to ${defaultTo} --state <${states.join('|')}> --file <reply.md>`,
   }
 }
 
@@ -704,10 +705,10 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   // Halt predicate 1: budget (stub — caller passes flag)
   if (budgetExceeded) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'budget', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'budget', command: `grim mm read --role ${role}`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT budget')
-      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+      console.log(`Re-entry: grim mm read --role ${role}`)
     }
     process.exit(4)
     return
@@ -717,11 +718,11 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   const reviseCount = thread.filter(m => m.phase === currentPhase && m.state === 'revise').length
   if (reviseCount >= 3) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'deadlock', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'deadlock', command: `grim mm read --role ${role}`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT deadlock')
       console.log(`${reviseCount} revise messages on phase ${currentPhase} — thrash guard`)
-      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+      console.log(`Re-entry: grim mm read --role ${role}`)
     }
     process.exit(4)
     return
@@ -732,11 +733,11 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
     const decisionScopes = ['scope', 'product', 'external']
     if (decisionScopes.includes(latest.scope)) {
       if (json) {
-        console.log(JSON.stringify({ verdict: 'HALT', reason: 'decision', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
+        console.log(JSON.stringify({ verdict: 'HALT', reason: 'decision', command: `grim mm read --role ${role}`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
       } else {
         console.log('HALT decision')
         console.log(`Escalate with scope:${latest.scope} — requires human input`)
-        console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+        console.log(`Re-entry: grim mm read --role ${role}`)
       }
       process.exit(4)
       return
@@ -748,7 +749,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
         console.log(JSON.stringify({
           verdict: 'ACT',
           reason: `escalate with scope:${latest.scope} — route to hierophant`,
-          command: `grim mm write --role hierophant --session "${session}" --state direction --file <reply.md>`,
+          command: `grim mm write --role hierophant --state direction --file <reply.md>`,
           owner: latest.from,
           phase: currentPhase,
           state: latest.state,
@@ -757,7 +758,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
       } else {
         console.log('ACT')
         console.log(`Escalate scope:${latest.scope} — route to hierophant`)
-        console.log(`grim mm write --role hierophant --session "${session}" --state direction --file <reply.md>`)
+        console.log(`grim mm write --role hierophant --state direction --file <reply.md>`)
       }
       process.exit(0)
       return
@@ -768,11 +769,11 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
   const nextPhase = nextQueuedPhase(cwd)
   if (nextPhase && briefRequiresPermission(cwd, nextPhase)) {
     if (json) {
-      console.log(JSON.stringify({ verdict: 'HALT', reason: 'permission', command: `grim mm read --role ${role} --session "${session}"`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
+      console.log(JSON.stringify({ verdict: 'HALT', reason: 'permission', command: `grim mm read --role ${role}`, owner, phase: currentPhase, state: latest.state, scope: latest.scope }, null, 2))
     } else {
       console.log('HALT permission')
       console.log(`Phase ${nextPhase} brief requires permission — commit locally but do not push`)
-      console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+      console.log(`Re-entry: grim mm read --role ${role}`)
     }
     process.exit(4)
     return
@@ -786,7 +787,7 @@ function next({ dir, role, session, json, budgetExceeded, cwd: cwdOpt }) {
       } else {
         console.log('HALT roadmap-empty')
         console.log('No queued phases in ROADMAP.md — nothing left to brief')
-        console.log(`Re-entry: grim mm read --role ${role} --session "${session}"`)
+        console.log(`Re-entry: grim mm read --role ${role}`)
       }
       process.exit(4)
       return
