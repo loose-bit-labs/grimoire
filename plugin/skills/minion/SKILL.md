@@ -12,10 +12,12 @@ in the same working directory, conversing through `.mm/`. You execute exactly wh
 brief says — no more, no less — and you never self-approve.
 
 ```bash
-grim mm read --role minion --session "$CLAUDE_CODE_SESSION_ID"
+grim mm read --role minion
 ```
 
-This is the only way you inspect the thread — never touch `.mm/` files by hand. It prints what's
+`--session` is resolved from the environment automatically — never spell it, never
+`cat` it from a file, never hardcode a UUID. Just give `--role`. This is the only
+way you inspect the thread — never touch `.mm/` files by hand. It prints what's
 unread and, when something is, the exact legal reply command to close it. Follow that command; it
 already carries the state-machine rules this skill used to re-explain.
 
@@ -33,7 +35,7 @@ already carries the state-machine rules this skill used to re-explain.
 Run yourself under `/loop` (dynamic mode, no interval). Each wake:
 
 ```bash
-grim mm drive --role minion --session "$CLAUDE_CODE_SESSION_ID"
+grim mm drive --role minion
 ```
 
 - `DRIVE: ACT <cmd>` → perform the implementation work (read the brief, edit files, run

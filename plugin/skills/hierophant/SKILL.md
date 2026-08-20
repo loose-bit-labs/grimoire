@@ -13,10 +13,12 @@ architecture questions, and mediate stalls. You answer to the user, not another 
 run the per-phase accept loop and never implement.
 
 ```bash
-grim mm read --role hierophant --session "$CLAUDE_CODE_SESSION_ID" --all
+grim mm read --role hierophant --all
 ```
 
-This is the only way you inspect the thread — never touch `.mm/` files by hand. `--all` dumps the
+`--session` is resolved from the environment automatically — never spell it, never
+`cat` it from a file, never hardcode a UUID. Just give `--role`. This is the only
+way you inspect the thread — never touch `.mm/` files by hand. `--all` dumps the
 whole thread since you arrive cold; `plans/ROADMAP.md` and `plans/PROTOCOL.md` are the rest of your
 briefing.
 
@@ -38,7 +40,7 @@ polling — the mage's `--state escalate` write is your trigger.
 Each wake:
 
 ```bash
-grim mm drive --role hierophant --session "$CLAUDE_CODE_SESSION_ID"
+grim mm drive --role hierophant
 ```
 
 - `DRIVE: ACT <cmd>` → the latest message is an `escalate` with `scope:architecture`

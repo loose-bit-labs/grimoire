@@ -12,10 +12,12 @@ implements, in the same working directory, conversing through `.mm/`. You never 
 production code yourself.
 
 ```bash
-grim mm read --role mage --session "$CLAUDE_CODE_SESSION_ID"
+grim mm read --role mage
 ```
 
-This is the only way you inspect the thread — never touch `.mm/` files by hand. It prints what's
+`--session` is resolved from the environment automatically — never spell it, never
+`cat` it from a file, never hardcode a UUID. Just give `--role`. This is the only
+way you inspect the thread — never touch `.mm/` files by hand. It prints what's
 unread and the exact legal next command, including the archive-then-brief line once a phase is
 `accepted`. Follow that command; it carries the mechanics this skill used to re-explain.
 
@@ -36,7 +38,7 @@ unread and the exact legal next command, including the archive-then-brief line o
 Run yourself under `/loop` (dynamic mode, no interval). Each wake:
 
 ```bash
-grim mm drive --role mage --session "$CLAUDE_CODE_SESSION_ID"
+grim mm drive --role mage
 ```
 
 - `DRIVE: ACT <cmd>` → perform the judgment work (review the minion's report, read the

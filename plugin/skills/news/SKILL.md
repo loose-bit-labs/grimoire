@@ -23,9 +23,13 @@ omit it; `news` reads the role from the session marker.
    ```bash
    grim mm news --json
    ```
-   `--session` defaults to `$CLAUDE_CODE_SESSION_ID`; role is resolved from the
-   session's stamped marker. Pass `--role <r>` only if it errors that it can't
-   resolve the role.
+   Run it **exactly like that.** The script reads your session id from the
+   environment on its own. **Do not** set `CLAUDE_CODE_SESSION_ID` yourself,
+   **do not** `cat` it from a file (there is no `/tmp/grimoire/session_id` — that
+   path is a hallucination), and **do not** paste a hardcoded UUID. If — and only
+   if — it errors that it can't resolve your role, the one correct fix is to add
+   `--role <hierophant|mage|minion>`; the verdict needs no session id at all when
+   the role is explicit.
 
 2. **Read the `verdict`:**
    - **`WAIT`** → nothing is addressed to you (you sent the last message, or it's
