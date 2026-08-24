@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-19 (66 + 67 + 70 landed; Bounty Board 71-77 + Commons 79-81 + DNS 78 briefed; grim-unbg added).
+Binding for all phases. Last updated 2026-08-24 (73 accepted; 82 briefed — PRIORITY OOM guards jump-ahead).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -269,7 +269,7 @@ via provenance-at-write.
 | 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | ✅ accepted (hierophant, 2026-07-29) |
 | 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | ✅ accepted (blocked on 33) — shipped `583846b` + `7817bd3` (timeout fix); 34/34 green |
 | 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | ✅ accepted — Track G-v2 complete |
-| 68 | plans/phase-68.md | **`grim research` — kill the pathological 60s cap.** Default whole-research budget is 60s, *shorter than the 5-min `digRepo` it invokes* → digs die at 60s (Swandive "Lost the signal — 60s no bottom"). Separate short per-fetch acquire timeout from a generous overall budget (named const ≥ `ARCHAEOLOGIST_TIMEOUT`); honor `--timeout 0` = no cap (fire-and-forget). Coupled: fLimfLaMs feature `concept_feature_request_decouple_the_researcher_from_swandive_standa` (standalone durable research queue). | queued (hierophant, 2026-08-11) — Track G; **PRIORITY: next after 62, ahead of 67** |
+| 68 | plans/phase-68.md | **`grim research` — kill the pathological 60s cap.** Default whole-research budget is 60s, *shorter than the 5-min `digRepo` it invokes* → digs die at 60s (Swandive "Lost the signal — 60s no bottom"). Separate short per-fetch acquire timeout from a generous overall budget (named const ≥ `ARCHAEOLOGIST_TIMEOUT`); honor `--timeout 0` = no cap (fire-and-forget). Coupled: fLimfLaMs feature `concept_feature_request_decouple_the_researcher_from_swandive_standa` (standalone durable research queue). | queued (hierophant, 2026-08-11) — Track G; **NEEDS REFRESH (2026-08-24):** leapfrogged (67 shipped, 68 didn't); the acute failure has since shifted from the 60s timeout to an **OOM** (see phase 82). Now a prerequisite for the phase-84 queue's `--timeout 0`, not a standalone urgent — do it as part of Track G-v3. |
 
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
@@ -374,7 +374,7 @@ through the pact — and becomes the first bounties once it exists.
 |-------|-------|------|--------|
 | 71 | plans/phase-71.md | **core state machine** (`lib/bounty.js`, pure) — model/timing, legal transitions, claim/heartbeat/submit/release with epoch fencing, `applyExpire` + poison→NEEDS_TRIAGE, `applyReview` (no self-approval) | ✅ accepted (2026-08-21) — Track Bounty Board; shipped `c2e0628` (14/14 tests), archived `7dba2ab` |
 | 72 | plans/phase-72.md | **reputation + eligibility** (pure) — `deriveReputation` over `claim_history`, priority-sorted `nextEligible`. Reputation descriptive-only (must not gate) | ✅ accepted (2026-08-21) — Track Bounty Board; shipped `d84288c` (7/7 tests), archived
-| 73 | plans/phase-73.md | **persistence store** (`lib/bounty-store.js`) — durable/ephemeral split (leases gitignored), atomic temp+rename, single-writer `mutate` lock, hunter registry. No new dep | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 71 |
+| 73 | plans/phase-73.md | **persistence store** (`lib/bounty-store.js`) — durable/ephemeral split (leases gitignored), atomic temp+rename, single-writer `mutate` lock, hunter registry. No new dep | ✅ accepted (2026-08-22) — Track Bounty Board; shipped `a37066b` (4/4 tests) |
 | 74 | plans/phase-74.md | **server routes** (`grim-server.js`) — create/list/claim/heartbeat/submit/release/review/register, sole-writer, 409 on conflict; export `app`. `broadcastBounty` stubbed | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 72+73 |
 | 75 | plans/phase-75.md | **reclaim sweep + SSE** — active `sweepBounties` (writes OPEN/NEEDS_TRIAGE back), `/api/bounty/stream` doorbell, real `broadcastBounty`, unref'd interval | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
 | 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
@@ -404,6 +404,25 @@ every host manually. This phase automates it and retires the per-client `/etc/ho
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 78 | plans/phase-78.md | **automate client DNS drop-in via setup-client** — `endpoints.dns` in lbl-config (single bootstrap literal), `deploy/resolved/99-lbl.conf.tmpl` rendered by an idempotent DRY_RUN-aware setup-client step (restart resolved only on change); retire the per-client `# BEGIN grimoire-hosts` apply. `requires: permission` (sudo write + service restart on every host) | queued (hierophant, 2026-08-16) — Track B cont.; supersedes the phase-43 /etc/hosts approach |
+
+## Track G-v3 — research durability + semantic dives (phases 82–85, + 68 refresh)
+
+Empirical finding (hierophant, 2026-08-24, from `~/.config/flimflams/grim-npc.db`): swandive dives are
+**~100% failing since 2026-08-17** — every repo dive OOM-crashes (`<--- Last few GCs --->`), nothing
+reaches the KB (not even a stub), and the in-memory dive `Map` means dropped URLs fall in a hole.
+Three user directives (2026-08-24): (1) add memory guards; (2) a durable `pending → researched` queue
+everything dumps into; (3) research should **default to semantic gist** (what it does / why we care /
+how it's useful / what it relates to / concepts) — deep static/data-flow code analysis stays available
+but as a **lower-priority background tier**, not the default dive. Recovery: the 11 dropped URLs are
+recorded in the store and can be replayed once the queue exists (phase 85 backfill).
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 82 | plans/phase-82.md | **OOM guards** — archaeologist `walk` size-gate (`MAX_FILE_BYTES` 512K) + binary/ext skiplist + total-content cap; `httpGet` body cap (`MAX_BODY_BYTES` 5M) + content-type/redirect guard; guard-refusal → `acquired.failed` so `stubJudgment` files a breadcrumb, never silence. Unconditional (protects the standalone `/archaeologist` too). | 🔄 in progress (2026-08-24) — Track G-v3; **PRIORITY jump-ahead** of the bounty board — research is broken now (9/9 dives OOM since 2026-08-17). Briefed to minion |
+| 68 | plans/phase-68.md | **timeout refresh** — per-fetch acquire timeout vs generous overall budget; `--timeout 0` = no cap. (See refreshed note above.) | queued — prerequisite for 84 |
+| 83 | plans/phase-83.md | **semantic dig mode** — research path defaults to a semantic synthesis lens (purpose/usefulness/relations/concepts) over per-file cataloging; deep static-analysis/data-flow demoted to an opt-in background tier. Standalone `/archaeologist` catalog default unchanged. | queued (hierophant, 2026-08-24) — Track G-v3; depends 82 |
+| 84 | plans/phase-84.md | **durable research queue** — `pending → researched` file store (reuse `lib/queue.js` transitions + `lib/bounty-store.js` atomic write + single-writer lock); serial worker drains via `grim research --timeout 0`; always a terminal outcome, reusable by any front-end. | queued (hierophant, 2026-08-24) — Track G-v3; depends 68 + 82 |
+| 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | queued (hierophant, 2026-08-24) — Track G-v3; depends 84 |
 
 ## Acceptance bar (mage enforces per phase)
 
