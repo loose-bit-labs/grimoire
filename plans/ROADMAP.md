@@ -424,6 +424,20 @@ recorded in the store and can be replayed once the queue exists (phase 85 backfi
 | 84 | plans/phase-84.md | **durable research queue** — `pending → researched` file store (reuse `lib/queue.js` transitions + `lib/bounty-store.js` atomic write + single-writer lock); serial worker drains via `grim research --timeout 0`; always a terminal outcome, reusable by any front-end. | queued (hierophant, 2026-08-24) — Track G-v3; depends 68 + 82 |
 | 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | queued (hierophant, 2026-08-24) — Track G-v3; depends 84 |
 
+## Track F cont. — fleet roster single-source (phase 86)
+
+Two host rosters drift: `grim host` (KB registry, auto-registered, 9 boxes, self-updating) vs
+`grim rig` (hand-curated `rig.json`, 5 boxes, misses every box registered since the last hand-edit —
+blip/plink/tachi/vier were invisible until a manual 2026-08-25 edit). Decision (user, 2026-08-25):
+**one roster, two lenses** — the registry is the single source of the box *list*; `rig.json` keeps only
+the per-host service-check defs. Not an alias/merge of the two commands (liveness vs inventory are
+distinct lenses). Realizes the standing "generate, don't duplicate" principle + the filed request
+`concept_feature_request_kb_write_triggered_rig_json_dashboard_sync_g`.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 86 | plans/phase-86.md | **derive the fleet roster from the host registry** — `lib/fleet.js` `loadFleet()` merges registry hosts (`hardware/inventory`, local or `GET /api/hosts/inventory`) with `rig.json` reinterpreted as a keyed **service-check overlay**; repoint `grim rig` `loadBoxes()` + the telemetry generators (`generate-dashboard.js`/`generate-scrape.sh`) at it; a newly-registered box auto-appears with no hand-edit. | queued (hierophant, 2026-08-25) — Track F cont.; independent of Track G-v3 |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
