@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-24 (73 accepted; 82 briefed — PRIORITY OOM guards jump-ahead).
+Binding for all phases. Last updated 2026-08-25 (74 accepted; 82 accepted + committed as 687aa9e — PRIORITY OOM guards jump-ahead).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -418,9 +418,9 @@ recorded in the store and can be replayed once the queue exists (phase 85 backfi
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 82 | plans/phase-82.md | **OOM guards** — archaeologist `walk` size-gate (`MAX_FILE_BYTES` 512K) + binary/ext skiplist + total-content cap; `httpGet` body cap (`MAX_BODY_BYTES` 5M) + content-type/redirect guard; guard-refusal → `acquired.failed` so `stubJudgment` files a breadcrumb, never silence. Unconditional (protects the standalone `/archaeologist` too). | 🔄 in progress (2026-08-24) — Track G-v3; **PRIORITY jump-ahead** of the bounty board — research is broken now (9/9 dives OOM since 2026-08-17). Briefed to minion |
+| 82 | plans/phase-82.md | **OOM guards** — archaeologist `walk` size-gate (`MAX_FILE_BYTES` 512K) + binary/ext skiplist + total-content cap; `httpGet` body cap (`MAX_BODY_BYTES` 5M) + content-type/redirect guard; guard-refusal → `acquired.failed` so `stubJudgment` files a breadcrumb, never silence. Unconditional (protects the standalone `/archaeologist` too). | ✅ accepted (2026-08-25, mage verdict #0393; commit 687aa9e) — Track G-v3; **PRIORITY jump-ahead** of the bounty board — research was broken (9/9 dives OOM since 2026-08-17). Guards in `bin/grim-archaeologist.js` (`readGate` + 8 MiB retained cap, both walks) and `bin/grim-research.js` (`httpGet` cap/content-type/redirect, callers file `acquisition refused` stubs); +17 tests, suite 476 pass / 0 fail. Bonus: pre-existing relative-`Location` redirect crash fixed. |
 | 68 | plans/phase-68.md | **timeout refresh** — per-fetch acquire timeout vs generous overall budget; `--timeout 0` = no cap. (See refreshed note above.) | queued — prerequisite for 84 |
-| 83 | plans/phase-83.md | **semantic dig mode** — research path defaults to a semantic synthesis lens (purpose/usefulness/relations/concepts) over per-file cataloging; deep static-analysis/data-flow demoted to an opt-in background tier. Standalone `/archaeologist` catalog default unchanged. | queued (hierophant, 2026-08-24) — Track G-v3; depends 82 |
+| 83 | plans/phase-83.md | **semantic dig mode** — research path defaults to a semantic synthesis lens (purpose/usefulness/relations/concepts) over per-file cataloging; deep static-analysis/data-flow demoted to an opt-in background tier. Standalone `/archaeologist` catalog default unchanged. | in progress (briefed 2026-08-25, mage #0394) — Track G-v3; depends 82 (satisfied) |
 | 84 | plans/phase-84.md | **durable research queue** — `pending → researched` file store (reuse `lib/queue.js` transitions + `lib/bounty-store.js` atomic write + single-writer lock); serial worker drains via `grim research --timeout 0`; always a terminal outcome, reusable by any front-end. | queued (hierophant, 2026-08-24) — Track G-v3; depends 68 + 82 |
 | 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | queued (hierophant, 2026-08-24) — Track G-v3; depends 84 |
 
