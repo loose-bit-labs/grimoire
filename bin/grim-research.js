@@ -260,7 +260,10 @@ async function digRepo(url, timeout = ARCHAEOLOGIST_TIMEOUT) {
     })
 
     const { runDig } = require('./grim-archaeologist')
-    const result = await runDig(tmpDir, { hints: '' })
+    // Phase 83 — dives default to the semantic lens: spine + one synthesis
+    // call, not a per-file catalog. Catalog stays reachable (standalone
+    // /archaeologist, or a future --deep flag).
+    const result = await runDig(tmpDir, { hints: '', mode: 'semantic' })
 
     // Read the synthesis — runDig writes final.md to its outDir
     const finalPath = path.join(result.outDir, 'final.md')

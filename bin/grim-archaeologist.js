@@ -8,6 +8,10 @@
  *   Deep dig (new):    grim archaeologist --dig <path> [--hints "..."]
  *   Bulk catalog:      grim archaeologist --source <dir>
  *
+ * Deep dig has two pipelines (phase 83): `mode: 'catalog'` (default — per-file
+ * analyses + synthesis) and `mode: 'semantic'` (spine reads + one synthesis
+ * call; the research path's lens). Standalone --dig stays catalog.
+ *
  * Deep dig pipeline (token-efficient — Ollama does the heavy lifting):
  *   Phase 1 — Overview:   archaeology/{slug}/overview.md   (14b, fast context grab)
  *   Phase 2 — Per-file:   archaeology/{slug}/files/*.md    (7b, bulk)
@@ -25,9 +29,12 @@ const path     = require('node:path')
 const os       = require('node:os')
 const { execSync } = require('node:child_process')
 const minimist = require('minimist')
-const { ask, compact } = require('./model-ask')
-const { loadGraph }    = require('../lib/graph')
-const { runCouncil }   = require('../lib/council')
+// Called through the module object (not destructured) so tests can stub the
+// model offline — phase 83's semantic-mode contract ("no per-file prompts")
+// is only assertable with an ask() seam.
+const modelAsk = require('./model-ask')
+const { loadGraph } = require('../lib/graph')
+const council   = require('../lib/council')
 
 // Optional — only used in legacy --source bulk mode
 let _ner = null
@@ -308,6 +315,10 @@ function collectInterestingFiles(dir, max = MAX_FILES_PER_PASS, skipDirs = SKIP_
 
 const ARCH_SYSTEM = `You are THE ARCHAEOLOGIST — you excavate old code projects and understand them deeply. Your output is precise, technical, and concise. You find things genuinely fascinating and say so when something is weird or brilliant.`
 
+// Semantic mode (phase 83) — the project is judged from its spine, not a
+// per-file catalog. The model must not claim to have read files it wasn't given.
+const SEMANTIC_SYSTEM = `You are THE ARCHAEOLOGIST in semantic mode. You are given only a project's spine — its README(s), entry point(s), manifests, and top-level shape (names and sizes, never contents). Write a purpose-level synthesis: what the project does, why it is useful, what it relates to, what concepts it represents. Be precise, technical, and concise. Never invent per-file detail you were not given.`
+
 function buildOverviewPrompt(name, dir, era, gitlog, tree, readme, hints) {
   return `Analyze this code project and write a brief overview (250-350 words) covering:
 1. What it does and what problem it solves
@@ -385,6 +396,165 @@ Per-file analyses:
 ${fileSection}`
 }
 
+// ── Semantic mode (phase 83) ────────────────────────────────────────────────
+//
+// The research lens: a dive doesn't need every file — it needs the semantic
+// content. Read only the spine (README(s), entry point(s), manifests,
+// top-level shape) and make ONE synthesis call. The catalog pipeline above
+// stays the default for the standalone /archaeologist skill.
+
+const SPINE_README_NAMES  = new Set(['README.md', 'README.txt', 'README', 'readme.md'])
+const SPINE_MANIFEST_NAMES = new Set(['package.json', 'pyproject.toml', 'Cargo.toml'])
+const SPINE_ENTRY_NAMES   = new Set(['index.js', 'main.js', 'app.js', 'main.py'])
+const SPINE_MAX_CHARS     = 4000   // per spine file — the spine must stay small
+
+// Top-level shape: names + sizes (dirs get an entry count), no contents.
+// stat/readdir only — nothing here reads file content, so no gate needed.
+function spineTree(dir, skipDirs = SKIP_DIRS) {
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return '' }
+  entries.sort((a, b) => a.name.localeCompare(b.name))
+  const lines = []
+  for (const e of entries) {
+    if (skipDirs.has(e.name)) continue
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) {
+      let n = 0
+      try { n = fs.readdirSync(full).length } catch {}
+      lines.push(`${e.name}/ (${n} entries)`)
+    } else {
+      let size = 0
+      try { size = fs.statSync(full).size } catch {}
+      lines.push(`${e.name} (${size} B)`)
+    }
+    if (lines.length > 80) break
+  }
+  return lines.join('\n')
+}
+
+// Gated read for spine files — phase 82 invariant: every content read in
+// semantic mode passes readGate first. Returns { text } or { reason }.
+function spineRead(p, maxChars = SPINE_MAX_CHARS) {
+  const gate = readGate(p)
+  if (gate) return { reason: gate.reason }
+  try { return { text: fs.readFileSync(p, 'utf8').slice(0, maxChars) } }
+  catch { return { reason: 'unreadable' } }
+}
+
+// Collect the spine: { readme, manifests, entryPoints, tree, skipped }.
+// readme/manifests/entryPoints are pre-labeled sections; skipped records
+// spine files the OOM gate refused (never read).
+function collectSpine(dir) {
+  const spine = { readme: [], manifests: [], entryPoints: [], tree: spineTree(dir), skipped: [] }
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return spine }
+
+  for (const e of entries) {
+    if (!e.isFile()) continue
+    const p = path.join(dir, e.name)
+    if (SPINE_README_NAMES.has(e.name)) {
+      const r = spineRead(p)
+      if (r.reason) spine.skipped.push({ rel: e.name, reason: r.reason })
+      else spine.readme.push(`## ${e.name}\n${r.text}`)
+    } else if (SPINE_MANIFEST_NAMES.has(e.name)) {
+      const r = spineRead(p)
+      if (r.reason) spine.skipped.push({ rel: e.name, reason: r.reason })
+      else spine.manifests.push(`## ${e.name}\n${r.text}`)
+    }
+  }
+
+  // Entry points: package.json-declared first (main/bin), then conventional
+  // top-level names. Deduped; declared paths outside the root are dropped.
+  const wanted = []
+  const pkgPath = path.join(dir, 'package.json')
+  if (fs.existsSync(pkgPath)) {
+    const r = spineRead(pkgPath)
+    if (!r.reason) {
+      try {
+        const pkg = JSON.parse(r.text)
+        const fromPkg = [pkg.main, ...(typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin || {}))]
+        wanted.push(...fromPkg.filter(Boolean))
+      } catch {}
+    }
+  }
+  for (const name of SPINE_ENTRY_NAMES) wanted.push(name)
+
+  const seen = new Set()
+  for (const rel of wanted) {
+    if (seen.has(rel) || path.isAbsolute(rel)) continue
+    const full = path.join(dir, rel)
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) continue
+    seen.add(rel)
+    const r = spineRead(full)
+    if (r.reason) spine.skipped.push({ rel, reason: r.reason })
+    else spine.entryPoints.push(`## ${rel}\n${r.text}`)
+  }
+
+  return spine
+}
+
+function buildSemanticPrompt(name, spine, hints) {
+  const section = (title, parts) => parts.length ? `${title}:\n${parts.join('\n\n')}` : `(no ${title.toLowerCase()} found)`
+
+  return `You are given the spine of the "${name}" project — its README(s), entry point(s), manifests, and top-level shape. You have NOT been given the full source. Write a semantic synthesis of the project.
+
+Structure your report with these exact sections:
+
+## Purpose
+What this project does and the problem it solves, in plain terms.
+
+## Usefulness
+How and why we'd use it. What it's good at, what it's not.
+
+## Relationships
+What it connects to — dependencies, siblings, competitors, things it builds on or that build on it.
+
+## Concepts
+Named techniques, patterns, or ideas this project represents.
+
+## Suggested KB Entities
+List each entity worth recording in Grimoire:
+- type: Project|SoftwareApplication|DefinedTerm
+- id: project_slug_format
+- description: one sentence
+- tags: ["domain/x", "tech/y", "status/z"]
+- relationships: {related_to: [...], depends_on: [...]}
+${hints ? `\nUser hints: ${hints}\n` : ''}
+Top-level shape (names + sizes, not contents):
+${spine.tree || '(unavailable)'}
+
+${section('README(s)', spine.readme)}
+
+${section('Manifests', spine.manifests)}
+
+${section('Entry points', spine.entryPoints)}`
+}
+
+async function runSemanticDig(projectDir, opts = {}) {
+  const { hints = '' } = opts
+  const name = path.basename(path.resolve(projectDir))
+  const out  = archDir(projectDir)
+  ensureDir(out)
+
+  console.log(`  [1/1] Semantic pass — ${name}`)
+
+  const spine = collectSpine(projectDir)
+  if (spine.skipped.length) {
+    const shown = spine.skipped.slice(0, 5).map(s => `${s.rel}:${s.reason}`).join(', ')
+    console.log(`       ⚠ ${spine.skipped.length} spine file(s) refused by OOM guards (${shown}${spine.skipped.length > 5 ? ', …' : ''})`)
+  }
+
+  const prompt = buildSemanticPrompt(name, spine, hints)
+  const final  = await modelAsk.ask({ prompt, system: SEMANTIC_SYSTEM, task: 'linking', timeout: 120000 })
+
+  // Same final.md shape as the catalog pipeline — downstream is unchanged.
+  const doc = `# ${name} — Final Analysis\n\n_Generated by The Archaeologist (semantic mode) — ${new Date().toISOString()}_\n\n${final}\n`
+  fs.writeFileSync(path.join(out, 'final.md'), doc, 'utf8')
+  console.log(`     → ${path.join(out, 'final.md')}`)
+
+  return { name, final, outDir: out }
+}
+
 // ── Pass runners ──────────────────────────────────────────────────────────────
 
 async function runOverview(projectDir, opts = {}) {
@@ -404,7 +574,7 @@ async function runOverview(projectDir, opts = {}) {
     hints,
   )
 
-  const overview = await ask({ prompt, system: ARCH_SYSTEM, task: 'extraction', timeout: 120000 })
+  const overview = await modelAsk.ask({ prompt, system: ARCH_SYSTEM, task: 'extraction', timeout: 120000 })
 
   const doc = `# ${name} — Overview\n\n_Generated by The Archaeologist — ${new Date().toISOString()}_\n\n${overview}\n`
   fs.writeFileSync(path.join(out, 'overview.md'), doc, 'utf8')
@@ -440,7 +610,7 @@ async function runFilePass(projectDir, opts = {}) {
   for (const f of files) {
     process.stdout.write(`       ${f.rel} ...`)
     const prompt   = buildFilePrompt(f.rel, f.content, f.lines)
-    const analysis = await ask({ prompt, system, task: 'linking', timeout: 60000 })
+    const analysis = await modelAsk.ask({ prompt, system, task: 'linking', timeout: 60000 })
 
     const safeRel = f.rel.replace(/[/\\]/g, '__').replace(/[^a-z0-9._-]/gi, '_')
     const docPath = path.join(filesDir, `${safeRel}.md`)
@@ -478,7 +648,7 @@ async function runSynthesis(projectDir, opts = {}) {
   console.log(`  [3/3] Synthesis pass — ${fileDocs.length} file analyses + overview`)
 
   const prompt  = buildSynthesisPrompt(name, overview, fileDocs)
-  const final   = await ask({ prompt, system: ARCH_SYSTEM, task: 'dreaming', timeout: 600000 })
+  const final   = await modelAsk.ask({ prompt, system: ARCH_SYSTEM, task: 'dreaming', timeout: 600000 })
 
   const doc = `# ${name} — Final Analysis\n\n_Generated by The Archaeologist — ${new Date().toISOString()}_\n\n${final}\n`
   fs.writeFileSync(path.join(out, 'final.md'), doc, 'utf8')
@@ -509,14 +679,14 @@ async function runCouncilReview(name, outDir) {
 
   // 5 experts at ~14s each on linking = ~70s, plus synthesis ~30s = ~100s
   // Use 240s to allow for Ollama queue pressure
-  const result = await runCouncil(topic, context, { timeout: 240000 })
+  const result = await council.runCouncil(topic, context, { timeout: 240000 })
 
   if (result.error) {
     console.log(`     ⚠  Council unavailable: ${result.error}`)
     return null
   }
 
-  const { PERSONAS } = require('../lib/council')
+  const PERSONAS = council.PERSONAS
   const BAR = '─'.repeat(58)
 
   const lines = [`# ${name} — Council Review`, ``, `_Generated by The Council — ${new Date().toISOString()}_`, ``]
@@ -549,12 +719,12 @@ async function runFileDig(filePath, opts = {}) {
   if (IMAGE_EXTS.has(ext)) {
     console.log(`  [1/1] Vision pass (llava) — ${rel}`)
     const b64 = fs.readFileSync(abs).toString('base64')
-    analysis = await ask({ prompt: buildImagePrompt(rel), task: 'vision', images: [b64], timeout: 120000 })
+    analysis = await modelAsk.ask({ prompt: buildImagePrompt(rel), task: 'vision', images: [b64], timeout: 120000 })
   } else {
     const content = fs.readFileSync(abs, 'utf8')
     const lines   = content.split('\n').length
     console.log(`  [1/1] File analysis — ${rel} (${lines} lines)`)
-    analysis = await ask({ prompt: buildFilePrompt(rel, content, lines), system: ARCH_SYSTEM, task: 'linking', timeout: 120000 })
+    analysis = await modelAsk.ask({ prompt: buildFilePrompt(rel, content, lines), system: ARCH_SYSTEM, task: 'linking', timeout: 120000 })
   }
 
   const doc = `# ${rel} — Analysis\n\n_Generated by The Archaeologist — ${new Date().toISOString()}_\n\n${analysis}\n`
@@ -571,10 +741,10 @@ async function analyzeOneFile(filePath) {
   const ext  = path.extname(rel).toLowerCase()
   if (IMAGE_EXTS.has(ext)) {
     const b64 = fs.readFileSync(abs).toString('base64')
-    return { rel, analysis: await ask({ prompt: buildImagePrompt(rel), task: 'vision', images: [b64], timeout: 120000 }) }
+    return { rel, analysis: await modelAsk.ask({ prompt: buildImagePrompt(rel), task: 'vision', images: [b64], timeout: 120000 }) }
   }
   const content = fs.readFileSync(abs, 'utf8')
-  return { rel, analysis: await ask({ prompt: buildFilePrompt(rel, content, content.split('\n').length), system: ARCH_SYSTEM, task: 'linking', timeout: 120000 }) }
+  return { rel, analysis: await modelAsk.ask({ prompt: buildFilePrompt(rel, content, content.split('\n').length), system: ARCH_SYSTEM, task: 'linking', timeout: 120000 }) }
 }
 
 async function runMultiFileDig(files, opts = {}) {
@@ -607,7 +777,7 @@ async function runMultiFileDig(files, opts = {}) {
   await runCouncilReview(name, result.outDir)
 
   // Free VRAM after batch.
-  try { compact() } catch {}
+  try { modelAsk.compact() } catch {}
 
   await pushArtifacts(result.outDir, slug(name))
 
@@ -629,14 +799,21 @@ async function runDig(projectDir, opts = {}) {
   const slugName = slug(name)
   console.log(`\n  ⛏  The Archaeologist descends into ${name}\n`)
 
-  await runOverview(projectDir, opts)
-  await runFilePass(projectDir, opts)
-  const result = await runSynthesis(projectDir, opts)
-  await runCouncilReview(name, result.outDir)
+  let result
+  if (opts.mode === 'semantic') {
+    // Phase 83 — the research lens: spine + one synthesis call, no per-file loop
+    result = await runSemanticDig(projectDir, opts)
+  } else {
+    // Catalog (default) — per-file analyses + synthesis + council review
+    await runOverview(projectDir, opts)
+    await runFilePass(projectDir, opts)
+    result = await runSynthesis(projectDir, opts)
+    await runCouncilReview(name, result.outDir)
+  }
 
   // Free VRAM after a long batch — models stay loaded with keep_alive: -1.
   // compact() evicts them all. Runs fire-and-forget (Ollama may be busy).
-  try { compact() } catch {}
+  try { modelAsk.compact() } catch {}
 
   await pushArtifacts(result.outDir, slugName)
 
@@ -726,7 +903,7 @@ Era: ~${era}${ctxLines}${kbHint}
 
 Return ONLY valid JSON. No markdown, no preamble.`
 
-  const raw = await ask({ prompt, system: ARCH_SYSTEM, task: 'extraction', json: true })
+  const raw = await modelAsk.ask({ prompt, system: ARCH_SYSTEM, task: 'extraction', json: true })
 
   try {
     return JSON.parse(raw)
@@ -1038,6 +1215,7 @@ async function main() {
 
 module.exports = {
   runDig, runOverview, runFilePass, runSynthesis, runCouncilReview,
+  runSemanticDig, collectSpine, buildSemanticPrompt, spineRead, SEMANTIC_SYSTEM,
   analyzeProject, findProjects, detectLanguages, detectEra,
   collectInterestingFiles, readGate, MAX_FILE_BYTES, MAX_TOTAL_BYTES, SKIP_EXT,
 }

@@ -3,7 +3,12 @@
 const { describe, it } = require('node:test')
 const assert = require('node:assert')
 const http = require('node:http')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { execSync } = require('node:child_process')
 const rig = require('../bin/grim-research.js')
+const A = require('../bin/grim-archaeologist.js')
 
 // ── classify() ────────────────────────────────────────────────────────────────
 
@@ -290,6 +295,47 @@ describe('digRepo()', () => {
     const result = await rig.digRepo('https://github.com/nonexistent-user-xyz123/not-a-repo-xyz', 5000)
     assert.strictEqual(result.success, false)
     assert.ok(typeof result.reason === 'string')
+  })
+})
+
+// ── digRepo semantic mode (phase 83) ─────────────────────────────────────────
+// WHY: every research dive defaults to the semantic lens — spine + one
+// synthesis call, not a per-file catalog. The contract is the argument
+// digRepo passes to runDig; the clone is stood in for offline with a
+// PATH-shim git (clone = mkdir), and runDig itself is captured, not run.
+
+describe('digRepo semantic mode (phase 83)', () => {
+  it('calls runDig with mode:semantic and returns the semantic final.md', async () => {
+    const captured = {}
+    const realRunDig = A.runDig
+    A.runDig = async (dir, opts) => {
+      Object.assign(captured, { dir, opts })
+      const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grim-research-dig-'))
+      fs.writeFileSync(path.join(outDir, 'final.md'),
+        '# fixture-repo — Final Analysis\n\n## Purpose\nPurpose-level synthesis body.\n')
+      return { outDir, name: 'fixture-repo', final: '' }
+    }
+
+    const realGit = execSync('command -v git', { encoding: 'utf8' }).trim()
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'grim-research-git-'))
+    fs.writeFileSync(path.join(fakeBin, 'git'),
+      `#!/bin/sh\nif [ "$1" = clone ]; then\n  dest=""; for a in "$@"; do dest="$a"; done\n  mkdir -p "$dest"\n  exit 0\nfi\nexec "${realGit}" "$@"\n`,
+      { mode: 0o755 })
+    const savedPath = process.env.PATH
+    process.env.PATH = fakeBin + path.delimiter + savedPath
+
+    try {
+      const result = await rig.digRepo('https://github.com/owner/fixture-repo')
+
+      assert.strictEqual(result.success, true, JSON.stringify(result))
+      assert.deepStrictEqual(captured.opts, { hints: '', mode: 'semantic' })
+      assert.ok(captured.dir.includes('fixture-repo'), 'the clone lands in the research tmp dir')
+      assert.ok(result.text.includes('## Purpose'), 'the digest carries the semantic synthesis, not a file catalog')
+    } finally {
+      process.env.PATH = savedPath
+      A.runDig = realRunDig
+      try { fs.rmSync(fakeBin, { recursive: true, force: true }) } catch {}
+    }
   })
 })
 
