@@ -2,6 +2,7 @@
 
 const { describe, it } = require('node:test')
 const assert = require('node:assert')
+const http = require('node:http')
 const rig = require('../bin/grim-research.js')
 
 // ── classify() ────────────────────────────────────────────────────────────────
@@ -330,5 +331,140 @@ describe('fetchPaper()', () => {
     const result = await rig.fetchPaper('9999.99999')
     assert.ok(typeof result.success === 'boolean')
     assert.ok(typeof result.abstract === 'string')
+  })
+})
+
+// ── httpGet OOM guards (phase 82) ────────────────────────────────────────────
+// WHY these matter: the old `body += c` accumulator had no cap — one large or
+// binary payload OOM'd the process, killing the dig before the stubJudgment
+// breadcrumb could ever run (9/9 dives, 2026-08). Guards must reject with a
+// typed reason and destroy the socket; callers must turn that into a failed
+// acquire so the drop is recorded, never silenced.
+
+function startServer(handler) {
+  const server = http.createServer(handler)
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
+}
+
+function stopServer(server) {
+  if (server.closeAllConnections) server.closeAllConnections()
+  return new Promise(resolve => server.close(resolve))
+}
+
+async function rejectsWith(fn, pattern) {
+  let err
+  try { await fn() } catch (e) { err = e }
+  assert.ok(err, 'expected a rejection')
+  assert.match(err.message, pattern)
+  return err
+}
+
+describe('httpGet OOM guards', () => {
+  it('rejects with "body exceeds cap" and destroys the socket for an oversized stream', async () => {
+    let closed = false
+    const server = await startServer((req, res) => {
+      res.on('close', () => { closed = true })
+      res.on('error', () => {})
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      const chunk = Buffer.alloc(256 * 1024, 'a')
+      for (let i = 0; i < 32; i++) res.write(chunk)   // 8MB > 5MB cap
+      res.end()
+    })
+    const url = `http://127.0.0.1:${server.address().port}/`
+    await rejectsWith(() => rig.httpGet(url, 10000), /body exceeds cap/)
+    await new Promise(r => setTimeout(r, 50))          // let the server-side close land
+    assert.ok(closed, 'socket must be destroyed before the stream finishes')
+    await stopServer(server)
+  })
+
+  it('rejects up front when content-length exceeds the cap (no buffering)', async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(10 * 1024 * 1024) })
+      // write('') forces Node to flush the headers — a bare writeHead is
+      // buffered until the first body write. Then the server stalls: the
+      // guard must fire on the declared length, before any body is buffered.
+      res.write('')
+    })
+    const url = `http://127.0.0.1:${server.address().port}/`
+    const t0 = Date.now()
+    await rejectsWith(() => rig.httpGet(url, 5000), /body exceeds cap/)
+    assert.ok(Date.now() - t0 < 2000, 'must reject before the timeout, on headers alone')
+    await stopServer(server)
+  })
+
+  it('rejects with "non-text content-type" for binary content types', async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': '3' })
+      res.end('abc')
+    })
+    const url = `http://127.0.0.1:${server.address().port}/`
+    await rejectsWith(() => rig.httpGet(url, 5000), /non-text content-type/)
+    await stopServer(server)
+  })
+
+  it('still resolves text/*, application/json, and absent content-type bodies', async () => {
+    const server = await startServer((req, res) => {
+      if (req.url === '/html') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<h1>hi</h1>') }
+      else if (req.url === '/json') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); res.end('{"a":1}') }
+      else { res.writeHead(200); res.end('plain') }   // no content-type header — allowed
+    })
+    const base = `http://127.0.0.1:${server.address().port}`
+    try {
+      assert.strictEqual(await rig.httpGet(`${base}/html`), '<h1>hi</h1>')
+      assert.strictEqual(await rig.httpGet(`${base}/json`), '{"a":1}')
+      assert.strictEqual(await rig.httpGet(`${base}/bare`), 'plain')
+    } finally {
+      await stopServer(server)
+    }
+  })
+
+  it('bounds redirect following to MAX_REDIRECTS', async () => {
+    let hops = 0
+    const server = await startServer((req, res) => {
+      hops++
+      res.writeHead(302, { location: '/again' })
+      res.end()
+    })
+    const url = `http://127.0.0.1:${server.address().port}/start`
+    await rejectsWith(() => rig.httpGet(url, 5000), /too many redirects/)
+    assert.ok(hops <= rig.MAX_REDIRECTS + 1, `followed ${hops} hops, cap is ${rig.MAX_REDIRECTS}`)
+    await stopServer(server)
+  })
+})
+
+describe('guard refusals reach the stub breadcrumb', () => {
+  it('acquireUrl maps a guard rejection to a failed acquire with the reason', async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': '3' })
+      res.end('abc')
+    })
+    const url = `http://127.0.0.1:${server.address().port}/blob`
+    const result = await rig.acquireUrl({ url })
+    await stopServer(server)
+    assert.strictEqual(result.failed, true)
+    assert.match(result.text, /acquisition refused: non-text content-type/)
+  })
+
+  it('stubJudgment preserves the drop and the refusal reason', () => {
+    const drop = 'https://example.com/weights.safetensors'
+    const j = rig.stubJudgment(drop, { type: 'url', url: drop },
+      { title: drop, text: 'acquisition refused: body exceeds cap', failed: true })
+    assert.strictEqual(j.name, drop, 'the stub must be keyed off the drop, not a placeholder')
+    assert.strictEqual(j.type, 'DefinedTerm')
+    assert.ok(j.tags.includes('research/acquisition-failed'))
+    assert.match(j.description, /acquisition refused: body exceeds cap/)
+  })
+
+  it('researchDrop dry-run: a guard-refused acquire files a stub, no crash, no silence', async () => {
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': '3' })
+      res.end('abc')
+    })
+    const url = `http://127.0.0.1:${server.address().port}/blob`
+    const result = await rig.researchDrop(url, { dryRun: true })
+    await stopServer(server)
+    assert.strictEqual(result.acquisitionFailed, true)
+    assert.match(result.digest, /Could not acquire content/)
+    assert.match(result.digest, /acquisition refused: non-text content-type/)
   })
 })

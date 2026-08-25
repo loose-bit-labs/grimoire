@@ -40,22 +40,73 @@ const { config, isLocal, resolveGoogleCseKeys } = require('../lib/env')
 // Reddit (and some other sites) 403 requests with no User-Agent header at all.
 const USER_AGENT = 'grim-research/1.0 (grimoire link-backlog research tool)'
 
-function httpGet(url, timeout = 10000) {
+// ── OOM guards (phase 82) ────────────────────────────────────────────────────
+// The old `body += c` accumulator had no cap: one large or binary payload
+// buffered wholesale into a string OOM'd the process (9/9 repo dives crashed
+// with a V8 heap OOM). httpGet now rejects — with a typed reason — when a
+// guard trips, so callers can file an "acquisition refused" stub instead of
+// dying before the stubJudgment safety net ever runs.
+const MAX_BODY_BYTES = 5 * 1024 * 1024
+const MAX_REDIRECTS  = 5
+
+function guardError(reason) {
+  const e = new Error(reason)
+  e.guard = true
+  return e
+}
+
+// Accept text/*, application/json, application/xml, *+json, *+xml. An absent
+// content-type is allowed (old servers) — the running byte cap still applies.
+function isTextContentType(ct) {
+  const type = (ct || '').split(';')[0].trim().toLowerCase()
+  return type.startsWith('text/') ||
+    type === 'application/json' || type === 'application/xml' ||
+    type.endsWith('+json') || type.endsWith('+xml')
+}
+
+function httpGet(url, timeout = 10000, redirects = 0) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http
     const req = mod.get(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(timeout) }, res => {
-      let body = ''
-      res.on('data', c => { body += c })
-      res.on('end', () => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          // Follow single redirect
-          httpGet(res.headers.location, timeout).then(resolve).catch(reject)
-        } else if (res.statusCode !== 200) {
-          resolve(null)
-        } else {
-          resolve(body)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (redirects >= MAX_REDIRECTS) { res.resume(); reject(guardError('too many redirects')); return }
+        res.resume()
+        // Location may be relative — resolve against the current URL
+        const next = new URL(res.headers.location, url).toString()
+        httpGet(next, timeout, redirects + 1).then(resolve).catch(reject)
+        return
+      }
+      if (res.statusCode !== 200) { res.resume(); resolve(null); return }
+
+      // Guard 1 — declared size. Reject before buffering a single byte.
+      const declared = Number(res.headers['content-length'])
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        req.destroy()
+        reject(guardError('body exceeds cap'))
+        return
+      }
+      // Guard 2 — content-type. If the server says what it's sending and it
+      // isn't text, don't read it.
+      const ct = res.headers['content-type']
+      if (ct && !isTextContentType(ct)) {
+        req.destroy()
+        reject(guardError('non-text content-type'))
+        return
+      }
+      // Guard 3 — running size (chunked or lying content-length)
+      let size = 0
+      const chunks = []
+      res.on('data', c => {
+        size += c.length
+        if (size > MAX_BODY_BYTES) {
+          req.destroy()
+          reject(guardError('body exceeds cap'))
+          return
         }
+        chunks.push(c)
       })
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+      res.on('error', () => {})   // socket dies after our destroy — don't throw
     })
     req.on('error', () => resolve(null))
     req.on('timeout', () => { req.destroy(); resolve(null) })
@@ -301,12 +352,19 @@ module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
   isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
   digRepo, parseRepoUrl, fetchPaper, parseArxivId,
+  httpGet, stubJudgment, MAX_BODY_BYTES, MAX_REDIRECTS,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
 
 async function acquireUrl(info) {
-  const html = await httpGet(info.url, 15000)
+  let html
+  try {
+    html = await httpGet(info.url, 15000)
+  } catch (e) {
+    // A guard rejection (cap, non-text, redirects) — record the drop, never silence
+    return { title: info.url, text: `acquisition refused: ${e.message}`, failed: true }
+  }
   if (!html) return { title: info.url, text: '[fetch failed]', failed: true }
 
   // Try to extract title
@@ -352,7 +410,12 @@ async function acquireReddit(info) {
   const [pathPart, queryPart] = apiUrl.split('?')
   apiUrl = pathPart.replace(/\/?$/, '/.json') + (queryPart ? `?${queryPart}` : '')
 
-  const json = await httpGet(apiUrl, 15000)
+  let json
+  try {
+    json = await httpGet(apiUrl, 15000)
+  } catch (e) {
+    return { title: 'Reddit post', text: `acquisition refused: ${e.message}`, failed: true }
+  }
   if (!json) return { title: 'Reddit post', text: '[fetch failed]', failed: true }
 
   try {
@@ -386,7 +449,12 @@ async function acquireTerm(info) {
   if (keys && keys.key && keys.cx) {
     // Google Custom Search JSON API
     const cseUrl = buildCseUrl(info.term, keys)
-    const json = await httpGet(cseUrl, 15000)
+    let json
+    try {
+      json = await httpGet(cseUrl, 15000)
+    } catch (e) {
+      return { title: info.term, text: `acquisition refused: ${e.message}`, failed: true }
+    }
     if (json) {
       try {
         const data = JSON.parse(json)
@@ -399,12 +467,21 @@ async function acquireTerm(info) {
           if (!html) return { title, text: '[no content]', failed: true }
           return { title, text: extractText(html) }
         }
-      } catch { /* CSE parse failed, fall through to DDG */ }
+      } catch (e) {
+        // A guard rejection is a refusal, not a parse failure — record it, don't fall through
+        if (e.guard) return { title: info.term, text: `acquisition refused: ${e.message}`, failed: true }
+        /* CSE parse failed, fall through to DDG */
+      }
     }
   }
 
   // DuckDuckGo HTML scrape fallback
-  const ddgHtml = await httpGet(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(info.term)}`, 15000)
+  let ddgHtml
+  try {
+    ddgHtml = await httpGet(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(info.term)}`, 15000)
+  } catch (e) {
+    return { title: info.term, text: `acquisition refused: ${e.message}`, failed: true }
+  }
   if (!ddgHtml) return { title: info.term, text: '[search failed]', failed: true }
 
   // Extract first result URL from DDG HTML
@@ -422,7 +499,12 @@ async function acquireTerm(info) {
       topUrl = 'https:' + topUrl
     }
   }
-  const html = await httpGet(topUrl, 15000)
+  let html
+  try {
+    html = await httpGet(topUrl, 15000)
+  } catch (e) {
+    return { title: info.term, text: `acquisition refused: ${e.message}`, failed: true }
+  }
   if (!html) return { title: info.term, text: '[no content]', failed: true }
   return { title: info.term, text: extractText(html) }
 }

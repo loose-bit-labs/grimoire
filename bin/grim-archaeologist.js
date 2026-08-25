@@ -71,6 +71,46 @@ const MAX_FILE_LINES = 500
 const MAX_PROSE_LINES = 5000
 const MAX_FILES_PER_PASS = 25
 
+// ── OOM guards (phase 82) ────────────────────────────────────────────────────
+// A shallow-cloned ML repo used to OOM the whole dig: the walks below read
+// every file with fs.readFileSync(p, 'utf8') and held it in memory, and one
+// weights/bundle-sized file blew the V8 heap (9/9 dives crashed, 2026-08).
+// Every read in both walks is gated by readGate():
+//   1. stat size > MAX_FILE_BYTES → skip (reason 'size')
+//   2. SKIP_EXT extension         → skip (reason 'ext')
+//   3. null byte in first 4 KB    → skip (reason 'binary')
+// plus a MAX_TOTAL_BYTES budget on retained content (walk continues, counts
+// what it elides, never reads past the cap).
+
+const MAX_FILE_BYTES  = 512 * 1024
+const MAX_TOTAL_BYTES = 8 * 1024 * 1024
+const SNIFF_BYTES     = 4096
+const SKIP_EXT = new Set([
+  '.gguf', '.safetensors', '.bin', '.pt', '.pth', '.onnx',
+  '.zip', '.tar', '.gz', '.7z',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.mp4', '.mov', '.wav',
+  '.lock',
+])
+
+// Gate before any readFileSync. Returns null if the file may be read, else
+// { reason, size }. .min.js needs a basename check — extname('x.min.js') is '.js'.
+function readGate(p) {
+  let size
+  try { size = fs.statSync(p).size } catch { return { reason: 'unreadable', size: 0 } }
+  if (size > MAX_FILE_BYTES) return { reason: 'size', size }
+  const base = path.basename(p)
+  if (SKIP_EXT.has(path.extname(base).toLowerCase()) || /\.min\.js$/i.test(base)) return { reason: 'ext', size }
+  try {
+    const fd = fs.openSync(p, 'r')
+    try {
+      const buf = Buffer.alloc(Math.min(SNIFF_BYTES, size))
+      fs.readSync(fd, buf, 0, buf.length, 0)
+      if (buf.includes(0)) return { reason: 'binary', size }
+    } finally { fs.closeSync(fd) }
+  } catch { return { reason: 'unreadable', size } }
+  return null
+}
+
 // ── Language detection (legacy) ───────────────────────────────────────────────
 
 const LANG_SIGNATURES = [
@@ -123,12 +163,21 @@ async function pushArtifacts(outDir, slugName) {
     }
   }
 
-  // Walk the outDir and upload everything
+  // Walk the outDir and upload everything (gated — never read an oversized
+  // or binary artifact into memory, phase 82)
   function walk(dir, base = '') {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const rel = base ? `${base}/${e.name}` : e.name
       if (e.isDirectory()) walk(path.join(dir, e.name), rel)
-      else upload(rel, fs.readFileSync(path.join(dir, e.name), 'utf8'))
+      else {
+        const p = path.join(dir, e.name)
+        const gate = readGate(p)
+        if (gate) {
+          console.warn(`  ⚠ skip ${rel}: ${gate.reason}`)
+          continue
+        }
+        upload(rel, fs.readFileSync(p, 'utf8'))
+      }
     }
   }
   walk(outDir)
@@ -190,8 +239,16 @@ function detectEra(dir) {
 
 // ── File collection ───────────────────────────────────────────────────────────
 
+// Returns { files, skipped, elided } — files is the old array shape;
+// skipped is [{ rel, name, reason, size }] for files the OOM gate refused
+// (never read); elided counts files not collected because MAX_TOTAL_BYTES
+// was exhausted (walk continues counting, stops reading).
 function collectInterestingFiles(dir, max = MAX_FILES_PER_PASS, skipDirs = SKIP_DIRS) {
   const results = []
+  const skipped = []
+  let elided = 0
+  let totalBytes = 0
+  let overBudget = false
 
   function walk(d, depth = 0) {
     if (depth > 5 || results.length >= max) return
@@ -205,12 +262,22 @@ function collectInterestingFiles(dir, max = MAX_FILES_PER_PASS, skipDirs = SKIP_
     for (const e of files) {
       if (results.length >= max) return
       const base = e.name
-      const ext  = path.extname(base).toLowerCase()
       if (SKIP_NAMES.test(base)) continue
+      const fullPath = path.join(d, base)
+      // OOM gate runs before the type allowlist, so a 20 MB .safetensors is
+      // recorded as 'size' (what actually threatens memory), not silently
+      // filtered by extension.
+      const gate = readGate(fullPath)
+      if (gate) {
+        skipped.push({ rel: path.relative(dir, fullPath), name: base, reason: gate.reason, size: gate.size })
+        continue
+      }
+      const ext  = path.extname(base).toLowerCase()
       const isProse = PROSE_EXTS.has(ext)
       if (!isProse && !CODE_EXTS.has(ext) && !CONFIG_NAMES.has(base)) continue
 
-      const fullPath = path.join(d, base)
+      if (overBudget) { elided++; continue }   // budget exhausted — count, don't read
+
       let content
       try { content = fs.readFileSync(fullPath, 'utf8') } catch { continue }
 
@@ -218,6 +285,10 @@ function collectInterestingFiles(dir, max = MAX_FILES_PER_PASS, skipDirs = SKIP_
       const limit = isProse ? MAX_PROSE_LINES : MAX_FILE_LINES
       if (lines > limit) continue
 
+      const bytes = Buffer.byteLength(content)
+      if (totalBytes + bytes > MAX_TOTAL_BYTES) { overBudget = true; elided++; continue }
+
+      totalBytes += bytes
       results.push({
         path:    fullPath,
         rel:     path.relative(dir, fullPath),
@@ -230,7 +301,7 @@ function collectInterestingFiles(dir, max = MAX_FILES_PER_PASS, skipDirs = SKIP_
   }
 
   walk(dir)
-  return results
+  return { files: results, skipped, elided }
 }
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
@@ -357,8 +428,13 @@ async function runFilePass(projectDir, opts = {}) {
 
   const system = `${ARCH_SYSTEM}\n\nProject context:\n${overviewCtx}`
 
-  const files = collectInterestingFiles(projectDir, MAX_FILES_PER_PASS, skipDirs)
+  const { files, skipped, elided } = collectInterestingFiles(projectDir, MAX_FILES_PER_PASS, skipDirs)
   console.log(`  [2/3] Per-file pass — ${files.length} files`)
+  if (skipped.length) {
+    const shown = skipped.slice(0, 5).map(s => `${s.name}:${s.reason}`).join(', ')
+    console.log(`       ⚠ ${skipped.length} file(s) skipped by OOM guards (${shown}${skipped.length > 5 ? ', …' : ''})`)
+  }
+  if (elided) console.log(`       ⚠ ${elided} file(s) elided — content byte cap reached`)
 
   const results = []
   for (const f of files) {
@@ -960,6 +1036,10 @@ async function main() {
   if (args.json) console.log(JSON.stringify(results, null, 2))
 }
 
-module.exports = { runDig, runOverview, runFilePass, runSynthesis, runCouncilReview, analyzeProject, findProjects, detectLanguages, detectEra }
+module.exports = {
+  runDig, runOverview, runFilePass, runSynthesis, runCouncilReview,
+  analyzeProject, findProjects, detectLanguages, detectEra,
+  collectInterestingFiles, readGate, MAX_FILE_BYTES, MAX_TOTAL_BYTES, SKIP_EXT,
+}
 
 if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1) })
