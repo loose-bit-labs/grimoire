@@ -34,6 +34,7 @@ const { writeEntity }   = require('../lib/entities')
 const { search }        = require('./grim-oracle')
 const { update }        = require('./grim-tome')
 const { config, isLocal, resolveGoogleCseKeys } = require('../lib/env')
+const rq = require('../lib/research-queue')
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -356,6 +357,7 @@ module.exports = {
   isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
   digRepo, parseRepoUrl, fetchPaper, parseArxivId,
   httpGet, stubJudgment, MAX_BODY_BYTES, MAX_REDIRECTS,
+  drainQueue,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -794,22 +796,123 @@ async function researchDrop(drop, opts = {}) {
   return result
 }
 
+// ── Durable queue worker (phase 84) ─────────────────────────────────────────
+//
+// Serial drain: claimNext → researchDrop → complete/fail, one at a time.
+// Always terminal — after the loop, nothing is left in pending: success
+// lands in 'researched' with a result, a throw lands in 'failed' with the
+// error. Never silence.
+//
+// researchDrop runs with timeout: 0 — phase 68's "no cap": axios treats 0
+// as no timeout for the model call, while the acquire path keeps its own
+// per-fetch caps. The queue is where long dives belong ("come back an hour
+// later"), so the drain must not race a wall clock.
+
+function queueResult(result) {
+  return {
+    digest:            typeof result?.digest === 'string' ? result.digest.slice(0, 4000) : null,
+    entityId:          result?.entityId ?? null,
+    acquisitionFailed: !!result?.acquisitionFailed,
+    deduped:           !!result?.deduped,
+  }
+}
+
+// `research` is injectable so tests can assert the terminal-always contract
+// offline; the default is the real pipeline.
+async function drainQueue(root, { once = false, research = researchDrop } = {}) {
+  let processed = 0
+  for (;;) {
+    const entry = await rq.claimNext(root)
+    if (!entry) break
+    process.stdout.write(`  ${entry.drop} ...`)
+    try {
+      const result = await research(entry.drop, { timeout: 0 })
+      await rq.complete(root, entry.id, { result: queueResult(result) })
+      process.stdout.write(` ✓ researched${result?.entityId ? ` (${result.entityId})` : ''}\n`)
+    } catch (e) {
+      await rq.fail(root, entry.id, { error: e.message })
+      process.stdout.write(` ✗ failed — ${e.message}\n`)
+    }
+    processed++
+    if (once) break
+  }
+  return processed
+}
+
+function runQueueCli(args) {
+  // The queue is file state on the KB host — GRIMOIRE_ROOT is required.
+  // Remote submit is a server route (phase 85 / follow-up), not this path.
+  const root = process.env.GRIMOIRE_ROOT
+  if (!root) {
+    console.error('grim research queue: requires GRIMOIRE_ROOT (run on the KB host)')
+    process.exit(1)
+  }
+  const sub = args._[1]
+  try {
+    if (sub === 'submit') {
+      const url = args._[2]
+      if (!url) {
+        console.error('Usage: grim research queue submit <url> [--reply-target <json>]')
+        process.exit(1)
+      }
+      let replyTarget = null
+      if (args['reply-target']) {
+        try { replyTarget = JSON.parse(args['reply-target']) }
+        catch (e) { console.error(`--reply-target must be a JSON object: ${e.message}`); process.exit(1) }
+      }
+      rq.submit(root, { drop: url, replyTarget }).then(({ id, duplicate, entry }) => {
+        console.log(duplicate
+          ? `duplicate — ${id} already covers ${url} (submitted ${entry.submittedAt})`
+          : `queued ${id} — ${url}`)
+      }).catch(e => { console.error(`grim research queue submit: ${e.message}`); process.exit(1) })
+    } else if (sub === 'list') {
+      const entries = args.status ? rq.list(root, { status: args.status }) : rq.list(root)
+      if (!entries.length) console.log('(empty)')
+      for (const e of entries) {
+        const detail = e.status === 'failed'   ? ` — ${e.error}`
+          : e.status === 'researched' ? ` — ${e.result?.digest?.slice(0, 80) || e.result?.entityId || ''}`
+          : e.startedAt ? ' — in progress' : ''
+        console.log(`${e.status.padEnd(10)} ${e.id}  ${e.submittedAt}  ${e.drop}${detail}`)
+      }
+    } else if (sub === 'drain') {
+      drainQueue(root, { once: !!args.once })
+        .then(n => console.log(`drained ${n} entr${n === 1 ? 'y' : 'ies'}`))
+        .catch(e => { console.error(`grim research queue drain: ${e.message}`); process.exit(1) })
+    } else {
+      console.error('Usage: grim research queue <submit <url> [--reply-target <json>]\n' +
+        '                  | list [--status pending|researched|failed]\n' +
+        '                  | drain [--once]>')
+      process.exit(1)
+    }
+  } catch (e) {
+    // list --status with a bad value throws synchronously
+    console.error(`grim research queue: ${e.message}`)
+    process.exit(1)
+  }
+}
+
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 if (require.main === module) {
   // grim.js dispatcher passes cmd as argv[2]; skip it if present
   const argvStart = (process.argv[2] === 'research') ? 3 : 2
   const args = minimist(process.argv.slice(argvStart), {
-    string: ['project', 'timeout'],
-    boolean: ['json', 'dry-run', 'feature'],
+    string: ['project', 'timeout', 'reply-target', 'status'],
+    boolean: ['json', 'dry-run', 'feature', 'once'],
     alias: { j: 'json', d: 'dry-run', p: 'project', t: 'timeout', f: 'feature' },
     unknown: [() => true], // allow positional args
   })
+
+  if (args._[0] === 'queue') {
+    runQueueCli(args)
+    return
+  }
 
   const drop = args._[0]
   if (!drop) {
     console.error('Usage: grim research <drop> [--json] [--dry-run] [--project <id>] [--timeout <ms>]')
     console.error('  drop: a URL, a Reddit link, or a bare term to research')
+    console.error('  grim research queue <submit|list|drain> — durable dive queue (phase 84)')
     process.exit(1)
   }
 
