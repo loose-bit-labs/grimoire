@@ -40,9 +40,18 @@ This is the second time a decayed stub has caused an outage (2026-08-11 was the 
   module-load constants. Correctness no longer depends on any consumer remembering to call
   `refreshEndpoints()` (keep it for server-freshness, but it's an optimization, not a dependency).
 - **`bin/model-ask.js:267` — resolveModel floor (defense-in-depth).** Replace the unguarded
-  `if (!best || bestScore === 0) return resolveModel('default')` with
-  `if (!best || bestScore === 0 || task === 'default') return STATIC_FALLBACK[task] || STATIC_FALLBACK.default`
-  so an all-zero-score installed set **degrades** instead of infinite-recursing into OOM.
+  `if (!best || bestScore === 0) return resolveModel('default')` with the **base-case terminator**
+  (mage's correction, #0404 — strictly less lossy than a flat `|| task === 'default'`, which would
+  discard a perfectly good installed `default` model like gemma4):
+  ```js
+  if (!best || bestScore === 0) {
+    if (task === 'default') return STATIC_FALLBACK.default   // default itself scored 0 → static, stop
+    return resolveModel('default')                            // recurse ONCE; a scoring default model still wins
+  }
+  ```
+  This terminates the infinite recursion (the OOM) yet preserves the installed-model fallback: a
+  score-0 non-default task still resolves to an installed `default` model when one scores >0, and only
+  hits the static table when even `default` scores 0 (truly no text model installed).
 
 ## Footprint
 
@@ -59,9 +68,12 @@ This is the second time a decayed stub has caused an outage (2026-08-11 was the 
   an `OPENAI_TASKS` task (e.g. `extraction`) resolves `CODING_BASE` to meinherz and takes the
   `askOpenAI` path — asserted without hitting the network (stub the HTTP call / assert the chosen
   base), proving it does **not** fall to the Ollama branch.
-- **resolveModel bounded:** with an installed set where every model scores 0 for a text task,
-  `resolveModel('extraction')` returns a `STATIC_FALLBACK` entry and **returns** (no recursion) — a
-  timing/heap-bounded assertion, not a hang.
+- **resolveModel bounded (both branches):** (a) with an installed set where **every** model scores 0
+  for all tasks (incl. `default`), `resolveModel('extraction')` returns `STATIC_FALLBACK.default` and
+  **returns** — heap/timing-bounded, no recursion, no OOM; (b) with a set where a general model scores
+  for `default` (e.g. gemma4:9) but 0 for `extraction`, `resolveModel('extraction')` recurses **once**
+  and returns the **installed** default model — not the static-table entry (the mage's regression case;
+  proves the guard degrades minimally, not maximally).
 - Env-var override still wins over both cache and repo floor (precedence preserved).
 - `node --test test/config-cache.test.js test/model-ask.test.js` green; full suite green +
   self-terminating.
