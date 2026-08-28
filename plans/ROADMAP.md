@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-27 (74, 82, 83, 84 accepted — 82 shipped 687aa9e, 83 shipped 7485879, 84 shipped e5494ca + 1e6dc52; 85 in progress, briefed #0400).
+Binding for all phases. Last updated 2026-08-28 (74, 82, 83, 84 accepted — 82 shipped 687aa9e, 83 shipped 7485879, 84 shipped e5494ca + 1e6dc52; 85 in progress — implementation written, 4 test fixes in flight, unreported).
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -445,7 +445,7 @@ recorded in the store and can be replayed once the queue exists (phase 85 backfi
 | 82 | plans/phase-82.md | **OOM guards** — archaeologist `walk` size-gate (`MAX_FILE_BYTES` 512K) + binary/ext skiplist + total-content cap; `httpGet` body cap (`MAX_BODY_BYTES` 5M) + content-type/redirect guard; guard-refusal → `acquired.failed` so `stubJudgment` files a breadcrumb, never silence. Unconditional (protects the standalone `/archaeologist` too). | ✅ accepted (2026-08-25, mage verdict #0393; commit 687aa9e) — Track G-v3; **PRIORITY jump-ahead** of the bounty board — research was broken (9/9 dives OOM since 2026-08-17). Guards in `bin/grim-archaeologist.js` (`readGate` + 8 MiB retained cap, both walks) and `bin/grim-research.js` (`httpGet` cap/content-type/redirect, callers file `acquisition refused` stubs); +17 tests, suite 476 pass / 0 fail. Bonus: pre-existing relative-`Location` redirect crash fixed. |
 | 83 | plans/phase-83.md | **semantic dig mode** — research path defaults to a semantic synthesis lens (purpose/usefulness/relations/concepts) over per-file cataloging; deep static-analysis/data-flow demoted to an opt-in background tier. Standalone `/archaeologist` catalog default unchanged. | ✅ accepted (2026-08-25) — shipped `7485879`; semantic mode is the research default |
 | 84 | plans/phase-84.md | **durable research queue** — `pending → researched` file store (reuse `lib/queue.js` transitions + `lib/bounty-store.js` atomic write + single-writer lock); serial worker drains via `grim research --timeout 0`; always a terminal outcome, reusable by any front-end. | ✅ accepted (2026-08-26, mage verdict #0399; commits e5494ca + 1e6dc52) — Track G-v3; depends 68 + 82 (both satisfied). Store `lib/research-queue.js` (atomic write + chained `mutate`, at-least-once claim, 7-day dedup window), worker + `grim research queue {submit,list,drain}` in `bin/grim-research.js`; 14/14 targeted, suite 497 pass / 0 fail. Mage's probe (record-only): `GRIMOIRE_ROOT` hard-require can't fire on the KB host — `lib/env.js` restores it at module top; guard still works on client boxes |
-| 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | in progress (briefed 2026-08-26, #0400) — Track G-v3; depends 84 (satisfied) |
+| 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | in progress (briefed 2026-08-26, #0400) — implementation written 2026-08-28 (SwandiveDiscordBot transport + scripts/backfill-dive-queue.js + 19 tests); 4 test failures in flight; unreported — Track G-v3; depends 84 (satisfied) |
 
 ## Track F cont. — fleet roster single-source (phase 86)
 
@@ -460,6 +460,22 @@ distinct lenses). Realizes the standing "generate, don't duplicate" principle + 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 86 | plans/phase-86.md | **derive the fleet roster from the host registry** — `lib/fleet.js` `loadFleet()` merges registry hosts (`hardware/inventory`, local or `GET /api/hosts/inventory`) with `rig.json` reinterpreted as a keyed **service-check overlay**; repoint `grim rig` `loadBoxes()` + the telemetry generators (`generate-dashboard.js`/`generate-scrape.sh`) at it; a newly-registered box auto-appears with no hand-edit. | queued (hierophant, 2026-08-25) — Track F cont.; independent of Track G-v3 |
+
+## Track B cont. — config-read robustness (phase 87)
+
+2026-08-28: the research-queue drain OOM-looped because a **decayed local `lbl-config` stub** on aid
+(`{grimoire}` only) made `model-ask.js` resolve `CODING_BASE=null` and fall back to Ollama (chonko,
+no text model) instead of the configured meinherz:11311 (qwen3.8-27B). `grim config` *was* built —
+authority + `get`/`sync` + `refreshEndpoints` — but never wired into this consumer: `model-ask.js`
+rolls its own `_lbl()` (raw home-cache read, no fallback, cached at module load), and `lib/env.js`'s
+repo fallback only fires on an *absent* cache, not a *present-but-partial* stub. Second decayed-stub
+outage (2026-08-11 was the first, fLimfLaMs `Handy`). Immediate repair was `grim config sync`; this
+phase makes a bad cache *harmless*. Instance of the SOT ruling (config staleness) + the
+lbl-config→dynamic-endpoint migration's documented-incomplete edge.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 87 | plans/phase-87.md | **config-read robustness** — `lib/env.js` merges repo canonical config as a **floor** under the cache (a partial stub can't null out a repo-defined key); `model-ask.js` resolves `CODING_BASE`/`OLLAMA_BASE` via `lib/env.js` **at call time** (drops private `_lbl()`, no module-load cache); + `resolveModel:267` floor so an all-zero-score set degrades instead of OOM-recursing. | queued (hierophant, 2026-08-28) — Track B cont.; durable cure for the 2026-08-28 drain OOM (immediate fix was `grim config sync`) |
 
 ## Acceptance bar (mage enforces per phase)
 
