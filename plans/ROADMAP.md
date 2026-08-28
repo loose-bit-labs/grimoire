@@ -94,6 +94,30 @@ phase 7. **Deferred by ruling, do not build:** federated external retrieval (§2
 code RAG (§2.4), presence/mailbox bus daemon (§3.1). Reason: the spec's own build
 order defers them until a demonstrated need; grim mm is the mailbox we need today.
 
+## Ruling on sources of truth (2026-08-27)
+
+**Two authorities, everything else generated.** The lab had a fact smeared across many files —
+host→IP lived in the KB registry *and* `/etc/hosts` *and* dnsmasq *and* lbl-config; the box roster
+lived in the KB registry *and* `rig.json` *and* the scrape config *and* the dashboards; task→model
+lived in `meta_user_model.json` *and* lbl-config `use.*` *and* `rig.json`. Every hand-maintained
+duplicate is a drift source (the 2026-08-25 "invisible boxes" bug was exactly this). Ruling:
+
+- **The KB owns *facts*** — what exists: hosts, hardware inventory, the box roster, entities/relations.
+- **lbl-config / the dynamic service endpoint owns *config*** — endpoints, ports, task→model routing.
+- **Everything else is a *derived view*, generated and never hand-edited:** `/etc/hosts` + dnsmasq
+  `addn-hosts`, `rig.json`'s roster, Prometheus scrape targets, Grafana dashboards, the hmm/Guild
+  Hall roster. A derived file may cache, but its authority is upstream; regenerate, don't edit.
+
+**Do not stand up a new source of truth** without clearing the same kind of bar the containerization
+ruling uses: a genuinely new *fact* with no existing authority to hold it. Default is to add a
+derived view or a field on an existing authority, not a new file.
+
+This is not a new project — it names a through-line the roadmap is already walking: **phase 86**
+(rig roster → derived from the registry), **phase 78 / Track B cont.** (DNS: `/etc/hosts` → one
+generated `addn-hosts`), and the **lbl-config → dynamic-endpoint** migration are all instances.
+Outstanding duplications this ruling flags for a future collapse phase (not yet briefed):
+**host→IP** (4 homes → registry-derived) and **task→model routing** (3 homes → one config authority).
+
 ## Track A — WanTan extraction
 
 **Goal:** move WanTan's generic tooling into grimoire; wantan keeps working unchanged.
@@ -269,7 +293,7 @@ via provenance-at-write.
 | 33 | plans/phase-33.md | autonomous discovery — link-scan acquired text for repo/paper/doc links + thin-yield→CSE/DDG search fallback (finds the repo even when a SPA shell hides it); `discovered[]` in `--json`/`--dry-run`; bounded depth-1 | ✅ accepted (hierophant, 2026-07-29) |
 | 34 | plans/phase-34.md | dig discovered repos via `grim archaeologist` (clone-then-catalog or URL); fold repo facts into the digest; bounded, graceful, temp-clone cleanup | ✅ accepted (blocked on 33) — shipped `583846b` + `7817bd3` (timeout fix); 34/34 green |
 | 35 | plans/phase-35.md | paper reader (arxiv abs/ar5iv HTML) + multi-source synthesis with `sources` provenance (= Hindsight "Observations"); think-on for research drops; supersede thin stubs in place | ✅ accepted — Track G-v2 complete |
-| 68 | plans/phase-68.md | **`grim research` — kill the pathological 60s cap.** Default whole-research budget is 60s, *shorter than the 5-min `digRepo` it invokes* → digs die at 60s (Swandive "Lost the signal — 60s no bottom"). Separate short per-fetch acquire timeout from a generous overall budget (named const ≥ `ARCHAEOLOGIST_TIMEOUT`); honor `--timeout 0` = no cap (fire-and-forget). Coupled: fLimfLaMs feature `concept_feature_request_decouple_the_researcher_from_swandive_standa` (standalone durable research queue). | queued (hierophant, 2026-08-11) — Track G; **NEEDS REFRESH (2026-08-24):** leapfrogged (67 shipped, 68 didn't); the acute failure has since shifted from the 60s timeout to an **OOM** (see phase 82). Now a prerequisite for the phase-84 queue's `--timeout 0`, not a standalone urgent — do it as part of Track G-v3. |
+| 68 | plans/phase-68.md | **`grim research` — kill the pathological 60s cap.** Default whole-research budget is 60s, *shorter than the 5-min `digRepo` it invokes* → digs die at 60s (Swandive "Lost the signal — 60s no bottom"). Separate short per-fetch acquire timeout from a generous overall budget (named const ≥ `ARCHAEOLOGIST_TIMEOUT`); honor `--timeout 0` = no cap (fire-and-forget). Coupled: fLimfLaMs feature `concept_feature_request_decouple_the_researcher_from_swandive_standa` (standalone durable research queue). | ✅ accepted (shipped `fa526e8`, in HEAD) — Track G / Track G-v3; the acute failure had shifted to OOM (phase 82) — 68 delivered the per-fetch vs overall-budget split + `--timeout 0`, the prerequisite the phase-84 queue drains on. |
 
 ## Track H — grim-tavern: the capture doorbell (phase 16)
 
@@ -419,7 +443,6 @@ recorded in the store and can be replayed once the queue exists (phase 85 backfi
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 82 | plans/phase-82.md | **OOM guards** — archaeologist `walk` size-gate (`MAX_FILE_BYTES` 512K) + binary/ext skiplist + total-content cap; `httpGet` body cap (`MAX_BODY_BYTES` 5M) + content-type/redirect guard; guard-refusal → `acquired.failed` so `stubJudgment` files a breadcrumb, never silence. Unconditional (protects the standalone `/archaeologist` too). | ✅ accepted (2026-08-25, mage verdict #0393; commit 687aa9e) — Track G-v3; **PRIORITY jump-ahead** of the bounty board — research was broken (9/9 dives OOM since 2026-08-17). Guards in `bin/grim-archaeologist.js` (`readGate` + 8 MiB retained cap, both walks) and `bin/grim-research.js` (`httpGet` cap/content-type/redirect, callers file `acquisition refused` stubs); +17 tests, suite 476 pass / 0 fail. Bonus: pre-existing relative-`Location` redirect crash fixed. |
-| 68 | plans/phase-68.md | **timeout refresh** — per-fetch acquire timeout vs generous overall budget; `--timeout 0` = no cap. (See refreshed note above.) | ✅ accepted (shipped `fa526e8`, in HEAD) — prerequisite for 84 satisfied |
 | 83 | plans/phase-83.md | **semantic dig mode** — research path defaults to a semantic synthesis lens (purpose/usefulness/relations/concepts) over per-file cataloging; deep static-analysis/data-flow demoted to an opt-in background tier. Standalone `/archaeologist` catalog default unchanged. | ✅ accepted (2026-08-25) — shipped `7485879`; semantic mode is the research default |
 | 84 | plans/phase-84.md | **durable research queue** — `pending → researched` file store (reuse `lib/queue.js` transitions + `lib/bounty-store.js` atomic write + single-writer lock); serial worker drains via `grim research --timeout 0`; always a terminal outcome, reusable by any front-end. | ✅ accepted (2026-08-26, mage verdict #0399; commits e5494ca + 1e6dc52) — Track G-v3; depends 68 + 82 (both satisfied). Store `lib/research-queue.js` (atomic write + chained `mutate`, at-least-once claim, 7-day dedup window), worker + `grim research queue {submit,list,drain}` in `bin/grim-research.js`; 14/14 targeted, suite 497 pass / 0 fail. Mage's probe (record-only): `GRIMOIRE_ROOT` hard-require can't fire on the KB host — `lib/env.js` restores it at module top; guard still works on client boxes |
 | 85 | plans/phase-85.md | **swandive as transport** (fLimfLaMs) — submit-and-return to the queue, `onReady` catch-up scans DM history for un-answered drops, embed posted on worker completion; **backfill the 11 recorded URLs** as the first enqueue. | in progress (briefed 2026-08-26, #0400) — Track G-v3; depends 84 (satisfied) |
