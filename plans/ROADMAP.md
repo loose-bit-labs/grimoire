@@ -394,15 +394,26 @@ plan `docs/superpowers/plans/2026-08-16-grim-bounty-board.md`. v1 = `kind=phase`
 (71–73 pure/local, 74–75 server, 76 CLI, 77 telemetry). The board's own construction is the first work
 through the pact — and becomes the first bounties once it exists.
 
+**Re-scope (user, 2026-08-28): piecemeal-experiment MVP first.** Motivation clarified — the board is
+the *unstructured* lane where a **competent model hunts discrete solutions outside the hmm pact**
+(open-ended work where contemplation pays), complementing the pact's linear spec-work. First hunter =
+a **dedicated competent-model session** (not the pact minion). MVP to run the experiment = **74 (routes)
++ 76 (CLI) + 88 (`/hunter` loop skill)**; **75 (SSE/reclaim) and 77 (telemetry) deferred until the
+experiment earns them.** Reviewer identity (mage-as-reviewer vs hierophant) is an experiment-time call,
+not a build blocker — 74's `review` route is neutral to who calls it. Seed bounties (post-build) come
+from the backlog of piecemeal offshoots (fLimfLaMs `Handy` straggler, SOT collapses, swandive
+acquisition-rules). **Priority: after Track G-v3 / phase 87.**
+
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
 | 71 | plans/phase-71.md | **core state machine** (`lib/bounty.js`, pure) — model/timing, legal transitions, claim/heartbeat/submit/release with epoch fencing, `applyExpire` + poison→NEEDS_TRIAGE, `applyReview` (no self-approval) | ✅ accepted (2026-08-21) — Track Bounty Board; shipped `c2e0628` (14/14 tests), archived `7dba2ab` |
 | 72 | plans/phase-72.md | **reputation + eligibility** (pure) — `deriveReputation` over `claim_history`, priority-sorted `nextEligible`. Reputation descriptive-only (must not gate) | ✅ accepted (2026-08-21) — Track Bounty Board; shipped `d84288c` (7/7 tests), archived
 | 73 | plans/phase-73.md | **persistence store** (`lib/bounty-store.js`) — durable/ephemeral split (leases gitignored), atomic temp+rename, single-writer `mutate` lock, hunter registry. No new dep | ✅ accepted (2026-08-22) — Track Bounty Board; shipped `a37066b` (4/4 tests) |
-| 74 | plans/phase-74.md | **server routes** (`grim-server.js`) — create/list/claim/heartbeat/submit/release/review/register, sole-writer, 409 on conflict; export `app`. `broadcastBounty` stubbed | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 72+73 |
-| 75 | plans/phase-75.md | **reclaim sweep + SSE** — active `sweepBounties` (writes OPEN/NEEDS_TRIAGE back), `/api/bounty/stream` doorbell, real `broadcastBounty`, unref'd interval | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
-| 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74 |
-| 77 | plans/phase-77.md | **telemetry + determinism gate** — `boardMetrics` + `/api/bounty/metrics` (`grim_bounty_*` gauges); suite passes N× and self-terminates | queued (hierophant, 2026-08-16) — Track Bounty Board; depends on 74; closes track |
+| 74 | plans/phase-74.md | **server routes** (`grim-server.js`) — create/list/claim/heartbeat/submit/release/review/register, sole-writer, 409 on conflict; export `app`. `broadcastBounty` stubbed | **MVP — priority after phase 87** (piecemeal-experiment unlock); depends on 72+73 ✅ |
+| 76 | plans/phase-76.md | **CLI** (`bin/grim-bounty.js`) — thin HTTP client, `grim bounty list/next/claim/…/hunters`, `--as`/env hunter id, dispatcher entry + KB spell | **MVP — priority after 74** (hunter/human interface); depends on 74 |
+| 88 | plans/phase-88.md | **`/hunter` loop skill** — the `/minion`-analog for the OPEN board: a dedicated competent-model session loops `grim bounty next → claim → (heartbeat) work → submit`, never self-approving, releasing on blocked/out-of-scope. Autonomous under `/loop`, compaction-surviving (state lives on the board). | **MVP — priority**; depends on 76 |
+| 75 | plans/phase-75.md | **reclaim sweep + SSE** — active `sweepBounties` (writes OPEN/NEEDS_TRIAGE back), `/api/bounty/stream` doorbell, real `broadcastBounty`, unref'd interval | **deferred** — after the piecemeal experiment earns it; depends on 74 |
+| 77 | plans/phase-77.md | **telemetry + determinism gate** — `boardMetrics` + `/api/bounty/metrics` (`grim_bounty_*` gauges); suite passes N× and self-terminates | **deferred** — after the experiment earns it; closes track; depends on 74 |
 
 ## Track The Commons — inter-session presence + cross-kingdom talk (phases 79–81)
 
