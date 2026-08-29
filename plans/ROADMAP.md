@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-29 (74, 82, 83, 84 accepted — 82 shipped 687aa9e, 83 shipped 7485879, 84 shipped e5494ca + 1e6dc52; 85 in progress — drain complete 2026-08-29, 10/10 researched with real digests via meinherz:11311, awaiting minion report → verdict; 87–89 queued).
+Binding for all phases. Last updated 2026-08-29 (Track G-v3: 82/83/84 accepted+shipped — `687aa9e`/`7485879`/`e5494ca`+`1e6dc52`; 85 drain complete 10/10 real qwen3.8 digests via meinherz:11311, minion report landing → mage verdict pending. Briefed this session: 86 fleet-roster-derive, 87 config-read robustness, 88 `/hunter` loop skill, 89 dig-clone hardening. Bounty track re-scoped to piecemeal-MVP **74+76+88** (75/77 deferred); first hunter = a dedicated competent-model session. New rulings: sources-of-truth, log-timestamping. Seed bounties filed: safe-AI-workspace, swandive-thread-per-topic. **74 is queued, not accepted** — earlier header typo. Pact paused for tbona maintenance; sessions repointed off tbona → aid.)
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
