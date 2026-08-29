@@ -118,6 +118,17 @@ generated `addn-hosts`), and the **lbl-config → dynamic-endpoint** migration a
 Outstanding duplications this ruling flags for a future collapse phase (not yet briefed):
 **host→IP** (4 homes → registry-derived) and **task→model routing** (3 homes → one config authority).
 
+## Ruling on log timestamping (2026-08-29)
+
+**Any log a human or agent will read to reason about *timing* carries per-line timestamps.** When the
+phase-85 drain sat idle ~12h overnight, its log (`grim research queue drain > /tmp/…drain2.log`, a bare
+redirect) could not distinguish *slow* from *hung* from *blocked-on-a-permission* — because not one
+line had a time on it. Ruling: background workers, drains, long/batch jobs, and service logs prefix
+each line with a timestamp (ISO-8601 local or epoch ms). Mechanics live in code (Rule 13) — a tiny
+`log()` helper that stamps each line, or pipe through `ts` (moreutils) — never an ad-hoc bare redirect.
+Exempt: interactive one-shot CLI output a human is watching live. Apply to new logging, and retrofit
+the research-drain / pact-worker logs first (they're the ones we debug blind).
+
 ## Track A — WanTan extraction
 
 **Goal:** move WanTan's generic tooling into grimoire; wantan keeps working unchanged.
@@ -487,6 +498,19 @@ lbl-config→dynamic-endpoint migration's documented-incomplete edge.
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 87 | plans/phase-87.md | **config-read robustness** — `lib/env.js` merges repo canonical config as a **floor** under the cache (a partial stub can't null out a repo-defined key); `model-ask.js` resolves `CODING_BASE`/`OLLAMA_BASE` via `lib/env.js` **at call time** (drops private `_lbl()`, no module-load cache); + `resolveModel:267` floor so an all-zero-score set degrades instead of OOM-recursing. | queued (hierophant, 2026-08-28) — Track B cont.; durable cure for the 2026-08-28 drain OOM (immediate fix was `grim config sync`) |
+
+## Track G cont. — dig clone hardening (phase 89)
+
+2026-08-29: the phase-85 drain sat blocked ~12h because `digRepo`'s `git clone` runs in a
+**non-interactive worker**, and a private/auth-required or junk discovered repo (`cmc_internal/api`,
+`github/collect` — link-scan noise) makes clone **prompt** for credentials/host-key → the worker blocks
+with no cap (`--timeout 0`) until a human approves. The human-in-the-loop became the bottleneck.
+User direction (2026-08-29): **wire SSH cloning + make the clone non-interactive.** Also aligns with
+`meta_technique_swandive_dive_acquisition_rules` (clone repos, don't scrape).
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 89 | plans/phase-89.md | **non-interactive + SSH clone in `digRepo`** — `GIT_TERMINAL_PROMPT=0` + `GIT_SSH_COMMAND='ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new'` + a hard clone timeout so a repo needing auth **fails fast, never prompts/hangs** the drain; prefer SSH transport (`https://github.com/O/R` → `git@github.com:O/R.git`); skip malformed/junk discovered repos before attempting a clone. Formalizes the user's ask to the minion — mage reconciles any informal edit into review. | queued (hierophant, 2026-08-29) — Track G cont.; reliability (drain-hang) |
 
 ## Acceptance bar (mage enforces per phase)
 
