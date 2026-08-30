@@ -31,7 +31,7 @@ const os       = require('node:os')
 const axios    = require('axios')
 const minimist = require('minimist')
 const readline = require('node:readline')
-const { refreshLblCache } = require('../lib/env')
+const { refreshLblCache, lblEndpoint, lblConfig } = require('../lib/env')
 
 // Bootstrap .env
 if (!process.env.OLLAMA_HOST) {
@@ -44,29 +44,20 @@ if (!process.env.OLLAMA_HOST) {
   }
 }
 
-function _lbl() {
-  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.config', 'lbl-config.json'), 'utf8')) }
-  catch { return {} }
-}
-function _lblEndpoint(role) { const c = _lbl(); return c.endpoints?.[c.use?.[role]] ?? null }
-function _lblModel(task)    { return _lbl().models?.[task] ?? null }
+function _lblModel(task) { return lblConfig().models?.[task] ?? null }
 
-let OLLAMA_BASE = process.env.OLLAMA_HOST || _lblEndpoint('ollama') || null
-
-// OpenAI-compatible llama-server for text/chat tasks (lbl use.coding → endpoint).
+// Endpoints resolve at call time — env var > lib/env.js merge-floor (repo
+// config under the user cache). A decayed or stale cache can no longer pin a
+// dead base for the process lifetime (phase 87: the 2026-08-28 drain OOM).
+// OpenAI-compatible llama-server for text/chat tasks (use.coding → endpoint);
 // Ollama keeps vision + embedding (llava, nomic-embed live there).
-let CODING_BASE  = process.env.LLM_CODING_HOST || _lblEndpoint('coding') || null
+function ollamaBase() { return process.env.OLLAMA_HOST     || lblEndpoint('ollama') || null }
+function codingBase()  { return process.env.LLM_CODING_HOST || lblEndpoint('coding') || null }
 
-// Re-derive OLLAMA_BASE/CODING_BASE from a freshly-fetched config (see
-// refreshLblCache() in lib/env.js) — called once at the start of the CLI's
-// async entry path so `use.ollama`/`use.coding` reflect the server's
-// canonical config, not just the last-good local cache.
-async function refreshEndpoints() {
-  const cfg = await refreshLblCache()
-  if (!cfg) return
-  OLLAMA_BASE = process.env.OLLAMA_HOST     || (cfg.endpoints?.[cfg.use?.ollama]) || OLLAMA_BASE
-  CODING_BASE = process.env.LLM_CODING_HOST || (cfg.endpoints?.[cfg.use?.coding]) || CODING_BASE
-}
+// Warm the local cache from the server's canonical config (refreshLblCache in
+// lib/env.js). An optimization, not a dependency — every call above re-resolves
+// through lib/env.js regardless of whether this ever ran.
+async function refreshEndpoints() { return refreshLblCache() }
 const OPENAI_TASKS = new Set(['extraction', 'linking', 'synthesis', 'dreaming', 'reflection', 'rumination', 'default'])
 
 // ── Capability profiles ───────────────────────────────────────────────────────
@@ -229,7 +220,7 @@ async function getInstalledModels() {
 
   // Fetch from Ollama
   try {
-    const res    = await axios.get(`${OLLAMA_BASE}/api/tags`, { timeout: 5000 })
+    const res    = await axios.get(`${ollamaBase()}/api/tags`, { timeout: 5000 })
     const models = (res.data.models || []).map(m => m.name)
     _memCache     = models
     _memCacheTime = Date.now()
@@ -264,7 +255,10 @@ async function resolveModel(task) {
     if (score > bestScore) { bestScore = score; best = name }
   }
 
-  if (!best || bestScore === 0) return resolveModel('default')
+  if (!best || bestScore === 0) {
+    if (task === 'default') return STATIC_FALLBACK.default   // default itself scored 0 → static, stop
+    return resolveModel('default')                            // recurse ONCE; a scoring default model still wins
+  }
 
   const profile   = profileFor(best)
   const thinking  = profile?.thinking ?? false
@@ -283,18 +277,21 @@ async function buildRouteTable() {
 
 // ── OpenAI-compat backend (llama-server) ─────────────────────────────────────
 
-let _oaiModel = null
+let _oaiModel     = null
+let _oaiModelBase = null
 
-async function getCodingModel() {
-  if (_oaiModel) return _oaiModel
-  const res  = await axios.get(`${CODING_BASE}/v1/models`, { timeout: 5000 })
-  _oaiModel  = res.data?.data?.[0]?.id || null
-  if (!_oaiModel) throw new Error(`no model listed at ${CODING_BASE}/v1/models`)
+async function getCodingModel(base) {
+  if (_oaiModel && _oaiModelBase === base) return _oaiModel
+  const res  = await axios.get(`${base}/v1/models`, { timeout: 5000 })
+  _oaiModel     = res.data?.data?.[0]?.id || null
+  _oaiModelBase = base
+  if (!_oaiModel) throw new Error(`no model listed at ${base}/v1/models`)
   return _oaiModel
 }
 
 async function askOpenAI({ prompt, task, system, json, timeout, maxTokens }) {
-  const model = await getCodingModel()
+  const base  = codingBase()
+  const model = await getCodingModel(base)
   // Thinking only for tasks that benefit from it (mirrors STATIC_FALLBACK intent);
   // enable_thinking is honored by Qwen3.x chat templates, ignored by others.
   const thinking = STATIC_FALLBACK[task]?.thinking === true
@@ -313,11 +310,11 @@ async function askOpenAI({ prompt, task, system, json, timeout, maxTokens }) {
     chat_template_kwargs: { enable_thinking: thinking },
   }
 
-  process.stderr.write(`  [ask] ${model} @ ${CODING_BASE} (openai) task=${task} think=${thinking} promptTokens≈${Math.ceil(user.length / 4)} timeout=${timeout}ms\n`)
+  process.stderr.write(`  [ask] ${model} @ ${base} (openai) task=${task} think=${thinking} promptTokens≈${Math.ceil(user.length / 4)} timeout=${timeout}ms\n`)
   const t0 = Date.now()
 
   const response = await axios.post(
-    `${CODING_BASE}/v1/chat/completions`,
+    `${base}/v1/chat/completions`,
     body,
     { headers: { 'Content-Type': 'application/json' }, timeout }
   )
@@ -330,9 +327,11 @@ async function askOpenAI({ prompt, task, system, json, timeout, maxTokens }) {
 // ── ask() ─────────────────────────────────────────────────────────────────────
 
 async function ask({ prompt, task = 'default', model, system, json = false, timeout = 120000, images, maxTokens, keepAlive }) {
+  const coding = codingBase()
+  const ollama = ollamaBase()
   // Text/chat tasks go to the coding llama-server when configured (lbl use.coding).
   // Explicit --model requests and vision/embedding stay on Ollama.
-  if (CODING_BASE && !model && !images?.length && OPENAI_TASKS.has(task)) {
+  if (coding && !model && !images?.length && OPENAI_TASKS.has(task)) {
     return askOpenAI({ prompt, task, system, json, timeout, maxTokens })
   }
 
@@ -371,7 +370,7 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
   let isLoaded = false
   if (!_loadedCache || now - _loadedTime > 30_000) {
     try {
-      const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
+      const ps = await axios.get(`${ollama}/api/ps`, { timeout: 3000 })
       _loadedCache  = (ps.data.models || []).map(m => m.name)
       _loadedTime   = now
     } catch { _loadedCache = []; _loadedTime = now }
@@ -383,7 +382,7 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
   const t0 = Date.now()
 
   const response = await axios.post(
-    `${OLLAMA_BASE}/api/generate`,
+    `${ollama}/api/generate`,
     body,
     { headers: { 'Content-Type': 'application/json' }, timeout }
   )
@@ -399,12 +398,13 @@ async function ask({ prompt, task = 'default', model, system, json = false, time
  * Call after long batch runs (archaeology, council) to free VRAM.
  */
 async function compact() {
+  const base = ollamaBase()
   try {
-    const ps = await axios.get(`${OLLAMA_BASE}/api/ps`, { timeout: 3000 })
+    const ps = await axios.get(`${base}/api/ps`, { timeout: 3000 })
     const names = (ps.data.models || []).map(m => m.name)
     if (names.length === 0) return
     // Evict each loaded model. Ollama 0.5+ supports /api/evict with model list.
-    await axios.post(`${OLLAMA_BASE}/api/evict`, { models: names })
+    await axios.post(`${base}/api/evict`, { models: names })
     process.stderr.write(`  [ask] compact — evicted ${names.length} model(s)\n`)
   } catch {
     // Ollama may not have /api/evict (older versions). Best-effort.
@@ -421,7 +421,7 @@ async function askJSON(opts) {
   }
 }
 
-module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, refreshEndpoints, OLLAMA_BASE, CODING_BASE, ALL_TASKS }
+module.exports = { ask, askJSON, resolveModel, buildRouteTable, getInstalledModels, compact, refreshEndpoints, ollamaBase, codingBase, ALL_TASKS }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -438,7 +438,7 @@ if (require.main === module) {
     if (args.routes) {
       const table = await buildRouteTable()
       const installed = await getInstalledModels()
-      console.log(`\n  Grimoire model router  (${OLLAMA_BASE})\n`)
+      console.log(`\n  Grimoire model router  (${ollamaBase()})\n`)
       console.log(`  Installed: ${installed.length} model${installed.length === 1 ? '' : 's'}\n`)
       const width = Math.max(...ALL_TASKS.map(t => t.length))
       for (const task of ALL_TASKS) {

@@ -29,16 +29,18 @@ function makeTestEnv() {
 
 /**
  * Create a temp repo-config file and point LOCAL_CONFIG_PATH at it.
+ * Optional `contents` overrides the default floor shape.
  * Returns { path, cleanup() }.
  */
-function makeTestConfig() {
+function makeTestConfig(contents) {
   const dir = path.join(os.tmpdir(), 'grim-config-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2))
   const cfgPath = path.join(dir, 'lbl-config.json')
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(cfgPath, JSON.stringify({
-    endpoints: { grimoire: 'http://aid:3663', aid: 'http://aid:11311' },
+  const cfg = contents || {
+    endpoints: { grimoire: 'http://aid:3663', aid: 'http://aid:11311' },  // nohost — test fixture
     use:       { grimoire: 'grimoire' },
-  }, null, 2) + '\n')
+  }
+  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n')
   return { path: cfgPath,
     setEnv() { process.env.LOCAL_CONFIG_PATH = cfgPath },
     cleanup() { try { fs.rmSync(dir, { recursive: true, force: true }) } catch {} }
@@ -61,8 +63,8 @@ describe('clearLblCache()', () => {
   it('removes both cache and meta files', () => {
     const env = makeTestEnv()
     env.setEnv()
-    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
-    writeMeta(env, { fetchedAt: '2026-01-01T00:00:00.000Z', source: 'http://aid:3663' })
+    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
+    writeMeta(env, { fetchedAt: '2026-01-01T00:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
     assert.ok(fs.existsSync(env.cache))
     assert.ok(fs.existsSync(env.meta))
 
@@ -99,10 +101,10 @@ describe('lblCacheMeta()', () => {
     const env = makeTestEnv()
     env.setEnv()
     const { lblCacheMeta, clearLblCache } = require('../lib/env')
-    writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })
+    writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
     const meta = lblCacheMeta()
     assert.equal(meta.fetchedAt, '2026-08-03T12:00:00.000Z')
-    assert.equal(meta.source, 'http://aid:3663')
+    assert.equal(meta.source, 'http://aid:3663')  // nohost — test fixture
     clearLblCache()
     env.cleanup()
   })
@@ -121,8 +123,8 @@ describe('GrimConfig.invalidate()', () => {
     const origRoot = process.env.GRIMOIRE_ROOT
     delete process.env.GRIMOIRE_ROOT
     try {
-      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
-      writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })
+      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
+      writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
       assert.ok(fs.existsSync(env.cache))
 
       const logs = []
@@ -172,13 +174,13 @@ describe('GrimConfig.status()', () => {
     env.setEnv()
     const GrimConfig = require('../bin/grim-config')
     const { clearLblCache } = require('../lib/env')
-    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
-    writeMeta(env, { fetchedAt: '2026-08-03T15:00:00.000Z', source: 'http://aid:3663' })
+    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
+    writeMeta(env, { fetchedAt: '2026-08-03T15:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
     try {
       const output = await captureLog(async () => await new GrimConfig().status())
       assert.ok(output.includes('valid:  yes'))
       assert.ok(output.includes('fetched: 2026-08-03T15:00:00.000Z'))
-      assert.ok(output.includes('source:  http://aid:3663'))
+      assert.ok(output.includes('source:  http://aid:3663'))  // nohost — test fixture
     } finally {
       clearLblCache()
       env.cleanup()
@@ -190,8 +192,8 @@ describe('GrimConfig.status()', () => {
     env.setEnv()
     const GrimConfig = require('../bin/grim-config')
     const { clearLblCache } = require('../lib/env')
-    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
-    writeMeta(env, { fetchedAt: '2026-08-03T15:00:00.000Z', source: 'http://aid:3663' })
+    writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
+    writeMeta(env, { fetchedAt: '2026-08-03T15:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
     try {
       const output = await captureLog(async () => await new GrimConfig().status())
       assert.ok(output.includes('valid:  yes'))
@@ -219,7 +221,7 @@ describe('lblEndpoint() local-mode fallback', () => {
       clearLblCache()
       assert.ok(!fs.existsSync(env.cache), 'cache should be absent after clearLblCache')
       const endpoint = lblEndpoint('grimoire')
-      assert.equal(endpoint, 'http://aid:3663')
+      assert.equal(endpoint, 'http://aid:3663')  // nohost — test fixture
     } finally {
       if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
       else process.env.GRIMOIRE_ROOT = origRoot
@@ -252,21 +254,130 @@ describe('lblEndpoint() local-mode fallback', () => {
     }
   })
 
-  it('returns null when GRIMOIRE_ROOT is not set and cache is absent', () => {
+})
+
+// ── lblEndpoint() merge-floor (phase 87) ──────────────────────────────────────
+
+// A decayed stub cache must no longer remove keys the repo defines — this is
+// the exact failure that OOM-looped the 2026-08-28 research drain: aid's
+// cache had decayed to {use:{grimoire}, endpoints:{grimoire}} and
+// use.coding → meinherz:11311 was silently lost, routing text tasks to a
+// text-model-less Ollama.
+describe('lblEndpoint() merge-floor (phase 87)', () => {
+  const STUB = { use: { grimoire: 'grimoire' }, endpoints: { grimoire: 'http://stub:3663' } }  // nohost — test fixture
+  const FLOOR = {
+    use:       { coding: 'mh_llama' },
+    endpoints: { mh_llama: 'http://meinherz:11311', grimoire: 'http://aid:3663' },  // nohost — test fixture
+  }
+
+  it('a present-but-partial cache can no longer remove a key the repo floor defines', () => {
     const env = makeTestEnv()
+    const cfg = makeTestConfig(FLOOR)
     env.setEnv()
+    cfg.setEnv()
     const { lblEndpoint, clearLblCache } = require('../lib/env')
     const origRoot = process.env.GRIMOIRE_ROOT
-    delete process.env.GRIMOIRE_ROOT
+    delete process.env.GRIMOIRE_ROOT   // the floor must not depend on local mode
     try {
-      clearLblCache()
-      const endpoint = lblEndpoint('grimoire')
-      assert.equal(endpoint, null)
+      writeCache(env, STUB)
+      assert.equal(lblEndpoint('coding'), 'http://meinherz:11311',  // nohost — test fixture
+        'stub has no use.coding/endpoints.coding — the floor must fill it in, not null')
     } finally {
       if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
       else process.env.GRIMOIRE_ROOT = origRoot
       clearLblCache()
       env.cleanup()
+      cfg.cleanup()
+      delete process.env.LOCAL_CONFIG_PATH
+    }
+  })
+
+  it('the cache overlay still wins for keys it defines', () => {
+    const env = makeTestEnv()
+    const cfg = makeTestConfig(FLOOR)
+    env.setEnv()
+    cfg.setEnv()
+    const { lblEndpoint, clearLblCache } = require('../lib/env')
+    const origRoot = process.env.GRIMOIRE_ROOT
+    delete process.env.GRIMOIRE_ROOT
+    try {
+      writeCache(env, STUB)
+      assert.equal(lblEndpoint('grimoire'), 'http://stub:3663',  // nohost — test fixture
+        'a key the cache defines must override the floor value')
+    } finally {
+      if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
+      else process.env.GRIMOIRE_ROOT = origRoot
+      clearLblCache()
+      env.cleanup()
+      cfg.cleanup()
+      delete process.env.LOCAL_CONFIG_PATH
+    }
+  })
+
+  it('an overlay use-table entry wins and resolves through the merged endpoints', () => {
+    const env = makeTestEnv()
+    const cfg = makeTestConfig(FLOOR)
+    env.setEnv()
+    cfg.setEnv()
+    const { lblEndpoint, clearLblCache } = require('../lib/env')
+    const origRoot = process.env.GRIMOIRE_ROOT
+    delete process.env.GRIMOIRE_ROOT
+    try {
+      writeCache(env, {
+        use:       { grimoire: 'grimoire', coding: 'stub_coding' },
+        endpoints: { grimoire: 'http://stub:3663', stub_coding: 'http://stub-code:1234' },  // nohost — test fixture
+      })
+      assert.equal(lblEndpoint('coding'), 'http://stub-code:1234')  // nohost — test fixture
+    } finally {
+      if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
+      else process.env.GRIMOIRE_ROOT = origRoot
+      clearLblCache()
+      env.cleanup()
+      cfg.cleanup()
+      delete process.env.LOCAL_CONFIG_PATH
+    }
+  })
+
+  it('falls through to the repo floor when the cache is absent (no GRIMOIRE_ROOT required)', () => {
+    const env = makeTestEnv()
+    const cfg = makeTestConfig(FLOOR)
+    env.setEnv()
+    cfg.setEnv()
+    const { lblEndpoint, clearLblCache } = require('../lib/env')
+    const origRoot = process.env.GRIMOIRE_ROOT
+    delete process.env.GRIMOIRE_ROOT
+    try {
+      clearLblCache()
+      assert.equal(lblEndpoint('coding'), 'http://meinherz:11311')  // nohost — test fixture
+    } finally {
+      if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
+      else process.env.GRIMOIRE_ROOT = origRoot
+      clearLblCache()
+      env.cleanup()
+      cfg.cleanup()
+      delete process.env.LOCAL_CONFIG_PATH
+    }
+  })
+
+  it('returns null only when BOTH cache and floor are absent', () => {
+    const env = makeTestEnv()
+    const cfg = makeTestConfig(FLOOR)
+    env.setEnv()
+    process.env.LOCAL_CONFIG_PATH = path.join(cfg.path, 'nonexistent.json')
+    const { lblEndpoint, clearLblCache } = require('../lib/env')
+    const origRoot = process.env.GRIMOIRE_ROOT
+    delete process.env.GRIMOIRE_ROOT
+    try {
+      clearLblCache()
+      assert.equal(lblEndpoint('coding'), null)
+      assert.equal(lblEndpoint('grimoire'), null)
+    } finally {
+      if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
+      else process.env.GRIMOIRE_ROOT = origRoot
+      clearLblCache()
+      env.cleanup()
+      cfg.cleanup()
+      delete process.env.LOCAL_CONFIG_PATH
     }
   })
 })
@@ -286,8 +397,8 @@ describe('GrimConfig.invalidate() safety', () => {
     process.env.GRIMOIRE_ROOT = '/fake/grimoire-root'
     delete process.env.GRIMOIRE_HOST
     try {
-      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
-      writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })
+      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
+      writeMeta(env, { fetchedAt: '2026-08-03T12:00:00.000Z', source: 'http://aid:3663' })  // nohost — test fixture
       assert.ok(fs.existsSync(env.cache), 'cache should exist before invalidate')
 
       const output = await new Promise((resolve) => {
@@ -300,7 +411,7 @@ describe('GrimConfig.invalidate() safety', () => {
       assert.ok(output.includes('repo bootstrap preserved'), `expected bootstrap message, got: ${output}`)
       assert.ok(fs.existsSync(env.cache))
       const cached = JSON.parse(fs.readFileSync(env.cache, 'utf8'))
-      assert.equal(cached.endpoints.grimoire, 'http://aid:3663')
+      assert.equal(cached.endpoints.grimoire, 'http://aid:3663')  // nohost — test fixture
     } finally {
       if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
       else process.env.GRIMOIRE_ROOT = origRoot
@@ -323,9 +434,9 @@ describe('GrimConfig.invalidate() safety', () => {
     const origRoot = process.env.GRIMOIRE_ROOT
     const origHost = process.env.GRIMOIRE_HOST
     delete process.env.GRIMOIRE_ROOT
-    process.env.GRIMOIRE_HOST = 'http://aid:3663'
+    process.env.GRIMOIRE_HOST = 'http://aid:3663'  // nohost — test fixture
     try {
-      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
+      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
       assert.ok(fs.existsSync(env.cache))
 
       const output = await new Promise((resolve) => {
@@ -338,7 +449,7 @@ describe('GrimConfig.invalidate() safety', () => {
       assert.ok(output.includes('GRIMOIRE_HOST bootstrap preserved'))
       assert.ok(fs.existsSync(env.cache))
       const cached = JSON.parse(fs.readFileSync(env.cache, 'utf8'))
-      assert.equal(cached.endpoints.grimoire, 'http://aid:3663')
+      assert.equal(cached.endpoints.grimoire, 'http://aid:3663')  // nohost — test fixture
     } finally {
       if (origRoot === undefined) delete process.env.GRIMOIRE_ROOT
       else process.env.GRIMOIRE_ROOT = origRoot
@@ -363,7 +474,7 @@ describe('GrimConfig.invalidate() safety', () => {
     delete process.env.GRIMOIRE_ROOT
     delete process.env.GRIMOIRE_HOST
     try {
-      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })
+      writeCache(env, { endpoints: { aid: 'http://aid:3663' } })  // nohost — test fixture
       assert.ok(fs.existsSync(env.cache))
 
       const logs = []

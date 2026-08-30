@@ -11,7 +11,7 @@
  *   grim models
  */
 
-const { buildRouteTable, getInstalledModels, OLLAMA_BASE, ALL_TASKS, resolveModel } = require('./model-ask')
+const { buildRouteTable, getInstalledModels, ollamaBase, ALL_TASKS, resolveModel } = require('./model-ask')
 const { CAPABILITY_PROFILES } = (() => {
   // Re-export from model-ask by reading the module — profiles aren't exported directly
   // so we reconstruct a summary from the installed models instead.
@@ -21,7 +21,7 @@ const { CAPABILITY_PROFILES } = (() => {
 async function main() {
   const [table, installed] = await Promise.all([buildRouteTable(), getInstalledModels()])
 
-  console.log(`\n  Grimoire model router  (${OLLAMA_BASE})\n`)
+  console.log(`\n  Grimoire model router  (${ollamaBase()})\n`)
 
   if (!installed.length) {
     console.log('  Ollama unreachable — showing static fallbacks\n')
