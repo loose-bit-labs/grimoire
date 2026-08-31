@@ -4,7 +4,7 @@
 2026-07-26 (Track I Autopact), 2026-07-29 (Track G-v2, phase 32 tavern go-live,
 containerization ruling), 2026-08-04 (Tracks K, H, I, O), 2026-08-05 (phase 58
 commit guard + acceptance-bar hardening, phase 59 heterogeneous inventory).
-Binding for all phases. Last updated 2026-08-30 (phase 87 **accepted #0411** — shipped `a74e933`, review archived `3f43df1`; 89 briefed to minion, pulled ahead of 86. 2026-08-29: Track G-v3: 82/83/84 accepted+shipped — `687aa9e`/`7485879`/`e5494ca`+`1e6dc52`; 85 drain complete 10/10 real qwen3.8 digests via meinherz:11311, report #0407 → **accepted #0408**, shipped `1546dd5`, review archived `0a245bf`; 87 accepted #0411 (2026-08-30), shipped `a74e933`, archived `3f43df1`; 89 briefed (pulled ahead of 86). Briefed this session: 86 fleet-roster-derive, 87 config-read robustness, 88 `/hunter` loop skill, 89 dig-clone hardening. Bounty track re-scoped to piecemeal-MVP **74+76+88** (75/77 deferred); first hunter = a dedicated competent-model session. New rulings: sources-of-truth, log-timestamping. Seed bounties filed: safe-AI-workspace, swandive-thread-per-topic. **74 is queued, not accepted** — earlier header typo. Pact running on aid (tbona offline; sessions repointed off tbona 2026-08-29/30).)
+Binding for all phases. Last updated 2026-08-31 (phase 89 **accepted #0414** — shipped `f4cea4e`, review archived `bf2de58`; 86 briefed to minion (after 89). 2026-08-30: phase 87 **accepted #0411** — shipped `a74e933`, review archived `3f43df1`; 89 briefed to minion, pulled ahead of 86. 2026-08-29: Track G-v3: 82/83/84 accepted+shipped — `687aa9e`/`7485879`/`e5494ca`+`1e6dc52`; 85 drain complete 10/10 real qwen3.8 digests via meinherz:11311, report #0407 → **accepted #0408**, shipped `1546dd5`, review archived `0a245bf`; 87 accepted #0411 (2026-08-30), shipped `a74e933`, archived `3f43df1`; 89 briefed (pulled ahead of 86). Briefed this session: 86 fleet-roster-derive, 87 config-read robustness, 88 `/hunter` loop skill, 89 dig-clone hardening. Bounty track re-scoped to piecemeal-MVP **74+76+88** (75/77 deferred); first hunter = a dedicated competent-model session. New rulings: sources-of-truth, log-timestamping. Seed bounties filed: safe-AI-workspace, swandive-thread-per-topic. **74 is queued, not accepted** — earlier header typo. Pact running on aid (tbona offline; sessions repointed off tbona 2026-08-29/30).)
 
 Six tracks, one loop. Phases run in numeric order; phases with no listed dependency
 may be pulled forward if an earlier one blocks.
@@ -481,7 +481,7 @@ distinct lenses). Realizes the standing "generate, don't duplicate" principle + 
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 86 | plans/phase-86.md | **derive the fleet roster from the host registry** — `lib/fleet.js` `loadFleet()` merges registry hosts (`hardware/inventory`, local or `GET /api/hosts/inventory`) with `rig.json` reinterpreted as a keyed **service-check overlay**; repoint `grim rig` `loadBoxes()` + the telemetry generators (`generate-dashboard.js`/`generate-scrape.sh`) at it; a newly-registered box auto-appears with no hand-edit. | queued (hierophant, 2026-08-25) — Track F cont.; independent of Track G-v3 |
+| 86 | plans/phase-86.md | **derive the fleet roster from the host registry** — `lib/fleet.js` `loadFleet()` merges registry hosts (`hardware/inventory`, local or `GET /api/hosts/inventory`) with `rig.json` reinterpreted as a keyed **service-check overlay**; repoint `grim rig` `loadBoxes()` + the telemetry generators (`generate-dashboard.js`/`generate-scrape.sh`) at it; a newly-registered box auto-appears with no hand-edit. | briefed to minion (2026-08-31 — after 89) — Track F cont.; independent of Track G-v3 |
 
 ## Track B cont. — config-read robustness (phase 87)
 
@@ -510,7 +510,7 @@ User direction (2026-08-29): **wire SSH cloning + make the clone non-interactive
 
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
-| 89 | plans/phase-89.md | **non-interactive + SSH clone in `digRepo`** — `GIT_TERMINAL_PROMPT=0` + `GIT_SSH_COMMAND='ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new'` + a hard clone timeout so a repo needing auth **fails fast, never prompts/hangs** the drain; prefer SSH transport (`https://github.com/O/R` → `git@github.com:O/R.git`); skip malformed/junk discovered repos before attempting a clone. Formalizes the user's ask to the minion — mage reconciles any informal edit into review. | briefed to minion (2026-08-30 — pulled ahead of 86) — Track G cont.; reliability (drain-hang); starts from the uncommitted user-directed ssh-clone edit (lands in this phase's commit) |
+| 89 | plans/phase-89.md | **non-interactive + SSH clone in `digRepo`** — `GIT_TERMINAL_PROMPT=0` + `GIT_SSH_COMMAND='ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new'` + a hard clone timeout so a repo needing auth **fails fast, never prompts/hangs** the drain; prefer SSH transport (`https://github.com/O/R` → `git@github.com:O/R.git`); skip malformed/junk discovered repos before attempting a clone. Formalizes the user's ask to the minion — mage reconciles any informal edit into review. | **ACCEPTED (#0414, 2026-08-31)** — shipped `f4cea4e`, review archived `bf2de58` — Track G cont.; reliability (drain-hang); the user-directed ssh-clone edit landed in this commit |
 
 ## Acceptance bar (mage enforces per phase)
 
