@@ -339,6 +339,138 @@ describe('digRepo semantic mode (phase 83)', () => {
   })
 })
 
+// ── digRepo clone hardening (phase 89) ───────────────────────────────────────
+// WHY: 2026-08-29, the phase-85 drain sat blocked ~12h — a discovered repo
+// that needed auth made `git clone` prompt inside the non-interactive worker,
+// and with --timeout 0 the serial worker sat on that prompt until a human
+// approved it. What must hold: the clone child env is non-interactive (fail
+// fast, never prompt), a clone can never outlive the hard bound even at
+// --timeout 0, github https URLs clone over SSH (.git-normalized), and
+// obviously malformed discovered repos are skipped before git is spawned.
+// The clone is stood in for offline with a PATH-shim git (same technique as
+// the phase-83 test); the shim records what the child actually received
+// (env + argv), so the assertions hit the real spawn, not a mock.
+
+function gitCloneShim() {
+  const realGit = execSync('command -v git', { encoding: 'utf8' }).trim()
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'grim-research-git-'))
+  const capture = path.join(bin, 'capture.txt')
+  fs.writeFileSync(path.join(bin, 'git'),
+    `#!/bin/sh\n` +
+    `if [ "$1" != clone ]; then exec "${realGit}" "$@"; fi\n` +
+    `{\n` +
+    `  printf 'PROMPT=%s\\n' "\${GIT_TERMINAL_PROMPT:-unset}"\n` +
+    `  printf 'SSHCMD=%s\\n' "\${GIT_SSH_COMMAND:-unset}"\n` +
+    `  printf 'ARGS=%s\\n' "$*"\n` +
+    `} > "${capture}"\n` +
+    `case "\${GRIM_GIT_SIM:-ok}" in\n` +
+    `  authfail)\n` +
+    `    if [ "$GIT_TERMINAL_PROMPT" != "0" ]; then sleep 30; fi  # the old path: blocked on the prompt\n` +
+    `    printf 'git@github.com:example/private-repo.git: Permission denied (publickey).\\nfatal: Could not read from remote repository.\\n' >&2\n` +
+    `    exit 128 ;;\n` +
+    `  slow) sleep 30 ;;\n` +
+    `  *) dest=""; for a in "$@"; do dest="$a"; done; mkdir -p "$dest" ;;\n` +
+    `esac\n`,
+    { mode: 0o755 })
+  const savedPath = process.env.PATH
+  const savedCapture = process.env.GRIM_GIT_CAPTURE
+  const savedSim = process.env.GRIM_GIT_SIM
+  process.env.PATH = bin + path.delimiter + savedPath
+  process.env.GRIM_GIT_CAPTURE = capture
+  return {
+    capture,
+    sim(mode) { process.env.GRIM_GIT_SIM = mode },
+    restore() {
+      process.env.PATH = savedPath
+      if (savedCapture === undefined) delete process.env.GRIM_GIT_CAPTURE
+      else process.env.GRIM_GIT_CAPTURE = savedCapture
+      if (savedSim === undefined) delete process.env.GRIM_GIT_SIM
+      else process.env.GRIM_GIT_SIM = savedSim
+      try { fs.rmSync(bin, { recursive: true, force: true }) } catch {}
+    },
+  }
+}
+
+describe('digRepo clone hardening (phase 89)', () => {
+  it('normalizes github https to ssh, with or without .git', () => {
+    assert.strictEqual(rig.toSshCloneUrl('https://github.com/foo/bar'), 'git@github.com:foo/bar.git')
+    assert.strictEqual(rig.toSshCloneUrl('https://github.com/foo/bar.git'), 'git@github.com:foo/bar.git')
+    assert.strictEqual(rig.toSshCloneUrl('https://www.github.com/Foo/Bar'), 'git@github.com:Foo/Bar.git')
+    assert.strictEqual(rig.toSshCloneUrl('https://gitlab.com/foo/bar'), null)
+  })
+
+  it('applies the hard clone bound regardless of the research-level timeout', () => {
+    assert.strictEqual(rig.CLONE_TIMEOUT_MS, 60_000)
+    // --timeout 0 ("no cap") still gets the bound
+    assert.strictEqual(rig.cloneSpec('https://github.com/foo/bar', '/tmp/t', 0).opts.timeout, 60_000)
+    // the 5-min pipeline default is capped too
+    assert.strictEqual(rig.cloneSpec('https://github.com/foo/bar', '/tmp/t', 300_000).opts.timeout, 60_000)
+    // a smaller explicit timeout stays smaller
+    assert.strictEqual(rig.cloneSpec('https://github.com/foo/bar', '/tmp/t', 5_000).opts.timeout, 5_000)
+    // the child env is non-interactive
+    const { opts } = rig.cloneSpec('https://github.com/foo/bar', '/tmp/t', 0)
+    assert.strictEqual(opts.env.GIT_TERMINAL_PROMPT, '0')
+    assert.match(opts.env.GIT_SSH_COMMAND, /BatchMode=yes/)
+    assert.match(opts.env.GIT_SSH_COMMAND, /StrictHostKeyChecking=accept-new/)
+    assert.ok(opts.env.PATH, 'child env keeps the parent PATH')
+  })
+
+  it('skips malformed discovered repos before git is spawned', async () => {
+    const shim = gitCloneShim()
+    shim.sim('ok')
+    const t0 = Date.now()
+    try {
+      for (const junk of [
+        'https://github.com/foo/.git',    // suffix only, no name
+        'https://github.com/foo/...',     // dots only
+        'https://github.com/foo/bar.',    // trailing dot — link-scan noise
+        'https://github.com/-foo/bar',    // owner can't lead with a dash
+      ]) {
+        const r = await rig.digRepo(junk)
+        assert.strictEqual(r.success, false)
+        assert.match(r.reason, /skipped: malformed repo shape/)
+      }
+      assert.ok(!fs.existsSync(shim.capture), 'git must never be spawned for junk')
+      assert.ok(Date.now() - t0 < 2000, 'the skip is a shape check, not a clone attempt')
+    } finally { shim.restore() }
+  })
+
+  it('auth-required repo fails fast non-interactively — the drain-hang regression', async () => {
+    const shim = gitCloneShim()
+    shim.sim('authfail')
+    const t0 = Date.now()
+    try {
+      // The drain's form: --timeout 0 (no research-level cap).
+      const r = await rig.digRepo('https://github.com/example/private-repo', 0)
+      const elapsed = Date.now() - t0
+      assert.strictEqual(r.success, false)
+      assert.ok(typeof r.reason === 'string' && r.reason.length > 0)
+      assert.ok(r.reason.length <= 120)
+      // The child was handed the non-interactive env — the shim would have
+      // slept 30s (simulating the blocked prompt) without it.
+      assert.ok(elapsed < 5000, `must fail fast, took ${elapsed}ms — the old path blocked the worker on a prompt`)
+      const cap = fs.readFileSync(shim.capture, 'utf8')
+      assert.match(cap, /PROMPT=0\n/)
+      assert.match(cap, /SSHCMD=ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new\n/)
+      // and the clone went over SSH, .git-normalized (assert the argv)
+      assert.match(cap, /ARGS=clone --depth 1 --single-branch git@github\.com:example\/private-repo\.git /)
+    } finally { shim.restore() }
+  })
+
+  it('kills an over-running clone at the timeout bound — a clone never outlives it', async () => {
+    const shim = gitCloneShim()
+    shim.sim('slow')
+    const t0 = Date.now()
+    try {
+      const r = await rig.digRepo('https://github.com/foo/bar', 3000)
+      const elapsed = Date.now() - t0
+      assert.strictEqual(r.success, false)
+      assert.ok(elapsed >= 2500, `must run until the bound, not give up early (took ${elapsed}ms)`)
+      assert.ok(elapsed < 10_000, `the 3s bound must kill the 30s clone (took ${elapsed}ms)`)
+    } finally { shim.restore() }
+  })
+})
+
 // ── parseArxivId() ────────────────────────────────────────────────────────────
 
 describe('parseArxivId()', () => {

@@ -244,21 +244,72 @@ function parseArxivId(url) {
 const ARCHAEOLOGIST_TIMEOUT = 300000 // 5 min for full dig pipeline
 const RESEARCH_TIMEOUT = 600000 // 10 min overall budget — must exceed ARCHAEOLOGIST_TIMEOUT
 
+// Phase 89 — the clone must never prompt or hang the drain. GIT_TERMINAL_PROMPT=0
+// kills the credential prompt; BatchMode ssh fails fast on auth-required repos
+// instead of blocking the serial worker; accept-new keeps a first-seen host key
+// from becoming interactive too. CLONE_TIMEOUT_MS is the hard bound: a clone
+// must never outlive it, even under research-level --timeout 0 ("no cap").
+const CLONE_TIMEOUT_MS = 60_000
+const CLONE_ENV = {
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_SSH_COMMAND: 'ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new',
+}
+
 function parseRepoUrl(url) {
   const m = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)/i.exec(url)
   if (!m) return null
   return { owner: m[1], repo: m[2] }
 }
 
+// Prefer SSH transport: https://github.com/OWNER/REPO(.git)? →
+// git@github.com:OWNER/REPO.git. Uses the operator's key — repos they can
+// reach clone, everything else fails fast non-interactively (no interactive
+// HTTPS retry).
+function toSshCloneUrl(url) {
+  const repo = parseRepoUrl(url)
+  if (!repo) return null
+  const name = repo.repo.replace(/\.git$/i, '')
+  return `git@github.com:${repo.owner}/${name}.git`
+}
+
+// Link-scan noise guard: the phase-85 drain surfaced discovered "repos" that
+// parse as OWNER/REPO but are prose, not repos (cmc_internal/api,
+// github/collect). GitHub's naming rules, strict enough to skip the obviously
+// malformed before spending a clone attempt; repos that pass the shape but
+// don't exist still fail fast via CLONE_ENV.
+function isValidRepoShape({ owner, repo }) {
+  const name = repo.replace(/\.git$/i, '')
+  if (!name || name.length > 100) return false
+  if (name.startsWith('.') || name.endsWith('.')) return false
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return false
+  if (!/[A-Za-z0-9]/.test(name)) return false
+  // GitHub usernames: 1–39 chars, alphanumeric or dash, no leading/trailing dash
+  return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(owner)
+}
+
+// The exact clone command + execSync opts. The hard bound applies regardless
+// of the research-level timeout (0 = no cap → the bound, not infinity).
+function cloneSpec(url, tmpDir, timeout) {
+  const cloneTimeout = timeout > 0 ? Math.min(timeout, CLONE_TIMEOUT_MS) : CLONE_TIMEOUT_MS
+  return {
+    cmd: `git clone --depth 1 --single-branch "${toSshCloneUrl(url)}" "${tmpDir}"`,
+    opts: { stdio: 'pipe', timeout: cloneTimeout, env: { ...process.env, ...CLONE_ENV } },
+  }
+}
+
 async function digRepo(url, timeout = ARCHAEOLOGIST_TIMEOUT) {
   const repo = parseRepoUrl(url)
   if (!repo) return { success: false, reason: 'not a github url' }
+  if (!isValidRepoShape(repo)) {
+    return { success: false, reason: `skipped: malformed repo shape — ${url}` }
+  }
 
   const tmpDir = path.join(os.tmpdir(), `grim-research-${repo.owner}-${repo.repo}-${Date.now()}`)
+  // Clone over ssh, not https: large packs hang up / EPIPE on the https
+  // route on this fleet (phase-85 drain: llama.cpp, OpenScan-Design).
+  const { cmd, opts } = cloneSpec(url, tmpDir, timeout)
   try {
-    execSync(`git clone --depth 1 --single-branch "${url}" "${tmpDir}"`, {
-      stdio: 'pipe', timeout,
-    })
+    execSync(cmd, opts)
 
     const { runDig } = require('./grim-archaeologist')
     // Phase 83 — dives default to the semantic lens: spine + one synthesis
@@ -355,7 +406,9 @@ async function checkDedup(query) {
 module.exports = {
   classify, checkDedup, acquire, acquireUrl, acquireReddit, researchDrop,
   isRedditShortlink, buildCseUrl, scanLinks, detectThinYield, searchForResources,
-  digRepo, parseRepoUrl, fetchPaper, parseArxivId,
+  digRepo, parseRepoUrl, toSshCloneUrl, isValidRepoShape, cloneSpec,
+  CLONE_TIMEOUT_MS, CLONE_ENV,
+  fetchPaper, parseArxivId,
   httpGet, stubJudgment, MAX_BODY_BYTES, MAX_REDIRECTS,
   drainQueue,
 }
