@@ -31,6 +31,13 @@ describe('classify', () => {
   // but a prose "closed <thing>" with no date/bold must NOT count as done
   it('"closes the phase-24 gap" (no date, no bold) → open',
     () => assert.equal(classify('roll the unit; closed the phase-24 aid pin gap'), 'open'))
+
+  // A ✅ that marks a *satisfied dependency* is NOT this phase's done-tick (phase 74
+  // was counted done live because "depends on 72+73 ✅" leaked into the DONE test).
+  it('"…MVP priority; depends on 72+73 ✅" is OPEN, not done',
+    () => assert.equal(classify('**MVP — priority after phase 87**; depends on 72+73 ✅'), 'open'))
+  it('a real done-tick still wins even with a satisfied-dep clause after it',
+    () => assert.equal(classify('✅ accepted (#0399) — Track G-v3; depends 68 + 82 (both satisfied)'), 'done'))
 })
 
 // ── cells: markdown row splitting ──────────────────────────────────────────────
@@ -73,4 +80,5 @@ describe('stateWord', () => {
   it('"USER eyeball: KILL/CONTINUE" → open, not "user"', () => assert.equal(stateWord('**USER eyeball: KILL/CONTINUE.**'), 'open'))
   it('"tests green + live expand" → open, not "tests"', () => assert.equal(stateWord('tests green + live expand of hamster-disco'), 'open'))
   it('"upscale-gate rejection…" → open, not "upscale"', () => assert.equal(stateWord('upscale-gate rejection demonstrated'), 'open'))
+  it('a satisfied-dependency ✅ does not read as done', () => assert.equal(stateWord('**MVP — priority after phase 87**; depends on 72+73 ✅'), 'open'))
 })

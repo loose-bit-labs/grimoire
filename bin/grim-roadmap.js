@@ -32,6 +32,12 @@ const minimist = require('minimist')
 // (e.g. "infra done, creds not") must NOT count, and BLOCKED wins over done (below).
 const DONE_RE    = /✅|\baccepted\b|done live|\*\*CLOSED\b|CLOSED \d{4}-\d{2}-\d{2}/i
 const BLOCKED_RE = /⛔|blocked/i
+// A "depends on 72+73 ✅" clause annotates a *dependency* as satisfied — it is NOT
+// the phase's own status. Strip any "depends …" clause (to the next ; or end of the
+// cell) before the done/blocked test, so a dependency-tick can't false-positive as
+// this phase's done-marker. Real done-markers sit in the status proper, ahead of it.
+const DEP_CLAUSE_RE = /\bdepends?\b[^;]*/gi
+const statusOnly = status => status.replace(DEP_CLAUSE_RE, '')
 // A row is "external" when its Brief cell points at a plans/ file that is NOT
 // this repo's own phase brief (e.g. "fLimfLaMs `plans/swandive.md`").
 const LOCAL_BRIEF_RE    = /^`?plans\/phase-/i
@@ -67,8 +73,9 @@ const STATE_WORDS = new Set([
   'planned', 'reserved', 'review', 'revise', 'draft', 'active',
 ])
 function stateWord(status) {
-  if (BLOCKED_RE.test(status)) return 'blocked'
-  if (DONE_RE.test(status))    return 'done'
+  const s = statusOnly(status)
+  if (BLOCKED_RE.test(s)) return 'blocked'
+  if (DONE_RE.test(s))    return 'done'
   const m = /^[\s✅⛔*]*([A-Za-z]+)/.exec(status)
   const w = m ? m[1].toLowerCase() : ''
   return STATE_WORDS.has(w) ? w : 'open'
@@ -84,8 +91,9 @@ function trackOf(status, what) {
 // Only a tick-less ⛔/blocked row is blocked; a bare "done" in prose ("infra
 // done, creds not") is NOT done — that's why DONE_RE excludes bare "done".
 function classify(status) {
-  if (DONE_RE.test(status))    return 'done'
-  if (BLOCKED_RE.test(status)) return 'blocked'
+  const s = statusOnly(status)
+  if (DONE_RE.test(s))    return 'done'
+  if (BLOCKED_RE.test(s)) return 'blocked'
   return 'open'
 }
 
