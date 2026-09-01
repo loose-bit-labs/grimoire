@@ -346,7 +346,7 @@ const HMM_POLL_SEC = 10 // SSE poll interval
 async function fetchBoxHmm(boxName) {
   const port = config.ports?.grim_rig || 18081
   const isLocal = boxName === os.hostname().toLowerCase() ||
-    (rig.loadBoxesGraceful().find(b => b.label === boxName)?.aliases || []).includes(os.hostname().toLowerCase())
+    ((await rig.loadBoxesGraceful()).find(b => b.label === boxName)?.aliases || []).includes(os.hostname().toLowerCase())
   const addr = isLocal ? `http://127.0.0.1:${port}/hmm` : `http://${boxName}:${port}/hmm`
   try {
     const data = await new Promise((resolve, reject) => {
@@ -371,7 +371,7 @@ async function fetchBoxHmm(boxName) {
  * Down boxes are included as up:false — never 500.
  */
 async function fetchFleetHmm() {
-  const boxes = rig.loadBoxesGraceful()
+  const boxes = await rig.loadBoxesGraceful()
   const results = await Promise.allSettled(
     boxes.filter(b => !b.skip).map(b => fetchBoxHmm(b.label || b.host))
   )

@@ -8,7 +8,8 @@
 #   up       — install pinned binaries, write units, start services
 #   down     — stop and disable services (keeps data intact)
 #   status   — show service status
-#   generate — regenerate scrape config from rig.json only
+#   generate — regenerate scrape config + dashboard rows from the fleet roster,
+#              then reload the live Prometheus so it takes
 #
 # Sources deploy/lib.sh for ok/warn/fail/step helpers.
 
@@ -21,17 +22,81 @@ GRAFANA_DIST="$HOME/.grimoire-telemetry/grafana"
 PROMETHEUS_BIN="$BIN_DIR/prometheus"
 GRAFANA_BIN="$BIN_DIR/grafana-server"
 SERVICE_DIR="$HOME/.config/systemd/user"
+# Overridable so the generate/reload path can be exercised against a sandbox
+# container (same seam pattern as FLEET_JS in generate-scrape.sh).
+PROM_URL="${PROM_URL:-http://localhost:9090}"
+PROM_CONTAINER="${PROM_CONTAINER:-grim-prometheus}"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-cmd_generate() {
-  step "Generating scrape config from rig.json"
-  bash "$TELEMETRY_DIR/generate-scrape.sh"
-  ok "Scrape config written"
+# Do the live Prometheus' scrape targets match the on-disk config? (Exact set
+# compare via /api/v1/targets — the API's own view, not a regex over YAML.)
+# Polls briefly: a (re)loaded target only appears in /api/v1/targets after its
+# first scrape cycle (~scrape_interval). Bounded — a diverged mount (see
+# cmd_generate) never matches and just burns the wait before the fallback.
+_prom_targets_match() {
+  local disk live tries
+  # Compare raw host:port addresses — the live scrapeUrl carries the default
+  # metrics path (http://aid:18081/metrics), so strip scheme + path there.
+  disk=$(node -e "
+    const c = require(process.argv[1]);
+    const t = c.scrape_configs.flatMap(s => (s.static_configs || []).flatMap(x => x.targets));
+    console.log(t.sort().join(' '));
+  " "$TELEMETRY_DIR/prometheus.json" 2>/dev/null) || return 1
+  [ -n "$disk" ] || return 1
+  for tries in 1 2 3 4 5 6; do
+    live=$(curl -sf "$PROM_URL/api/v1/targets?state=any" 2>/dev/null | node -e "
+      let d = ''; process.stdin.on('data', c => d += c);
+      process.stdin.on('end', () => {
+        let j;
+        try { j = JSON.parse(d) } catch { process.exit(1) }
+        console.log((j.data.activeTargets || [])
+          .map(t => t.scrapeUrl.replace(/^https?:\/\//, '').replace(/\/[^/]*$/, ''))
+          .sort().join(' '));
+      });") || return 1
+    [ -n "$live" ] && [ "$disk" = "$live" ] && return 0
+    sleep 3
+  done
+  return 1
+}
 
-  step "Regenerating per-host dashboard rows from rig.json"
-  node "$TELEMETRY_DIR/generate-dashboard.js"
+cmd_generate() {
+  step "Generating scrape config from the fleet roster"
+  bash "$TELEMETRY_DIR/generate-scrape.sh" \
+    || fail "generate-scrape.sh failed — live config left untouched (last-good)"
+  ok "Scrape config written (in place — the container's file mount pins the inode)"
+
+  step "Regenerating per-host dashboard rows from the fleet roster"
+  node "$TELEMETRY_DIR/generate-dashboard.js" \
+    || fail "generate-dashboard.js failed"
   ok "Dashboard rows synced"
+
+  step "Reloading live Prometheus"
+  # generate-scrape.sh rewrote the mounted file in place (same inode), so a
+  # plain reload re-reads the NEW content — but only if the path still holds
+  # the inode the container mounted. If it was swapped out from under us
+  # (mv/rename since the container started), the reload re-reads the stale
+  # inode and silently keeps the old config. Verify, and fall back to a
+  # restart (re-resolves the mount) when it didn't take.
+  if curl -sf "$PROM_URL/-/healthy" >/dev/null 2>&1; then
+    curl -sf -X POST "$PROM_URL/-/reload" >/dev/null 2>&1
+    if _prom_targets_match; then
+      ok "Prometheus reloaded — live config matches the generated scrape config"
+    else
+      warn "Reload did not take (mount inode diverged) — restarting $PROM_CONTAINER"
+      docker restart "$PROM_CONTAINER" || fail "docker restart $PROM_CONTAINER failed"
+      # Verify the restart actually serves the new config — a restart onto an
+      # unreadable mounted file (e.g. 0600 from a mktemp swap) crash-loops the
+      # container, which is worse than stale.
+      if _prom_targets_match; then
+        ok "$PROM_CONTAINER restarted — live config re-resolved from the mount"
+      else
+        fail "$PROM_CONTAINER is not serving the generated config after restart — check: docker logs $PROM_CONTAINER (common cause: the mounted file is unreadable to the container user)"
+      fi
+    fi
+  else
+    warn "Prometheus unreachable at $PROM_URL — config on disk is current; run: docker restart grim-prometheus"
+  fi
 }
 
 # ── binary install ────────────────────────────────────────────────────────────

@@ -1,35 +1,57 @@
 #!/usr/bin/env bash
-# generate-scrape.sh — Read rig.json and emit deploy/telemetry/prometheus.json.
+# generate-scrape.sh — Emit deploy/telemetry/prometheus.json from the derived fleet roster.
 #
 # Usage:
 #   deploy/telemetry/generate-scrape.sh [rig.json]
 #
-# Reads $GRIMOIRE_ROOT/rig.json (or first arg) and writes
-# deploy/telemetry/prometheus.json with a full Prometheus config
-# (global settings + scrape_config derived from rig.json).
+# Reads the fleet roster — KB registry (entities under <kb>/entities, tag
+# hardware/inventory) + the rig.json service-check overlay — via lib/fleet.js,
+# and writes deploy/telemetry/prometheus.json with a full Prometheus config
+# (global settings + scrape_config, one target per non-skipped box).
+# The rig.json arg is the overlay (its directory is the KB root).
 #
 # Deterministic: deleting the output and re-running produces byte-identical results.
+#
+# Never blanks the live config: node writes a temp file first; the live path is
+# rewritten in place (same inode) only after the node step succeeds. In place —
+# not a rename — because the grim-prometheus container file-mounts this path and
+# pins the original inode: a rename would be invisible to the running container
+# (see plans/phase-86.md, "Regen must not blank the live config").
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TELEMETRY_DIR="$SCRIPT_DIR"
+LIVE_OUT="$TELEMETRY_DIR/prometheus.json"
 
 RIG_JSON="${1:-${GRIMOIRE_ROOT:-$HOME/data/grimoire-kb}/rig.json}"
+# Overridable so the script can be exercised from a sandbox copy.
+# (Default resolves to <repo>/lib/fleet.js — two levels up from this dir.)
+FLEET_JS="${FLEET_JS:-${SCRIPT_DIR}/../../lib/fleet.js}"
 
-if [ ! -f "$RIG_JSON" ]; then
-  echo "ERROR: rig.json not found at $RIG_JSON" >&2
-  exit 1
-fi
-
-RIG_JSON="$RIG_JSON" node -e "
+TMP_OUT="$(mktemp "$LIVE_OUT.XXXXXX")"
+trap 'rm -f "$TMP_OUT"' EXIT
+RIG_JSON="$RIG_JSON" FLEET_JS="$FLEET_JS" node -e "
 const fs = require('fs');
-const rig = JSON.parse(fs.readFileSync(process.env.RIG_JSON, 'utf8'));
+const path = require('path');
+const { loadFleetLocal } = require(process.env.FLEET_JS);
+
+const rigPath = process.env.RIG_JSON;
+const kbRoot = path.dirname(rigPath);
+const hasOverlay = fs.existsSync(rigPath);
+const fleet = loadFleetLocal(kbRoot, hasOverlay ? rigPath : null);
+const boxes = fleet.filter(b => !b.skip);
+if (boxes.length === 0) {
+  const why = hasOverlay ? 'overlay ' + rigPath + ' has no usable entries'
+                         : 'rig.json not found at ' + rigPath;
+  console.error('ERROR: fleet roster is empty — ' + why +
+    ' and no registered hosts under ' + kbRoot + '/entities (tag: hardware/inventory)');
+  process.exit(1);
+}
 
 const staticConfigs = [];
 const seen = new Set();
-for (const box of rig) {
-  if (box.skip) continue;
+for (const box of boxes) {
   const label = box.label || box.host;
   const addr = box.host + ':18081';
   if (seen.has(addr)) continue;
@@ -55,6 +77,8 @@ const config = {
   }]
 };
 process.stdout.write(JSON.stringify(config, null, 2) + '\n');
-" > "$TELEMETRY_DIR/prometheus.json"
-
-echo "Wrote $TELEMETRY_DIR/prometheus.json"
+" > "$TMP_OUT"
+# Only after the node step succeeded: rewrite the live file in place (same inode —
+# see the header note on why a rename would be invisible to the mounted container).
+cat "$TMP_OUT" > "$LIVE_OUT"
+echo "Wrote $LIVE_OUT"

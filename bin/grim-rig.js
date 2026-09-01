@@ -17,8 +17,10 @@
  *   grim rig down <service> [--box]      systemctl stop
  *
  * ── Config ────────────────────────────────────────────────────────────────────
- * Box inventory lives in $GRIMOIRE_ROOT/rig.json — NOT in this file.
- * Copy rig.example.json from the engine root and edit it locally.
+ * The box LIST is derived from the KB registry (tag: hardware/inventory) via
+ * lib/fleet.js — a newly-registered box appears with no hand-edit.
+ * $GRIMOIRE_ROOT/rig.json is a keyed service-check overlay only (per-host
+ * `services`); copy rig.example.json from the engine root as a template.
  * That file is never committed to the engine repo.
  *
  * ── Service checks ────────────────────────────────────────────────────────────
@@ -39,6 +41,7 @@ const os         = require('node:os')
 const path       = require('node:path')
 const minimist   = require('minimist')
 const { config, isLocal, lblEndpoint } = require('../lib/env')
+const { loadFleet } = require('../lib/fleet')
 const { scanProjects, projectStatus, toPrometheus } = require('../lib/hmm')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
@@ -64,23 +67,18 @@ function fetchJson(url, timeoutMs = 5000) {
 
 // ── Load box config ───────────────────────────────────────────────────────────
 
-function loadBoxes() {
-  const configPath = config.root ? path.join(config.root, 'rig.json') : null
+async function loadBoxes() {
+  const boxes = await loadFleet(config)
 
-  if (!configPath || !fs.existsSync(configPath)) {
+  if (boxes.length === 0) {
     const examplePath = path.join(__dirname, '..', 'rig.example.json')
-    console.error('grim rig: no box config found.')
-    console.error(`  Expected: ${configPath || '$GRIMOIRE_ROOT/rig.json'}`)
-    console.error(`  Copy ${examplePath} → ${configPath || '$GRIMOIRE_ROOT/rig.json'} and edit it.`)
+    console.error('grim rig: fleet roster is empty — no boxes in the KB registry and no rig.json overlay.')
+    console.error(`  Registry: ${config.root ? `${config.root}/entities (tag: hardware/inventory)` : 'no local KB — client boxes resolve the registry via the server'}`)
+    console.error(`  Overlay:  ${config.root ? path.join(config.root, 'rig.json') : 'n/a'} (service-checks only — copy ${examplePath} as a template)`)
     process.exit(1)
   }
 
-  try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'))
-  } catch (e) {
-    console.error(`grim rig: failed to parse rig.json — ${e.message}`)
-    process.exit(1)
-  }
+  return boxes
 }
 
 /**
@@ -160,25 +158,15 @@ async function reconcileTelemetry() {
 }
 
 /**
- * Load box config gracefully — returns [] instead of exiting when missing.
- * Used by serve() so the agent boots without rig.json (client boxes).
+ * Load the fleet roster gracefully — returns [] instead of exiting on any
+ * failure. Used by serve() so the agent boots on boxes with no local KB
+ * (clients) and no rig.json overlay.
  */
-function loadBoxesGraceful() {
-  const configPath = config.root ? path.join(config.root, 'rig.json') : null
-
-  if (!configPath || !fs.existsSync(configPath)) {
-    if (configPath) {
-      process.stderr.write(`grim rig: no box config at ${configPath} — running with empty service list\n`)
-    } else {
-      process.stderr.write('grim rig: $GRIMOIRE_ROOT not set — running with empty service list\n')
-    }
-    return []
-  }
-
+async function loadBoxesGraceful() {
   try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    return await loadFleet(config)
   } catch (e) {
-    process.stderr.write(`grim rig: failed to parse rig.json — ${e.message} — running with empty service list\n`)
+    process.stderr.write(`grim rig: fleet load failed — ${e.message} — running with empty service list\n`)
     return []
   }
 }
@@ -335,7 +323,7 @@ function findBoxesForService(boxes, serviceName, boxFilter) {
 }
 
 async function controlService(action, serviceName, { box: boxFilter } = {}) {
-  const boxes = loadBoxes()
+  const boxes = await loadBoxes()
 
   let matches
   try {
@@ -422,7 +410,7 @@ async function status({ json = false } = {}) {
 
   if (isLocal) {
     // Hub path: local fan-out via loadBoxes + checkBox (unchanged)
-    const boxes = loadBoxes()
+    const boxes = await loadBoxes()
     const results = await Promise.all(boxes.filter(b => !b.skip).map(checkBox))
     const elapsed = Date.now() - t0
     if (json) {
@@ -1703,9 +1691,10 @@ async function main() {
     --metrics <m>  Comma-separated metrics: cpu,ram,gpu,vram (default: all)
 
   Config:
-    $GRIMOIRE_ROOT/rig.json — box inventory (copy from rig.example.json)
+    Box roster: KB registry (tag: hardware/inventory), derived via lib/fleet.js
+    $GRIMOIRE_ROOT/rig.json — service-check overlay (copy from rig.example.json)
     ~/.config/lbl-config.json endpoints.rig_hub — hub URL for client boxes
-    ~/.config/lbl-config.json endpoints.prometheus — Prometheus URL (default: http://aid:9090)
+    ~/.config/lbl-config.json endpoints.prometheus — Prometheus URL (default: http://localhost:9090)
     Service control fields:
       "unit": "name"         systemctl unit name (default: service name)
       "scope": "user"        use systemctl --user instead of system
@@ -1757,7 +1746,7 @@ async function main() {
   }
 
   if (sub === 'serve') {
-    const boxes   = loadBoxesGraceful()
+    const boxes   = await loadBoxesGraceful()
     if (args.dashboard) {
       const port    = parseInt(args.port, 10) || 3003
       const listen  = args.listen || '0.0.0.0'

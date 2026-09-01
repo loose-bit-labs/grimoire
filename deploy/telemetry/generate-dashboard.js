@@ -2,23 +2,28 @@
 'use strict'
 
 /**
- * generate-dashboard.js — regenerate per-host rows in dashboard-hotspots.json from rig.json.
+ * generate-dashboard.js — regenerate per-host rows in dashboard-hotspots.json from the derived fleet roster.
  *
  * Grafana's row-repeat ($node in a repeated row's title) is a long-standing upstream bug
  * (grafana/grafana#14443, #9547, #104374) — the title never gets the real hostname
  * substituted. So per-host sections are static rows here instead, one block per
- * non-skipped host in rig.json, regenerated deterministically whenever the host list
- * changes — same idea as generate-scrape.sh for Prometheus targets.
+ * non-skipped host in the roster (KB registry + rig.json overlay via lib/fleet.js),
+ * regenerated deterministically whenever the host list changes — same idea as
+ * generate-scrape.sh for Prometheus targets.
  *
  * Usage:
  *   deploy/telemetry/generate-dashboard.js [rig.json]
  *
- * Idempotent: re-running with an unchanged rig.json produces byte-identical per-host
+ * The arg is the rig.json overlay (its directory is taken as the KB root, so the
+ * registry roster is derived from <kb>/entities). Omit to use $GRIMOIRE_ROOT.
+ *
+ * Idempotent: re-running with an unchanged roster produces byte-identical per-host
  * rows (only the "version" field bumps, and only when the row set actually changed).
  */
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { loadFleetLocal } = require('../../lib/fleet')
 
 class DashboardGenerator {
   constructor({ rigPath, dashboardPath, provisioningPath } = {}) {
@@ -29,11 +34,18 @@ class DashboardGenerator {
   }
 
   loadHosts() {
-    if (!fs.existsSync(this.rigPath)) {
-      throw new Error(`rig.json not found at ${this.rigPath}`)
+    // The roster is derived, not hand-listed: registry entities under the KB
+    // root (this rig.json's directory) + the rig.json overlay. Generators
+    // run where the KB is local — the sync local derivation, no HTTP.
+    const kbRoot = path.dirname(this.rigPath)
+    const hasOverlay = fs.existsSync(this.rigPath)
+    const fleet = loadFleetLocal(kbRoot, hasOverlay ? this.rigPath : null)
+    const hosts = fleet.filter(b => !b.skip).map(b => b.host)
+    if (hosts.length === 0) {
+      const why = hasOverlay ? `overlay ${this.rigPath} has no usable entries` : `rig.json not found at ${this.rigPath}`
+      throw new Error(`fleet roster is empty — ${why} and no registered hosts under ${kbRoot}/entities (tag: hardware/inventory)`)
     }
-    const rig = JSON.parse(fs.readFileSync(this.rigPath, 'utf8'))
-    return rig.filter(b => !b.skip).map(b => b.host)
+    return hosts
   }
 
   // The 7-panel-per-host template. host-scoped query filters are the only thing
@@ -299,6 +311,18 @@ class DashboardGenerator {
     return dashboard
   }
 
+  // Atomic: temp file in the same dir + rename — never truncate-then-fill, so a
+  // mid-run crash can't leave a partial dashboard behind. The Grafana
+  // provisioning mount is a *directory* bind, so the rename is visible to the
+  // running container (unlike the prometheus.json *file* mount, which pins the
+  // original inode and needs the in-place rewrite generate-scrape.sh does).
+  _atomicWrite(filePath, text) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    const tmp = filePath + '.tmp'
+    fs.writeFileSync(tmp, text)
+    fs.renameSync(tmp, filePath)
+  }
+
   generate() {
     const hosts = this.loadHosts()
     const dashboard = JSON.parse(fs.readFileSync(this.dashboardPath, 'utf8'))
@@ -310,10 +334,8 @@ class DashboardGenerator {
     if (before !== after) dashboard.version = (dashboard.version || 0) + 1
 
     const text = JSON.stringify(dashboard, null, 2) + '\n'
-    fs.mkdirSync(path.dirname(this.dashboardPath), { recursive: true })
-    fs.mkdirSync(path.dirname(this.provisioningPath), { recursive: true })
-    fs.writeFileSync(this.dashboardPath, text)
-    fs.writeFileSync(this.provisioningPath, text)
+    this._atomicWrite(this.dashboardPath, text)
+    this._atomicWrite(this.provisioningPath, text)
 
     return { hosts, changed: before !== after, version: dashboard.version }
   }
