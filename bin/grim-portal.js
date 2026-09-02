@@ -43,9 +43,10 @@
  *   PORTAL_VISION_ENDPOINT  llava/Ollama base URL for 'caption'  (default: lbl-config use.ollama)
  *   PORTAL_VISION_MODEL     vision model for 'caption'           (default: lbl-config models.vision)
  *   PORTAL_DRYRUN=1   resolve + start proxy + self-test, but don't spawn claude
- *   CLAUDE_CODE_MODEL_CONTEXT_LIMIT                          (default 180081)
+ *   CLAUDE_CODE_MAX_CONTEXT_TOKENS  local model context window  (default 180081)
  *
- * Extra CLI args pass straight through to `claude`.
+ * Extra CLI args pass straight through to `claude`. `grim portal --help` prints
+ * these portal params, then claude's own help.
  */
 
 const http  = require('node:http')
@@ -242,6 +243,10 @@ class Portal {
     // Everything after it passes through to claude.
     const posHost = (args[0] && !args[0].startsWith('-')) ? args.shift() : null
     this.claudeArgs = args
+    // `grim portal --help`/`-h` describes the PORTAL (its host arg + env knobs),
+    // then hands off to claude's own help. Detected before upstream resolution so
+    // help prints even with no host and no lbl-config.
+    this.showHelp = args.includes('-h') || args.includes('--help')
     // Upstream resolution, most-explicit first:
     //   1. PORTAL_UPSTREAM — a full base URL, verbatim
     //   2. positional host / PORTAL_HOST — a bare host, built into
@@ -260,11 +265,44 @@ class Portal {
     this.settings    = path.join(os.homedir(), '.claude', 'the-local-llm-settings.json')
     this.marketplace = REPO                       // repo self-hosts as the marketplace
     this.dryRun      = !!env.PORTAL_DRYRUN
+    if (this.showHelp) return                     // nothing else to resolve for --help
     if (!this.upstream) {
       throw new Error(`no upstream resolved — pass a host (grim portal <host>), set PORTAL_UPSTREAM to a URL, or PORTAL_ENDPOINT to a known lbl-config endpoints/use key (tried '${this.endpointKey}')`)
     }
     this.host  = new URL(this.upstream).hostname
     this.proxy = new PortalProxy({ port: this.proxyPort, upstream: this.upstream, filters: this.buildFilters() })
+  }
+
+  // Portal's own help — the host arg and PORTAL_* knobs the launcher owns, plus
+  // the note that everything else is claude's. `grim portal --help`.
+  usage() {
+    return `The Portal — open Claude Code on a local model.
+
+Usage:
+  grim portal [<host>] [claude args…]
+
+  <host>   bare llama-server host, used directly (no lbl-config lookup):
+             grim portal HOST            # → HOST on port 11311
+           omit it and the upstream resolves from PORTAL_* / lbl-config.
+  Any other args (e.g. --resume, --continue) pass straight through to claude.
+
+Environment (all optional):
+  PORTAL_HOST            bare llama-server host — same as the positional <host>
+  PORTAL_UPSTREAM_PORT   port for the bare host                (default 11311)
+  PORTAL_UPSTREAM        full llama-server base URL, verbatim
+  PORTAL_ENDPOINT        lbl-config endpoints/use key          (default 'coding')
+  PORTAL_MODEL           override the resolved model id        (default <name>.<host>)
+  PORTAL_KEY             ANTHROPIC_AUTH_TOKEN                   (default HOLE)
+  PORTAL_PORT            in-process proxy listen port          (default 13431)
+  PORTAL_FILTERS         comma-separated filter pipeline       (default 'strip'; also 'caption')
+  PORTAL_STUB            replacement text for stripped images
+  PORTAL_VISION_ENDPOINT llava/Ollama base URL for 'caption'   (default: lbl-config use.ollama)
+  PORTAL_VISION_MODEL    vision model for 'caption'            (default: lbl-config models.vision)
+  PORTAL_DRYRUN=1        resolve + start proxy + self-test, don't spawn claude
+  CLAUDE_CODE_MAX_CONTEXT_TOKENS  local model context window    (default 180081)
+
+Filters run on the wire so a text-only model never receives an image block.
+Below is claude's own --help; the flags there pass through the portal.`
   }
 
   // Build the filter pipeline from PORTAL_FILTERS (comma-separated, default
@@ -367,6 +405,15 @@ class Portal {
   }
 
   async main() {
+    if (this.showHelp) {
+      console.log(this.usage() + '\n')
+      await new Promise(res => {
+        const help = spawn('claude', this.claudeArgs, { stdio: 'inherit' })
+        help.on('error', e => { console.error(`(claude --help unavailable: ${e.message})`); res() })
+        help.on('close', () => res())
+      })
+      return
+    }
     const model = await this.resolveModel()
     await new Promise((res, rej) => { this.proxy.start(res).on('error', rej) })
     this.writeSettings()
