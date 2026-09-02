@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "local-plugins",
+  "description": "Local Claude Code plugins — grimoire, self-hosted straight from the repo",
+  "owner": {
+    "name": "local"
+  },
+  "plugins": [
+    {
+      "name": "grimoire",
+      "description": "Personal knowledge graph — persistent memory, personas, session lifecycle",
+      "category": "productivity",
+      "source": "./plugin"
+    }
+  ]
+}

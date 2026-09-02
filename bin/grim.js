@@ -39,6 +39,7 @@ const COMMANDS = {
   'roadmap':       { script: 'grim-roadmap.js',       desc: 'How much work is left on the ROADMAP    (The Ledger)'      },
   'librarian':     { script: 'grim-librarian.js',     desc: 'KB durability: commit + push on cadence   (The Librarian)' },
   'hmm':           { script: 'grim-hmm.js',           desc: 'Pact project statuses (The Guild Hall)'    },
+  'portal':        { script: 'grim-portal.js',        desc: 'Open Claude Code on a local model         (The Portal)'      },
   'serve':     { script: 'grim-server.js',   desc: 'Start the Grimoire HTTP+MCP server'                },
 }
 
