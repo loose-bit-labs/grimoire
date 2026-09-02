@@ -27,6 +27,9 @@
  * PORTAL_HOST (a bare host, built into http://<host>:<port>, NO config lookup) →
  * lblEndpoint(PORTAL_ENDPOINT) (the config-driven fallback).
  *
+ * Positional: `grim portal <host> [claude args…]` — a leading bare token is the
+ * llama-server host (direct, no config lookup); everything after passes to claude.
+ *
  * Env (all optional):
  *   PORTAL_HOST       bare llama-server host — direct, skips lbl-config entirely
  *   PORTAL_UPSTREAM_PORT  upstream llama-server port with PORTAL_HOST  (default 11311)
@@ -232,25 +235,33 @@ class Portal {
   constructor(env = process.env) {
     this.env         = env
     this.endpointKey = env.PORTAL_ENDPOINT || 'coding'
+    // Args after the subcommand. Dispatched via `grim portal …`, grim.js runs us
+    // in-process with argv intact, so the 'portal' token sits at argv[2].
+    const args = process.argv.slice(process.argv[2] === 'portal' ? 3 : 2)
+    // A leading BARE token (not a --flag) is a positional host: `grim portal tbona`.
+    // Everything after it passes through to claude.
+    const posHost = (args[0] && !args[0].startsWith('-')) ? args.shift() : null
+    this.claudeArgs = args
     // Upstream resolution, most-explicit first:
     //   1. PORTAL_UPSTREAM — a full base URL, verbatim
-    //   2. PORTAL_HOST     — a bare host, built into http://<host>:<PORTAL_UPSTREAM_PORT>
-    //                        (direct, NO lbl-config lookup)
+    //   2. positional host / PORTAL_HOST — a bare host, built into
+    //      http://<host>:<PORTAL_UPSTREAM_PORT> (direct, NO lbl-config lookup)
     //   3. lblEndpoint(PORTAL_ENDPOINT) — the config-driven fallback
+    const hostArg    = posHost || env.PORTAL_HOST
     this.upstream    = env.PORTAL_UPSTREAM
-      || (env.PORTAL_HOST && `http://${env.PORTAL_HOST}:${env.PORTAL_UPSTREAM_PORT || 11311}`)
+      || (hostArg && `http://${hostArg}:${env.PORTAL_UPSTREAM_PORT || 11311}`)
       || lblEndpoint(this.endpointKey)
     this.proxyPort   = Number(env.PORTAL_PORT || 13431)
     this.key         = env.PORTAL_KEY || 'HOLE'
-    this.ctxLimit    = env.CLAUDE_CODE_MODEL_CONTEXT_LIMIT || '180081'
+    // Claude Code renamed this window var; set the LIVE name (older name kept for
+    // back-compat). Without it, an unrecognised local model name makes Claude Code
+    // assume a 200k window and auto-compact early.
+    this.ctxTokens   = env.CLAUDE_CODE_MAX_CONTEXT_TOKENS || env.CLAUDE_CODE_MODEL_CONTEXT_LIMIT || '180081'
     this.settings    = path.join(os.homedir(), '.claude', 'the-local-llm-settings.json')
     this.marketplace = REPO                       // repo self-hosts as the marketplace
     this.dryRun      = !!env.PORTAL_DRYRUN
-    // Dispatched via `grim portal …`, grim.js runs us in-process with argv
-    // intact, so the subcommand name sits at argv[2] (mirror grim-roadmap.js).
-    this.claudeArgs  = process.argv.slice(process.argv[2] === 'portal' ? 3 : 2)
     if (!this.upstream) {
-      throw new Error(`no upstream resolved — set PORTAL_HOST to a host, PORTAL_UPSTREAM to a URL, or PORTAL_ENDPOINT to a known lbl-config endpoints/use key (tried '${this.endpointKey}')`)
+      throw new Error(`no upstream resolved — pass a host (grim portal <host>), set PORTAL_UPSTREAM to a URL, or PORTAL_ENDPOINT to a known lbl-config endpoints/use key (tried '${this.endpointKey}')`)
     }
     this.host  = new URL(this.upstream).hostname
     this.proxy = new PortalProxy({ port: this.proxyPort, upstream: this.upstream, filters: this.buildFilters() })
@@ -336,7 +347,8 @@ class Portal {
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${this.proxyPort}/`,
       ANTHROPIC_AUTH_TOKEN: this.key,
       ANTHROPIC_MODEL: model,
-      CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxLimit,
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: this.ctxTokens,      // live var (2.1.x)
+      CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxTokens,     // legacy var, older CLIs
     }
   }
 
