@@ -511,6 +511,7 @@ User direction (2026-08-29): **wire SSH cloning + make the clone non-interactive
 | Phase | Brief | What lands | Status |
 |-------|-------|-----------|--------|
 | 89 | plans/phase-89.md | **non-interactive + SSH clone in `digRepo`** — `GIT_TERMINAL_PROMPT=0` + `GIT_SSH_COMMAND='ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new'` + a hard clone timeout so a repo needing auth **fails fast, never prompts/hangs** the drain; prefer SSH transport (`https://github.com/O/R` → `git@github.com:O/R.git`); skip malformed/junk discovered repos before attempting a clone. Formalizes the user's ask to the minion — mage reconciles any informal edit into review. | **ACCEPTED (#0414, 2026-08-31)** — shipped `f4cea4e`, review archived `bf2de58` — Track G cont.; reliability (drain-hang); the user-directed ssh-clone edit landed in this commit |
+| 90 | plans/phase-90.md | **acquisition layer** — host-routed acquire in `grim-research`: repo drops clone to `~/src/3rd` (never scrape GitHub HTML), JS-blocked hosts (reddit/x) acquire via headless browser, and a **thin-haul floor** makes a title-only/challenge fetch a `failed` result with a reason instead of a `researched` dud; re-acquire the 2 backfill duds (prime-agent, RPLidar) as the acceptance demo. Implements the 2026-08-07 acquisition rules. | **queued (grimoire/aid, 2026-09-07)** — user-directed; depends 84+89 (satisfied); trigger: 2/10 backfill dives verified title-only duds |
 
 ## Acceptance bar (mage enforces per phase)
 
