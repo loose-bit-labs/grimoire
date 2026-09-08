@@ -47,6 +47,18 @@ in the queue/transport layer.
 - The two backfilled duds re-run and produce real digests.
 - Full test suite green vs baseline.
 
+## Implementation notes (researched 2026-09-08, probe + fleet evidence)
+
+Full report in KB: `concept_acquisition_wall_findings_where_our_fetches_die_and_the_door`. The sharp
+bits for whoever implements: the failure population is **22 KB entities tagged
+`research/acquisition-failed`** — dominated by Reddit `/s/` share-links dying on the `.json` path and
+JS-gated marketing pages; general fetching is fine (queue: 0 failures). So priorities reorder:
+reddit `/s/` share-links → search-by-title fallback (stop retrying the fetch), real readability
+extractor replacing the regex `extractText`, keyed search as the stable core (Brave free $5/mo or
+CSE 100/day — `resolveGoogleCseKeys` already exists), SearXNG self-host as zero-cost meta layer,
+Playwright+rebrowser strictly last resort (residential IP > any stealth plugin), no hosted reader
+becomes load-bearing (~1-2yr service lifespans). The thin-haul floor stands as the keystone.
+
 ## Out of scope
 
 - Per-site extractors, archive/cache tiers, parallel acquisition. The link-scan dig path is untouched
