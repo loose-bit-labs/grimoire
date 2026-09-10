@@ -165,6 +165,37 @@ describe('claudeArgs argv guard', () => {
   })
 })
 
+// ── port allocation — two portals must coexist on one box ────────────────────────
+describe('PortalProxy port allocation', () => {
+  // WHY: the proxy is internal (only the spawned claude connects). A fixed port
+  // meant a second `grim portal` on the same box died with EADDRINUSE. Default 0
+  // → the OS hands out a free ephemeral port, so N portals coexist.
+  it('default port 0 → two proxies bind distinct live ports (no EADDRINUSE)', async () => {
+    const up = `http://127.0.0.1:1`                     // never connected to here
+    const a = new PortalProxy({ upstream: up })          // no port → 0
+    const b = new PortalProxy({ upstream: up })
+    try {
+      const pa = await new Promise((res, rej) => a.start(e => e ? rej(e) : res(a.port)))
+      const pb = await new Promise((res, rej) => b.start(e => e ? rej(e) : res(b.port)))
+      assert.ok(pa > 0 && pb > 0, 'both got real ports')
+      assert.notEqual(pa, pb, 'the two ports differ')
+    } finally { a.stop(); b.stop() }
+  })
+
+  it('an occupied explicit port falls back to an ephemeral one instead of throwing', async () => {
+    const up = `http://127.0.0.1:1`
+    const a = new PortalProxy({ port: 0, upstream: up })
+    try {
+      const pa = await new Promise((res, rej) => a.start(e => e ? rej(e) : res(a.port)))
+      const b = new PortalProxy({ port: pa, upstream: up })   // collide on purpose
+      try {
+        const pb = await new Promise((res, rej) => b.start(e => e ? rej(e) : res(b.port)))
+        assert.notEqual(pb, pa, 'fell back to a different, free port')
+      } finally { b.stop() }
+    } finally { a.stop() }
+  })
+})
+
 // ── end-to-end: image never reaches upstream; non-messages passes through ────────
 describe('PortalProxy end-to-end (mock upstream)', () => {
   let upstream, proxy, upPort, pxPort, lastSeen

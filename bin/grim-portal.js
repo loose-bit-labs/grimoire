@@ -37,7 +37,7 @@
  *   PORTAL_ENDPOINT   lbl-config key (endpoints[key] or endpoints[use[key]])  (default 'coding')
  *   PORTAL_MODEL      override the resolved model id        (default <clean-name>.<host>)
  *   PORTAL_KEY        ANTHROPIC_AUTH_TOKEN                  (default HOLE)
- *   PORTAL_PORT       proxy listen port                     (default 13431)
+ *   PORTAL_PORT       proxy listen port  (default 0 → OS-assigned ephemeral port)
  *   PORTAL_STUB       image replacement text (strip filter, caption fallback)
  *   PORTAL_FILTERS    comma-separated filter pipeline       (default 'strip'; also 'caption')
  *   PORTAL_VISION_ENDPOINT  llava/Ollama base URL for 'caption'  (default: lbl-config use.ollama)
@@ -134,7 +134,7 @@ const FILTER_REGISTRY = {
 // included — is piped back raw. Non-/v1/messages is a transparent passthrough.
 class PortalProxy {
   constructor({ port, upstream, filters, stub } = {}) {
-    this.port     = Number(port || 13431)
+    this.port     = port == null ? 0 : Number(port)   // 0 → OS picks an ephemeral port
     this.upstream = new URL(upstream || 'http://localhost:11311')
     this.filters  = filters && filters.length ? filters : [new StripImageFilter({ stub })]
     this.handled  = 0
@@ -218,13 +218,32 @@ class PortalProxy {
     res.end(JSON.stringify({ error: { type: 'portal_upstream_error', message: err.message } }))
   }
 
+  // Node-style cb(err). localhost-only: this proxy carries the auth token, so
+  // nothing off-box connects here — which means the exact port is irrelevant to
+  // anyone but the `claude` we spawn (it reads .port back). So if the preferred
+  // port is already taken (a second portal on this box), fall back to an
+  // OS-assigned ephemeral port instead of dying with EADDRINUSE.
   start(cb) {
     this.server = http.createServer((req, res) => {
       if (req.method === 'POST' && req.url.startsWith('/v1/messages')) return this.handleMessages(req, res)
       return this.passthrough(req, res)
     })
-    // localhost-only: this proxy carries the auth token; nothing off-box needs it.
-    this.server.listen(this.port, '127.0.0.1', cb)
+    const tryListen = port => {
+      const onError = err => {
+        if (err.code === 'EADDRINUSE' && port !== 0) {
+          console.error(`⚠ proxy port ${port} in use — falling back to an ephemeral port`)
+          return tryListen(0)
+        }
+        cb && cb(err)
+      }
+      this.server.once('error', onError)
+      this.server.listen(port, '127.0.0.1', () => {
+        this.server.removeListener('error', onError)
+        this.port = this.server.address().port      // the port actually bound
+        cb && cb()
+      })
+    }
+    tryListen(this.port)
     return this.server
   }
 
@@ -256,7 +275,11 @@ class Portal {
     this.upstream    = env.PORTAL_UPSTREAM
       || (hostArg && `http://${hostArg}:${env.PORTAL_UPSTREAM_PORT || 11311}`)
       || lblEndpoint(this.endpointKey)
-    this.proxyPort   = Number(env.PORTAL_PORT || 13431)
+    // Proxy listen port. Default 0 → an OS-assigned ephemeral (random, high)
+    // port, so any number of portals coexist on one box. The number is purely
+    // internal — only the `claude` we spawn connects, via .port read back after
+    // listen. Set PORTAL_PORT to pin it (EADDRINUSE then falls back to ephemeral).
+    this.proxyPort   = Number(env.PORTAL_PORT || 0)
     this.key         = env.PORTAL_KEY || 'HOLE'
     // Claude Code renamed this window var; set the LIVE name (older name kept for
     // back-compat). Without it, an unrecognised local model name makes Claude Code
@@ -293,7 +316,8 @@ Environment (all optional):
   PORTAL_ENDPOINT        lbl-config endpoints/use key          (default 'coding')
   PORTAL_MODEL           override the resolved model id        (default <name>.<host>)
   PORTAL_KEY             ANTHROPIC_AUTH_TOKEN                   (default HOLE)
-  PORTAL_PORT            in-process proxy listen port          (default 13431)
+  PORTAL_PORT            in-process proxy listen port   (default 0 → ephemeral, so
+                         multiple portals coexist; pin it only if you must)
   PORTAL_FILTERS         comma-separated filter pipeline       (default 'strip'; also 'caption')
   PORTAL_STUB            replacement text for stripped images
   PORTAL_VISION_ENDPOINT llava/Ollama base URL for 'caption'   (default: lbl-config use.ollama)
@@ -415,7 +439,8 @@ Below is claude's own --help; the flags there pass through the portal.`
       return
     }
     const model = await this.resolveModel()
-    await new Promise((res, rej) => { this.proxy.start(res).on('error', rej) })
+    await new Promise((res, rej) => this.proxy.start(err => err ? rej(err) : res()))
+    this.proxyPort = this.proxy.port                 // the port actually bound
     this.writeSettings()
 
     const pipeline = this.proxy.filters.map(f => f.name).join(' → ')
