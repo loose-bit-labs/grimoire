@@ -296,27 +296,41 @@ class Portal {
     this.proxy = new PortalProxy({ port: this.proxyPort, upstream: this.upstream, filters: this.buildFilters() })
   }
 
-  // Retro splash — a dungeon door swinging open onto the local model. Cosmetic;
-  // printed once at launch, before the (network-bound) model resolution so it
-  // shows instantly. Plain block chars, no ANSI — matches the grim.js banner.
-  banner() {
+  // Retro splash — an arched dungeon doorway onto the local model. Cosmetic; the
+  // frame is squared programmatically so the right wall never drifts, and the
+  // footer names the host the portal opened onto. Plain ASCII, no ANSI.
+  banner(host) {
+    const INNER = 46
+    const wall = s => '|' + s.padEnd(INNER).slice(0, INNER) + '|'
+    const rule = '|' + '_'.repeat(INNER) + '|'
+    const art = [
+      '',
+      '             G R I M   P O R T A L',
+      '',
+      "               --'`````````'--",
+      "             .'               `.",
+      "            -   .-'````````'.   -",
+      "          .`  .` |  _____  | `.  `",
+      '         /   /   | |     | |   \\  \\',
+      '         |  |    | |     | |    |  |',
+      '         |  |    | |     | |    |  |',
+      '         |  |    | | o   | |    |  |',
+      '         |  |    | |     | |    |  |',
+      '         |  |    |_|_____|_|    |  |',
+      '         |  |   /           \\   |  |',
+      '         |  |  /             \\  |  |',
+      '         |  | /               \\ |  |',
+      '       __|__|/_________________\\|__|__',
+      '',
+    ]
     return [
       '',
-      '        ▟▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▙',
-      '       ▟▓▓╔═══════════════════════╗▓▓▙',
-      '       ▓▓▓║ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ║▓▓▓',
-      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒      G R I M      ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒    P O R T A L    ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒         ◍         ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒         ║         ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
-      '       ▓▓▓║ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ║▓▓▓',
-      '       ▜▓▓╚═══════════════════════╝▓▓▛',
-      '        ▜▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▛',
-      '     ═══╧═══════════════════════════╧═══',
-      '          t h e   p o r t a l   o p e n s',
+      ' ' + '_'.repeat(INNER) + ' ',
+      ...art.map(wall),
+      rule,
+      wall(''),
+      wall(` A portal to ${host} has been opened...`),
+      rule,
       '',
     ].join('\n')
   }
@@ -463,12 +477,12 @@ Below is claude's own --help; the flags there pass through the portal.`
       })
       return
     }
-    console.log(this.banner())
     const model = await this.resolveModel()
     await new Promise((res, rej) => this.proxy.start(err => err ? rej(err) : res()))
     this.proxyPort = this.proxy.port                 // the port actually bound
     this.writeSettings()
 
+    console.log(this.banner(this.host))
     const pipeline = this.proxy.filters.map(f => f.name).join(' → ')
     console.log(`🌀 portal → ${this.upstream}  (proxy :${this.proxyPort}, filters: ${pipeline})`)
     console.log(`   model: ${model}`)
