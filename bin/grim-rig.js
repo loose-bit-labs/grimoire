@@ -43,6 +43,7 @@ const minimist   = require('minimist')
 const { config, isLocal, lblEndpoint } = require('../lib/env')
 const { loadFleet } = require('../lib/fleet')
 const { scanProjects, projectStatus, toPrometheus } = require('../lib/hmm')
+const { probeLlama, renderProbe, probeToProm } = require('../lib/llama-probe')
 
 const LOCAL_HOSTNAME = os.hostname().toLowerCase()
 
@@ -1650,11 +1651,61 @@ async function history({ host, metrics, last, from, to, json }) {
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
+// The llama_cpp hosts in the fleet roster as host:port, for the no-args probe.
+// Uses loadFleet directly (not loadBoxes, which exits on an empty roster).
+async function llamaTargetsFromFleet() {
+  let boxes = []
+  try { boxes = await loadFleet(config) } catch { return [] }
+  const targets = []
+  for (const box of boxes) {
+    for (const svc of box.services || []) {
+      const name = typeof svc === 'string' ? svc : (svc.name || svc.type || '')
+      if (serviceType(name) !== 'llama_cpp') continue
+      targets.push(`${box.host}:${(svc && svc.port) || 11311}`)
+    }
+  }
+  return targets
+}
+
+// `grim rig probe [host…]` — the last-llama successor: model/config/load-or-fail,
+// KV occupancy, and live prefill/decode tps via a tiny synthetic completion.
+// --prom emits Prometheus text (stream it); --watch redraws; --no-probe is
+// read-only (skips the synthetic generation).
+async function probeCommand(args) {
+  const explicit = args._.slice(1)
+  const targets = explicit.length ? explicit : await llamaTargetsFromFleet()
+  if (targets.length === 0) {
+    console.error('grim rig probe: no targets — pass a host (grim rig probe <host>) or register a llama_cpp service in the fleet.')
+    process.exit(1)
+  }
+  const nPredict = Number(args.predict) > 0 ? Number(args.predict) : 16
+  const opts = { nPredict, probe: args.probe !== false }
+
+  const once = async () => {
+    const results = await Promise.all(targets.map(t => probeLlama(t, opts)))
+    process.stdout.write(args.prom ? probeToProm(results) : renderProbe(results))
+  }
+
+  if (!args.watch) return once()
+
+  const interval = (Number(args.interval) > 0 ? Number(args.interval) : 3) * 1000
+  process.stdout.write('\x1b[?25l')
+  const restore = () => { process.stdout.write('\x1b[?25h'); process.exit(0) }
+  process.on('SIGINT', restore); process.on('SIGTERM', restore)
+  for (;;) {
+    console.clear()
+    console.log(`  🔦 llama probe — ${targets.join(', ')}   (Ctrl-C to leave)\n`)
+    await once()
+    await new Promise(r => setTimeout(r, interval))
+  }
+}
+
 async function main() {
   const args = minimist(process.argv.slice(3), {
-    boolean: ['json', 'help', 'dashboard'],
+    boolean: ['json', 'help', 'dashboard', 'prom', 'watch', 'probe'],
     string:  ['box'],
-    alias:   { j: 'json', h: 'help', b: 'box' },
+    default: { probe: true },
+    alias:   { j: 'json', h: 'help', b: 'box', n: 'predict' },
   })
 
   const sub = args._[0] || 'status'
@@ -1667,6 +1718,7 @@ async function main() {
          grim rig history <host> [--last 10m | --from <ts> --to <ts>] [--metrics cpu,ram,gpu,vram] [--json]
          grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
          grim rig serve --dashboard [--port 3003] [--listen 0.0.0.0]
+         grim rig probe [host…] [--prom] [--watch [--interval 3]] [-n 16] [--no-probe]
          grim rig reconcile              Regenerate telemetry from rig.json + reload Prometheus
 
   Subcommands:
@@ -1674,6 +1726,7 @@ async function main() {
     up <service>       systemctl start <service>
     down <service>     systemctl stop <service>
     history <host>     Query Prometheus for host telemetry over a time range
+    probe [host…]      llama-server model/config/load + prefill+decode tps (last-llama successor)
     serve              Start resident telemetry agent (/status + /metrics)
     serve --dashboard  Fleet dashboard front-door (/cluster + /fleet)
     reconcile          Regenerate Prometheus scrape config + Grafana dashboards from rig.json
@@ -1689,6 +1742,10 @@ async function main() {
     --from <ts>    Start time for history (ISO or epoch)
     --to <ts>      End time for history (ISO or epoch)
     --metrics <m>  Comma-separated metrics: cpu,ram,gpu,vram (default: all)
+    --prom         probe: emit Prometheus text instead of the terminal view
+    --watch        probe: redraw on an interval (with --interval, default 3s)
+    -n <tokens>    probe: tokens to generate for the throughput sample (default: 16)
+    --no-probe     probe: read-only (skip the synthetic generation)
 
   Config:
     Box roster: KB registry (tag: hardware/inventory), derived via lib/fleet.js
@@ -1796,6 +1853,11 @@ async function main() {
     }
     const result = await reconcileTelemetry()
     console.log(`reconcile: regenerated=${result.regenerated} reloaded=${result.reloaded}`)
+    return
+  }
+
+  if (sub === 'probe') {
+    await probeCommand(args)
     return
   }
 
