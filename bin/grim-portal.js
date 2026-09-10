@@ -296,6 +296,31 @@ class Portal {
     this.proxy = new PortalProxy({ port: this.proxyPort, upstream: this.upstream, filters: this.buildFilters() })
   }
 
+  // Retro splash — a dungeon door swinging open onto the local model. Cosmetic;
+  // printed once at launch, before the (network-bound) model resolution so it
+  // shows instantly. Plain block chars, no ANSI — matches the grim.js banner.
+  banner() {
+    return [
+      '',
+      '        ▟▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▙',
+      '       ▟▓▓╔═══════════════════════╗▓▓▙',
+      '       ▓▓▓║ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ║▓▓▓',
+      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒      G R I M      ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒    P O R T A L    ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒         ◍         ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒         ║         ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒                   ▒ ║▓▓▓',
+      '       ▓▓▓║ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ ║▓▓▓',
+      '       ▜▓▓╚═══════════════════════╝▓▓▛',
+      '        ▜▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▛',
+      '     ═══╧═══════════════════════════╧═══',
+      '          t h e   p o r t a l   o p e n s',
+      '',
+    ].join('\n')
+  }
+
   // Portal's own help — the host arg and PORTAL_* knobs the launcher owns, plus
   // the note that everything else is claude's. `grim portal --help`.
   usage() {
@@ -438,6 +463,7 @@ Below is claude's own --help; the flags there pass through the portal.`
       })
       return
     }
+    console.log(this.banner())
     const model = await this.resolveModel()
     await new Promise((res, rej) => this.proxy.start(err => err ? rej(err) : res()))
     this.proxyPort = this.proxy.port                 // the port actually bound
