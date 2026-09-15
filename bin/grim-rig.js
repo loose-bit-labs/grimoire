@@ -1379,7 +1379,7 @@ function serveDashboard({ port = 3003, listen = '0.0.0.0', boxes }) {
  * @param {object} opts.boxes — loaded rig.json boxes
  * @returns {object} — { server, stop }
  */
-function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
+function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes, probe = false, probeInterval = 60, nPredict = 16, probeTargets: probeTargetsArg = null }) {
   // Scrub X11 env vars so si.graphics() → xrandr fails instantly/silently
   // instead of spamming "X11 connection rejected" on every poll.
   delete process.env.DISPLAY
@@ -1405,6 +1405,27 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
     }
   }
   poll()
+
+  // Opt-in throughput prober (--probe). Separate, slower cadence than the poll:
+  // each tick fires one tiny /completion per llama box for prefill/decode tps,
+  // and probeLlama skips any box whose slots are all busy — so real work is
+  // never displaced. Results ride out on /metrics as gen_llama_probe_*.
+  let probeResults = []
+  // Explicit targets (grim rig serve --probe host1 host2) override roster
+  // enumeration, so probing works before the overlay lists llama_cpp services.
+  const probeTargets = !probe ? []
+    : (probeTargetsArg && probeTargetsArg.length ? probeTargetsArg : llamaTargetsFrom(boxes))
+  const probeLoop = async () => {
+    while (running) {
+      try {
+        probeResults = await Promise.all(probeTargets.map(t => probeLlama(t, { nPredict })))
+      } catch (e) {
+        process.stderr.write(`grim rig serve: probe error: ${e.message}\n`)
+      }
+      await new Promise(r => setTimeout(r, probeInterval * 1000))
+    }
+  }
+  if (probe && probeTargets.length > 0) probeLoop()
 
   // HTTP server
   const server = http.createServer(async (req, res) => {
@@ -1443,7 +1464,8 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
         const localNode = os.hostname().toLowerCase()
         fleetLines = fleetToPrometheusText(fleet, localNode)
       } catch { /* fleet unavailable — skip */ }
-      res.end(toPrometheusText(snapshot) + fleetLines + (hmmLines ? hmmLines + '\n' : ''))
+      const probeLines = probeResults.length ? probeToProm(probeResults) : ''
+      res.end(toPrometheusText(snapshot) + fleetLines + probeLines + (hmmLines ? hmmLines + '\n' : ''))
       return
     }
 
@@ -1488,6 +1510,11 @@ function serve({ port = 18081, interval = 5, listen = '127.0.0.1', boxes }) {
     console.log(`  /cluster — instrument cluster (HTML)`)
     console.log(`  /fleet   — aggregate fleet status (JSON)`)
     console.log(`  poll interval: ${interval}s`)
+    if (probe && probeTargets.length > 0) {
+      console.log(`  probe: ${probeTargets.length} llama box(es) every ${probeInterval}s → gen_llama_probe_*`)
+    } else if (probe) {
+      console.log(`  probe: enabled but no llama_cpp boxes in roster — nothing to probe`)
+    }
   })
 
   return {
@@ -1651,13 +1678,11 @@ async function history({ host, metrics, last, from, to, json }) {
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
-// The llama_cpp hosts in the fleet roster as host:port, for the no-args probe.
-// Uses loadFleet directly (not loadBoxes, which exits on an empty roster).
-async function llamaTargetsFromFleet() {
-  let boxes = []
-  try { boxes = await loadFleet(config) } catch { return [] }
+// The llama_cpp hosts in a roster as host:port. Pure over the boxes array so
+// both the probe subcommand and the serve loop share one enumeration.
+function llamaTargetsFrom(boxes) {
   const targets = []
-  for (const box of boxes) {
+  for (const box of boxes || []) {
     for (const svc of box.services || []) {
       const name = typeof svc === 'string' ? svc : (svc.name || svc.type || '')
       if (serviceType(name) !== 'llama_cpp') continue
@@ -1665,6 +1690,12 @@ async function llamaTargetsFromFleet() {
     }
   }
   return targets
+}
+
+// Same, resolving the roster itself. Uses loadFleet directly (not loadBoxes,
+// which exits on an empty roster) so the no-args probe degrades to [].
+async function llamaTargetsFromFleet() {
+  try { return llamaTargetsFrom(await loadFleet(config)) } catch { return [] }
 }
 
 // `grim rig probe [host…]` — the last-llama successor: model/config/load-or-fail,
@@ -1679,7 +1710,10 @@ async function probeCommand(args) {
     process.exit(1)
   }
   const nPredict = Number(args.predict) > 0 ? Number(args.predict) : 16
-  const opts = { nPredict, probe: args.probe !== false }
+  // Default ON for the probe subcommand; --no-probe makes it read-only. Read the
+  // raw flag (minimist booleans default to false, so parsed args can't tell
+  // "omitted" from "--no-probe").
+  const opts = { nPredict, probe: !process.argv.includes('--no-probe') }
 
   const once = async () => {
     const results = await Promise.all(targets.map(t => probeLlama(t, opts)))
@@ -1703,8 +1737,7 @@ async function probeCommand(args) {
 async function main() {
   const args = minimist(process.argv.slice(3), {
     boolean: ['json', 'help', 'dashboard', 'prom', 'watch', 'probe'],
-    string:  ['box'],
-    default: { probe: true },
+    string:  ['box', 'probe-interval'],
     alias:   { j: 'json', h: 'help', b: 'box', n: 'predict' },
   })
 
@@ -1717,6 +1750,7 @@ async function main() {
          grim rig down <service> [--box <name>]
          grim rig history <host> [--last 10m | --from <ts> --to <ts>] [--metrics cpu,ram,gpu,vram] [--json]
          grim rig serve [--port 18081] [--interval 5] [--listen 127.0.0.1]
+         grim rig serve --probe [--probe-interval 60] [-n 16]   Stream llama tps to /metrics
          grim rig serve --dashboard [--port 3003] [--listen 0.0.0.0]
          grim rig probe [host…] [--prom] [--watch [--interval 3]] [-n 16] [--no-probe]
          grim rig reconcile              Regenerate telemetry from rig.json + reload Prometheus
@@ -1744,8 +1778,10 @@ async function main() {
     --metrics <m>  Comma-separated metrics: cpu,ram,gpu,vram (default: all)
     --prom         probe: emit Prometheus text instead of the terminal view
     --watch        probe: redraw on an interval (with --interval, default 3s)
-    -n <tokens>    probe: tokens to generate for the throughput sample (default: 16)
+    -n <tokens>    probe/serve: tokens generated for the throughput sample (default: 16)
     --no-probe     probe: read-only (skip the synthetic generation)
+    --probe        serve: enable the throughput prober (off by default)
+    --probe-interval <s>  serve: seconds between probe sweeps (default: 60)
 
   Config:
     Box roster: KB registry (tag: hardware/inventory), derived via lib/fleet.js
@@ -1813,7 +1849,12 @@ async function main() {
     const port    = parseInt(args.port, 10) || 18081
     const interval = parseInt(args.interval, 10) || 5
     const listen  = args.listen || '127.0.0.1'
-    serve({ port, interval, listen, boxes })
+    // Opt-in throughput probing (off by default): --probe [--probe-interval 60] [-n 16]
+    const probe   = process.argv.includes('--probe')
+    const probeInterval = parseInt(args['probe-interval'], 10) || 60
+    const nPredict = Number(args.predict) > 0 ? Number(args.predict) : 16
+    const probeTargets = args._.slice(1)   // explicit hosts override roster enumeration
+    serve({ port, interval, listen, boxes, probe, probeInterval, nPredict, probeTargets })
     return
   }
 
