@@ -201,7 +201,7 @@ async function main() {
     console.log(`  The Scribe has spoken.`)
     console.log(`  Entities : ${m.entityCount}  Edges : ${m.edgeCount}  Tags : ${m.tagCount}`)
     if (vectors?.error)   console.warn(`  Vectors  : failed — ${vectors.error}`)
-    else if (vectors)     console.log(`  Vectors  : +${vectors.added} new  ~${vectors.updated} updated  ${vectors.skipped} unchanged`)
+    else if (vectors)     console.log(`  Vectors  : +${vectors.added} new  ~${vectors.updated} updated  ${vectors.skipped} unchanged${vectors.failed ? `  ⚠ ${vectors.failed} failed` : ''}`)
     if (errors.length)    console.warn(`  Errors   : ${errors.length}${args.verbose ? '' : ' (--verbose for details)'}`)
     if (args.verbose) for (const e of errors) console.error(`    ✗ ${path.relative(ENTITIES_DIR, e.file)}: ${e.error}`)
   }
