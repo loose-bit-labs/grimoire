@@ -1,13 +1,17 @@
 # Phase 74 — Bounty Board: server routes + atomic mutations (`bin/grim-server.js`)
 
 **Authority:** hierophant, 2026-08-16. **Repo:** grimoire. **Track: Bounty Board.**
-**Depends on:** phases 72 + 73 + **79 (Commons presence registry)** accepted (uses `lib/bounty` + `lib/bounty-store` + the Commons registry).
+**Depends on:** phases 72 + 73 accepted (uses `lib/bounty` + `lib/bounty-store`). **NOT gated on the
+Commons / phase 79** — see the hunter-registry ruling below.
 
-**Rides the Commons (2026-08-17 amendment):** do NOT build a board-private session registry. A hunter **is a
-presence entry with `role=hunter`** (register via the phase-79 `/api/presence` registry, not a separate
-`hunters.json`). `grim bounty claim` presence-registers the caller as a hunter; `GET /api/bounty/hunters`
-becomes a `role=hunter` view over `/api/presence` joined with `deriveReputation`. See
-`docs/superpowers/specs/2026-08-17-the-commons-design.md`.
+**Hunter registry — board-local for the MVP (hierophant ruling, 2026-09-16):** the 2026-08-17 "ride the
+Commons" amendment is *superseded*. It contradicted both the master plan Task 4 and the phase-73 code that
+actually shipped — `lib/bounty-store` already provides `upsertHunter(board, {hunterId,host,session_id,nowMs})`
+writing into `board.hunters` (a durable `hunters.json`). The MVP uses **that** registry: `claim` upserts the
+caller via `bstore.upsertHunter`; `POST /api/bounty/register` upserts explicitly; `GET /api/bounty/hunters`
+returns `board.hunters` joined with `deriveReputation`. When the Commons (79) lands, migrating `hunters` to a
+`role=hunter` view over `/api/presence` is a **later, non-blocking refactor** — record it as a follow-up, do
+not build it now. Do not introduce a presence dependency in this phase.
 
 Master plan: `docs/superpowers/plans/2026-08-16-grim-bounty-board.md` **Task 4** — exact code + tests there.
 
