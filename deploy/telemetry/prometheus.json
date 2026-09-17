@@ -17,6 +17,14 @@
         },
         {
           "targets": [
+            "blip:18081"
+          ],
+          "labels": {
+            "box": "blip"
+          }
+        },
+        {
+          "targets": [
             "chonko:18081"
           ],
           "labels": {
@@ -33,6 +41,14 @@
         },
         {
           "targets": [
+            "plink:18081"
+          ],
+          "labels": {
+            "box": "plink"
+          }
+        },
+        {
+          "targets": [
             "superack:18081"
           ],
           "labels": {
@@ -41,10 +57,26 @@
         },
         {
           "targets": [
+            "tachi:18081"
+          ],
+          "labels": {
+            "box": "tachi"
+          }
+        },
+        {
+          "targets": [
             "tbona:18081"
           ],
           "labels": {
             "box": "tbona"
+          }
+        },
+        {
+          "targets": [
+            "vier:18081"
+          ],
+          "labels": {
+            "box": "vier"
           }
         }
       ]

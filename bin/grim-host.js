@@ -91,7 +91,14 @@ function scanHostEntities(root) {
       if (!entry.name.endsWith('.json')) continue
       try {
         const e = JSON.parse(fs.readFileSync(full, 'utf8'))
-        if ((e.tags || []).includes('hardware/inventory')) results.push(e)
+        // Require BOTH the tag and the `host_<name>` @id convention every real
+        // host entity follows. The tag alone is not host-specific — it also
+        // gets applied to hardware notes/specs (upgrade analyses, part specs),
+        // which then leaked into the fleet roster and poisoned Prometheus
+        // targets / Grafana dashboards with document titles instead of hosts.
+        if ((e.tags || []).includes('hardware/inventory') && typeof e['@id'] === 'string' && e['@id'].startsWith('host_')) {
+          results.push(e)
+        }
       } catch { /* skip malformed */ }
     }
   }

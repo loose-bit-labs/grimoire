@@ -33,6 +33,7 @@ function makeKbDir(t, entities) {
 }
 
 const ent = (name, extra = {}) => ({
+  '@id': `host_${name}`,
   name,
   tags: ['hardware/inventory', `host/${name}`],
   network: { addresses: [{ iface: 'eth0', ip: '192.168.0.10', prefix: 24 }] },
@@ -130,6 +131,22 @@ test('loadFleet (local): registry hosts + rig.json overlay, no rig.json entry ne
   assert.deepEqual(fleet.map(b => b.host), ['aid', 'blip', 'chonko'])
   assert.equal(fleet.find(b => b.host === 'blip').services.length, 0) // registry-only box
   assert.equal(fleet.find(b => b.host === 'aid').services.length, 1)  // overlay matched
+})
+
+test('loadFleet (local): a hardware/inventory-tagged non-host entity is excluded (2026-09-17 KB-poisoning regression)', async t => {
+  // A concept/note about hardware (an upgrade analysis, a part spec) can
+  // legitimately carry the `hardware/inventory` tag without being a fleet
+  // box. Only entities following the `host_<name>` @id convention are real
+  // hosts — this is what happened live: two such notes leaked into
+  // Prometheus targets and Grafana dashboards as if they were boxes.
+  const impostor = {
+    '@id': 'concept_some_hardware_note',
+    name: 'Fleet hardware-upgrade analysis — not a real host',
+    tags: ['hardware/inventory', 'upgrade-analysis'],
+  }
+  const kb = makeKbDir(t, [...registry, impostor])
+  const fleet = await loadFleet({ root: kb, host: null })
+  assert.deepEqual(fleet.map(b => b.host).sort(), ['aid', 'blip', 'chonko'])
 })
 
 test('loadFleet (local): no rig.json at all → roster still derives, all services: []', async t => {
