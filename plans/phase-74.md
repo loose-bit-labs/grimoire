@@ -23,7 +23,8 @@ missing→404, bad body→400.
 - `POST /api/bounty` (create; server assigns id; **v1 rejects `kind!=='phase'` with 400**),
   `GET /api/bounty` (list, filters `state/repo/kind/mine`, priority-sorted), `GET /api/bounty/:id`,
   `GET /api/bounty/hunters` (registry + `deriveReputation` per hunter).
-- `POST /api/bounty/:id/{claim,heartbeat,submit,release,review}` and `POST /api/bounty/register`.
+- `POST /api/bounty/:id/{claim,heartbeat,submit,release,review}` and `POST /api/bounty/:id/register`
+  (`:id` present in the path per master-plan Task 4, unused by the handler — this is what shipped).
 - A shared `bountyAction(event, apply)` wrapper: load-in-lock → apply → save → `broadcastBounty(event, b)`.
   **In this phase `broadcastBounty` is a no-op stub** (SSE arrives in 75) — leave the call sites.
 - **Export the express `app`** (`module.exports = Object.assign(module.exports||{}, { app })`) so tests can
