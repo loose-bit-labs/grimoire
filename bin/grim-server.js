@@ -49,6 +49,8 @@ const { crawlText } = require('./grim-crawl')
 const { config, requireMode } = require('../lib/env')
 const { scanHostEntities, buildHostsOutput } = require('./grim-host')
 const { scanProjects, projectStatus, toPrometheus, ACTIVE_SEC, IDLE_SEC } = require('../lib/hmm')
+const bstore  = require('../lib/bounty-store')
+const bounty  = require('../lib/bounty')
 const rig = require('../bin/grim-rig')
 const http = require('node:http')
 const { semanticSearch, indexReady } = require('../lib/vectors')
@@ -604,6 +606,101 @@ app.get('/noise-floor/context', (req, res) => {
     thoughts: thoughts.slice(-limit),
     total:    thoughts.length,
   })
+})
+
+// ── Bounty Board (Track Bounty — phase 74) ────────────────────────────────────
+// grim-server is the sole writer: every mutation goes through bstore.mutate,
+// which reloads the board under a per-root lock and persists it — so concurrent
+// transitions (e.g. two claims) resolve to exactly one winner. ConflictError →
+// 409, missing bounty → 404, bad body → 400. `broadcastBounty` is a no-op stub
+// this phase (SSE arrives in phase 75); the call sites are left so the swap is
+// a single-line change later.
+
+const BROOT = () => config.root // GRIMOIRE_ROOT; the server is the sole writer
+
+function broadcastBounty() { /* SSE in phase 75 — no-op stub for now */ }
+
+function sendConflict(res, e) {
+  if (e && e.code === 'CONFLICT') return res.status(409).json({ error: e.message })
+  return res.status(500).json({ error: String((e && e.message) || e) })
+}
+
+app.post('/api/bounty', async (req, res) => {
+  const { kind = 'phase', repo, priority, title, body_path, phase_tag, size, id } = req.body || {}
+  if (kind !== 'phase') return res.status(400).json({ error: 'v1 accepts kind=phase only' })
+  if (!repo || !priority || !title) return res.status(400).json({ error: 'repo, priority, title required' })
+  const bid = id || `b-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const b = await bstore.mutate(BROOT(), board => {
+    const nb = bounty.newBounty({ id: bid, kind, repo, priority, title, body_path, phase_tag, size })
+    board.bounties.push(nb)
+    return { board, result: nb }
+  })
+  broadcastBounty('bounty:created', b)
+  res.status(201).json({ bounty: b })
+})
+
+app.get('/api/bounty', (req, res) => {
+  const { state, repo, kind, mine } = req.query
+  let list = bstore.loadBoard(BROOT()).bounties
+  if (state) list = list.filter(b => b.state === state)
+  if (repo)  list = list.filter(b => b.repo === repo)
+  if (kind)  list = list.filter(b => b.kind === kind)
+  if (mine)  list = list.filter(b => b.lease && b.lease.owner === mine)
+  list.sort((a, b) => (bounty.PRIORITY_RANK[a.priority] ?? 9) - (bounty.PRIORITY_RANK[b.priority] ?? 9))
+  res.json({ bounties: list })
+})
+
+app.get('/api/bounty/hunters', (req, res) => {
+  const board = bstore.loadBoard(BROOT())
+  const out = Object.values(board.hunters || {}).map(h => ({ ...h, reputation: bounty.deriveReputation(board.bounties, h.hunter_id) }))
+  res.json({ hunters: out })
+})
+
+app.get('/api/bounty/:id', (req, res) => {
+  const b = bstore.loadBoard(BROOT()).bounties.find(x => x.id === req.params.id)
+  if (!b) return res.status(404).json({ error: 'not found' })
+  res.json({ bounty: b })
+})
+
+function bountyAction(event, apply) {
+  return async (req, res) => {
+    try {
+      const b = await bstore.mutate(BROOT(), board => {
+        const idx = board.bounties.findIndex(x => x.id === req.params.id)
+        if (idx < 0) throw Object.assign(new Error('not found'), { code: 'NOTFOUND' })
+        const updated = apply(board.bounties[idx], req.body || {}, board, Date.now())
+        board.bounties[idx] = updated
+        return { board, result: updated }
+      })
+      broadcastBounty(event, b)
+      res.json({ bounty: b })
+    } catch (e) {
+      if (e.code === 'NOTFOUND') return res.status(404).json({ error: 'not found' })
+      return sendConflict(res, e)
+    }
+  }
+}
+
+app.post('/api/bounty/:id/claim', bountyAction('bounty:claimed', (b, body, board, now) => {
+  const updated = bounty.applyClaim(b, body.hunter_id, now)
+  bstore.upsertHunter(board, { hunterId: body.hunter_id, host: body.host, session_id: body.session_id, nowMs: now })
+  return updated
+}))
+app.post('/api/bounty/:id/heartbeat', bountyAction('bounty:heartbeat', (b, body, board, now) => {
+  const updated = bounty.applyHeartbeat(b, body.hunter_id, body.epoch, now, body.wip_ref)
+  bstore.upsertHunter(board, { hunterId: body.hunter_id, nowMs: now })
+  return updated
+}))
+app.post('/api/bounty/:id/submit', bountyAction('bounty:submitted', (b, body, board, now) => bounty.applySubmit(b, body.hunter_id, body.epoch, now)))
+app.post('/api/bounty/:id/release', bountyAction('bounty:released', (b, body, board, now) => bounty.applyRelease(b, body.hunter_id, body.epoch, now)))
+app.post('/api/bounty/:id/review', bountyAction('bounty:reviewed', (b, body, board, now) => bounty.applyReview(b, body.reviewer_id, body.verdict, body.reason, now)))
+app.post('/api/bounty/:id/register', async (req, res) => {
+  const now = Date.now()
+  await bstore.mutate(BROOT(), board => {
+    bstore.upsertHunter(board, { hunterId: req.body.hunter_id, host: req.body.host, session_id: req.body.session_id, nowMs: now })
+    return { board, result: null }
+  })
+  res.json({ ok: true })
 })
 
 // ── MCP (Streamable HTTP transport) ──────────────────────────────────────────
