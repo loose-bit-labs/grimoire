@@ -3,9 +3,18 @@
 **Authority:** hierophant, 2026-08-16. **Repo:** grimoire. **Track: Bounty Board.**
 **Depends on:** phase 74 accepted (needs the HTTP endpoints; 75 optional but preferred for `watch`).
 
-Master plan: `docs/superpowers/plans/2026-08-16-grim-bounty-board.md` **Task 6** — exact code + tests there.
-**Note the plan's Step 4 correction:** the `register` verb must POST the clean path `/api/bounty/register`
-(ignore the obfuscated `.replace(...)` line shown in Task 6 Step 3).
+Master plan: `docs/superpowers/plans/2026-08-16-grim-bounty-board.md` **Task 6** — exact code + tests there,
+**except the register route**, which the master plan gets wrong (superseded below).
+
+**Register-route correction (ground truth, phase 74 shipped code + hierophant/mage verification
+`.mm/0426`–`0428`, 2026-09-17/20):** ignore master-plan Task 6 Step 3/4 entirely — both the
+obfuscated `.replace(...)` line *and* its "fix" to the clean path `/api/bounty/register` are wrong.
+The route that actually shipped in `0aa4258` (`bin/grim-server.js`, confirmed live) is
+**`POST /api/bounty/:id/register`** — `:id` is present in the path but unused by the handler. The
+CLI's `register` verb must call that path, e.g. `` await api('POST', `/api/bounty/${resolveHunterId(args)}/register`, { hunter_id: resolveHunterId(args), host: require('node:os').hostname() }) ``
+(any `:id` placeholder value works since the handler ignores it — using the hunter id keeps the
+call self-documenting). `plans/phase-74.md:26` and `docs/superpowers/plans/2026-08-16-grim-bounty-board.md`
+Task 6 remain uncorrected on this point; do not trust the master plan's CLI code block for this one line.
 
 ## What lands
 
@@ -29,6 +38,8 @@ spell in the KB (new skill/command convention): a `SoftwareApplication` entity f
 - `formatBoard` renders priority-sorted lines (`#id P0 OPEN …` before `#id P2 …`).
 - `grim bounty` with no/unknown verb prints usage and exits non-zero.
 - `chmod 755 bin/grim-bounty.js` (executable).
+- `register` verb POSTs `/api/bounty/<id>/register` (not the master plan's `/api/bounty/register`) —
+  verify against the live route surface, not the master-plan code block.
 - `node --test test/bounty-cli.test.js` green; full suite green + self-terminating.
 
 ## Out of scope
