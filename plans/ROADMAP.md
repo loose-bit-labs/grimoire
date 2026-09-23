@@ -434,11 +434,17 @@ kingdom (host). The general **mesh** layer `.mm` is not — the concrete landing
 2026-08-17): **build the shared transport FIRST (hub + SSE doorbell + one session registry on grim-server),
 board rides it** — not three doorbells. Beside `.mm` (structured pact), not replacing it. Local-first, no
 new daemon, **NOT NATS**. Spec `docs/superpowers/specs/2026-08-17-the-commons-design.md`.
-**79→80 land before bounty-board 74/75 (which were amended to ride the Commons).**
+**79→80 land before bounty-board 75 (amended to ride the Commons doorbell — see phase-75 brief).**
+**Superseded for 74 (hierophant ruling, 2026-09-16, `plans/phase-74.md`):** the hunter registry does
+NOT wait on 79 — it shipped board-local (`bstore.upsertHunter`/`hunters.json`), migrating to a
+`role=hunter` presence view later as a non-blocking refactor. 74 and 76 have since shipped
+(`0aa4258`, `f094a91`) ahead of 79/80; only 75's SSE broadcast still rides the Commons doorbell as
+originally speced, and 75 stays deferred regardless (see its row below) — no ordering conflict is
+actually live yet.
 
 | Phase | Brief | What | Status |
 |-------|-------|------|--------|
-| 79 | plans/phase-79.md | **presence registry** — `lib/presence.js` + grim-server `/api/presence` (+ SSE, TTL-expiry sweep to `away`); THE session registry (board hunters become a `role=hunter` view); `grim commons who/hail` | queued (hierophant, 2026-08-17) — Track The Commons; **before bounty-board 74** |
+| 79 | plans/phase-79.md | **presence registry** — `lib/presence.js` + grim-server `/api/presence` (+ SSE, TTL-expiry sweep to `away`); THE session registry (board hunters become a `role=hunter` view); `grim commons who/hail` | queued (hierophant, 2026-08-17) — Track The Commons; bounty-board hunter registry no longer waits on this (superseded, see above) |
 | 80 | plans/phase-80.md | **message channel + doorbell** — `POST/GET /api/commons` + SSE stream, broadcast/addressed, rooms (tavern + `kingdom:<host>`); addressed→doorbell (generalizes `mm news`); `grim commons say/listen/news`. Ephemeral ring-buffer, not KB-committed | queued (hierophant, 2026-08-17) — Track The Commons; depends 79; **before bounty-board 75** |
 | 81 | plans/phase-81.md | **Guild Hall on live presence** — repoint Track Q from `.mm`-scrape to the live `/api/presence` feed (every session a meeple, real-time, self-announced); keep `.mm` pact-status | queued (hierophant, 2026-08-17) — Track The Commons; depends 79 |
 
