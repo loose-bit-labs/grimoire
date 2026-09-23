@@ -530,6 +530,29 @@ User direction (2026-08-29): **wire SSH cloning + make the clone non-interactive
 | 91 | plans/phase-91.md | **KB Capture Quality I** — `grim-research` ingest reads local content instead of routing every note line to web-acquisition; failed acquisitions append to a single backlog instead of minting one `acquisition-failed` entity per line; entities are concept-named (never a raw sentence/URL); spec/table docs get structured field capture. | **queued (grimoire/aid, 2026-09-16)** — Track KB Capture Quality; user-directed after the sunfounder capture failure + 24-stub sweep; independent of the bounty MVP |
 | 92 | plans/phase-92.md | **KB Capture Quality II** — `grim archaeologist` synthesis extracts mechanism/APIs/patterns/gotchas with file:symbol anchors (required "Salient Findings" section), not language-mix trivia; KB-pass rejects vibe-summary entities. | **queued (grimoire/aid, 2026-09-16)** — Track KB Capture Quality; user-directed ("mix of C and C++ and I like turtles"); pairs with 91 |
 
+## Track TypeSafe Integration — Jev as a reusable judgment primitive (phases 93–95)
+
+User direction (2026-09-23): leverage TypeSafe (Jev) more broadly for decision-making and gating,
+beyond the three ad hoc one-off scripts used so far (mm role-stamp guard design, hardware-parts
+schema depth, tbona backlog triage — `system_typesafe_jev_system_one_judgment_api_typesafe_ai_plugin`).
+**Deliberately staged as advisory, not autonomous gating:** TypeSafe's own doctrine ("typed output
+guarantees the interface, not truth — validate calibration before acting, not just ranking") and this
+codebase's Rule 12 (fail loud, surface uncertainty) both argue against wiring Jev as a hard
+accept/reject gate on day one. Phase 93 builds the reusable client (currently re-derived per one-off
+script — Rule 13 territory). Phases 94–95 wire it into two *existing* judgment seams (spellwright's
+spell-worthy call, mage/hierophant review/ruling) as a recorded second opinion, never the decision
+itself. **Not in scope for this track:** the semantic dangerous-command gate for the parked
+"safe AI workspace" sandbox bounty (`concept_bounty_safe_ai_workspace_sandbox_for_unattended_automode`)
+is the closest fit for real autonomous *gating* per TypeSafe's own use-case map (verify/escalate), but
+that sandbox doesn't exist yet — revisit once it's hunted; briefing a gate for infrastructure that
+isn't built yet would be speculative (Rule 2).
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 93 | plans/phase-93.md | **`lib/jev.js` + `grim jev` CLI** — reusable TypeSafe/Jev client (`askJev(state, questions)`), extracted from the repeated one-off-script boilerplate; `grim jev ask <file.json>` for ad hoc judgments, replacing hand-written scratch scripts under `~/tmp/locatesta/`. | **queued (hierophant, 2026-09-23)** — Track TypeSafe Integration; no dependency; foundational for 94/95 |
+| 94 | plans/phase-94.md | **Spellwright Jev-assisted spell-worthy gate** — the skill's "is this spell-worthy?" call gets a recorded `noul` read alongside the skill's own reasoning (advisory; disagreements surfaced, not averaged). SKILL.md-only edit. | **queued (hierophant, 2026-09-23)** — Track TypeSafe Integration; depends 93 |
+| 95 | plans/phase-95.md | **Jev as advisory second opinion in review/ruling loops** — mage's verify-don't-trust review and hierophant's architecture rulings can optionally cite a Jev read for a thin-evidence check or a close design call; never overrides direct evidence, never auto-decides. SKILL.md-only edit (mage + hierophant). | **queued (hierophant, 2026-09-23)** — Track TypeSafe Integration; depends 93 |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
