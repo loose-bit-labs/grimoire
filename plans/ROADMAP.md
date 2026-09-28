@@ -553,6 +553,19 @@ isn't built yet would be speculative (Rule 2).
 | 94 | plans/phase-94.md | **Spellwright Jev-assisted spell-worthy gate** — the skill's "is this spell-worthy?" call gets a recorded `noul` read alongside the skill's own reasoning (advisory; disagreements surfaced, not averaged). SKILL.md-only edit. | **seeded as bounty `b-1790627720544-farft` (2026-09-28)** — Track TypeSafe Integration; repo grimoire, P2, size S |
 | 95 | plans/phase-95.md | **Jev as advisory second opinion in review/ruling loops** — mage's verify-don't-trust review and hierophant's architecture rulings can optionally cite a Jev read for a thin-evidence check or a close design call; never overrides direct evidence, never auto-decides. SKILL.md-only edit (mage + hierophant). | **seeded as bounty `b-1790627720658-1y3lq` (2026-09-28)** — Track TypeSafe Integration; repo grimoire, P2, size S |
 
+**Off-phase fix (2026-09-28), Track Bounty Board:** mage's review of the board's first
+hunt (`.mm/0442`) surfaced that submission reports are never persisted — `grim bounty
+submit` sends the report's file *path*, not its content, and `applySubmit` never reads
+it at all. The no-self-approval invariant's evidence chain currently depends on the
+hunter happening to leave a git commit behind, which is an accident, not a guarantee.
+Ruled: fix it (mage's option (a), "two lines" — see `plans/phase-96.md`), routed back
+through the board itself rather than the pact, since it's exactly the small discrete
+fix the board exists for.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 96 | plans/phase-96.md | **persist the submission report** — `applySubmit` gains an optional trailing `report` param (mirrors `applyHeartbeat`'s `wipRef` tri-state convention); the submit route passes `body.report` through; `grim bounty submit --file <path>` sends the file's **content**, not its path. `show`/`list` need no change (already return the full object). | **seeded as bounty `b-1790633081099-p9ii0` (2026-09-28)** — Track Bounty Board; repo grimoire, P0 (evidence-chain correctness gap), size S |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
