@@ -40,6 +40,7 @@ const COMMANDS = {
   'librarian':     { script: 'grim-librarian.js',     desc: 'KB durability: commit + push on cadence   (The Librarian)' },
   'hmm':           { script: 'grim-hmm.js',           desc: 'Pact project statuses (The Guild Hall)'    },
   'bounty':        { script: 'grim-bounty.js',        desc: 'Claimable cross-repo work pool        (The Bounty Board)' },
+  'jev':           { script: 'grim-jev.js',           desc: 'TypeSafe/Jev judgment client              (ask a typed question)' },
   'portal':        { script: 'grim-portal.js',        desc: 'Open Claude Code on a local model         (The Portal)'      },
   'serve':     { script: 'grim-server.js',   desc: 'Start the Grimoire HTTP+MCP server'                },
 }
