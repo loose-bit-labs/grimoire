@@ -65,7 +65,7 @@ async function main(argv) {
     }
     case 'claim':     out((await api('POST', `/api/bounty/${argv[1]}/claim`, { hunter_id: resolveHunterId(args), host: require('node:os').hostname(), session_id: process.env.CLAUDE_CODE_SESSION_ID })).bounty); break
     case 'heartbeat': out((await api('POST', `/api/bounty/${argv[1]}/heartbeat`, { hunter_id: resolveHunterId(args), epoch: Number(args.epoch), wip_ref: args.wip })).bounty); break
-    case 'submit':    out((await api('POST', `/api/bounty/${argv[1]}/submit`, { hunter_id: resolveHunterId(args), epoch: Number(args.epoch), report: args.file })).bounty); break
+    case 'submit':    out((await api('POST', `/api/bounty/${argv[1]}/submit`, { hunter_id: resolveHunterId(args), epoch: Number(args.epoch), report: args.file ? require('node:fs').readFileSync(args.file, 'utf8') : undefined })).bounty); break
     case 'release':   out((await api('POST', `/api/bounty/${argv[1]}/release`, { hunter_id: resolveHunterId(args), epoch: Number(args.epoch) })).bounty); break
     case 'review':    out((await api('POST', `/api/bounty/${argv[1]}/review`, { reviewer_id: resolveHunterId(args), verdict: args.accept ? 'accept' : 'reject', reason: args.reason })).bounty); break
     case 'create':    out((await api('POST', '/api/bounty', { kind: 'phase', repo: args.repo, priority: args.priority, title: args.title, phase_tag: args.phase, body_path: args.body, size: args.size })).bounty); break

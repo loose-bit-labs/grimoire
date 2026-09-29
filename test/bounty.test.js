@@ -56,6 +56,18 @@ describe('claim lifecycle + fencing', () => {
     assert.equal(s.claim_history[0].outcome, 'submitted')
     assert.equal(s.lease, null)
   })
+  it('applySubmit stores the report verbatim; tri-state like wipRef (no 5th arg / undefined / null → .report unset)', () => {
+    // The report is the durable evidence the reviewer verifies against — it
+    // must be exactly what the hunter submitted, not a path or a summary.
+    const s = B.applySubmit(B.applyClaim(base(), 'hunter-A', T0), 'hunter-A', 1, T0 + 120_000, 'some report text')
+    assert.equal(s.report, 'some report text')
+    const s2 = B.applySubmit(B.applyClaim(base(), 'hunter-A', T0), 'hunter-A', 1, T0 + 120_000)
+    assert.ok(!('report' in s2), 'no 5th arg must not add a report key')
+    const s3 = B.applySubmit(B.applyClaim(base(), 'hunter-A', T0), 'hunter-A', 1, T0 + 120_000, undefined)
+    assert.ok(!('report' in s3), 'undefined must not add a report key')
+    const s4 = B.applySubmit(B.applyClaim(base(), 'hunter-A', T0), 'hunter-A', 1, T0 + 120_000, null)
+    assert.ok(!('report' in s4), 'null must not add a report key')
+  })
   it('applyRelease -> OPEN, outcome=released, lease cleared', () => {
     const b = B.applyClaim(base(), 'hunter-A', T0)
     const r = B.applyRelease(b, 'hunter-A', 1, T0 + 5000)

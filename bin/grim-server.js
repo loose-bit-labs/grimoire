@@ -691,7 +691,7 @@ app.post('/api/bounty/:id/heartbeat', bountyAction('bounty:heartbeat', (b, body,
   bstore.upsertHunter(board, { hunterId: body.hunter_id, nowMs: now })
   return updated
 }))
-app.post('/api/bounty/:id/submit', bountyAction('bounty:submitted', (b, body, board, now) => bounty.applySubmit(b, body.hunter_id, body.epoch, now)))
+app.post('/api/bounty/:id/submit', bountyAction('bounty:submitted', (b, body, board, now) => bounty.applySubmit(b, body.hunter_id, body.epoch, now, body.report)))
 app.post('/api/bounty/:id/release', bountyAction('bounty:released', (b, body, board, now) => bounty.applyRelease(b, body.hunter_id, body.epoch, now)))
 app.post('/api/bounty/:id/review', bountyAction('bounty:reviewed', (b, body, board, now) => bounty.applyReview(b, body.reviewer_id, body.verdict, body.reason, now)))
 app.post('/api/bounty/:id/register', async (req, res) => {

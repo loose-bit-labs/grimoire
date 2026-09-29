@@ -91,4 +91,22 @@ describe('bounty server', () => {
     const r = await j('POST', '/api/bounty/does-not-exist/claim', { hunter_id: 'Z' })
     assert.equal(r.status, 404)
   })
+
+  it('submit persists the report on the bounty (evidence chain: reviewer reads what was claimed)', async () => {
+    const c = await j('POST', '/api/bounty', { kind: 'phase', repo: 'grimoire', priority: 'P1', title: 'report-persist' })
+    assert.equal(c.status, 201)
+    const id = c.body.bounty.id
+    const claim = await j('POST', `/api/bounty/${id}/claim`, { hunter_id: 'R1' })
+    assert.equal(claim.status, 200)
+    const epoch = claim.body.bounty.lease.lease_epoch
+    const report = 'evidence: tests green, commit abc123'
+    const submit = await j('POST', `/api/bounty/${id}/submit`, { hunter_id: 'R1', epoch, report })
+    assert.equal(submit.status, 200)
+    assert.equal(submit.body.bounty.state, 'NEEDS_REVIEW')
+    assert.equal(submit.body.bounty.report, report)
+    // Durable, not just echoed by the mutation response: a fresh GET must show it.
+    const g = await j('GET', `/api/bounty/${id}`)
+    assert.equal(g.status, 200)
+    assert.equal(g.body.bounty.report, report)
+  })
 })

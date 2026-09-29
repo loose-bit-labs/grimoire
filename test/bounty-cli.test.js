@@ -16,18 +16,22 @@ const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert')
 const http = require('node:http')
 const { spawnSync } = require('node:child_process')
-const path = require('node:path')
+const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path')
 
 const CLI = path.join(__dirname, '..', 'bin', 'grim-bounty.js')
 
-let C, server, recordedPath
+let C, server, recordedPath, recordedBody
 before(async () => {
-  // Port-0 stub: records the request path (the register-path check). The CLI
-  // resolves the server via lib/env config.host, captured at lib/env load —
-  // so GRIMOIRE_HOST must be set BEFORE requiring the CLI. Trailing slash
-  // included: proves baseUrl() trims it.
+  // Port-0 stub: records the request path (the register-path check) and the
+  // JSON body (the submit --file content check). The CLI resolves the server
+  // via lib/env config.host, captured at lib/env load — so GRIMOIRE_HOST must
+  // be set BEFORE requiring the CLI. Trailing slash included: proves
+  // baseUrl() trims it.
   server = http.createServer((req, res) => {
     recordedPath = req.url
+    let data = ''
+    req.on('data', c => data += c)
+    req.on('end', () => { if (data) recordedBody = JSON.parse(data) })
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ ok: true }))
   })
@@ -68,6 +72,25 @@ describe('grim-bounty CLI', () => {
   it('register POSTs /api/bounty/<hunter>/register (shipped route, not the master plan path)', async () => {
     await C.main(['register'])
     assert.equal(recordedPath, '/api/bounty/test-hunter/register')
+  })
+
+  it('submit --file sends the file CONTENT as report (not the path string)', async () => {
+    // The board's no-self-approval invariant needs the report to survive on
+    // the bounty; a CLI that ships the path string instead of the content
+    // leaves the reviewer with a dangling reference to a hunter-local file.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'grim-bsub-'))
+    const reportPath = path.join(tmp, 'report.md')
+    const content = '# hunter-beta report\n\nphase 96 evidence: tests green, commit abc123\n'
+    fs.writeFileSync(reportPath, content)
+    try {
+      await C.main(['submit', 'b-x', '--epoch', '1', '--file', reportPath])
+      assert.equal(recordedPath, '/api/bounty/b-x/submit')
+      assert.ok(recordedBody, 'a JSON body was sent')
+      assert.equal(recordedBody.report, content)
+      assert.notEqual(recordedBody.report, reportPath)
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
   })
 
   it('no/unknown verb → usage on stderr, exit non-zero', () => {
