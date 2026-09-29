@@ -31,6 +31,33 @@ If given a repo path or tool path, read the key files:
 - For an existing `final.md`: read it directly — the Suggested KB Entities section is your starting point
 - List what you find. For each: one-line description of what it does and whether it's spell-worthy
 
+### Spell-worthy gate (Jev-assisted, advisory only)
+
+For each candidate that isn't an obvious skip (a one-liner, already in a man page) or an
+obvious forge (the user explicitly asked for it), run `grim jev ask` before you commit to a
+verdict:
+
+- **`state`**: describe the candidate — what it does, how it would be invoked, and whether it
+  chains a specific sequence of steps/tools together. Keep it factual (what you observed
+  reading the code), not your judgment.
+- **`criteria`**: the skill's own three bar items from "What makes a good spell?" above,
+  phrased as `true`/`false` descriptions (spell-worthy vs. not) — the same bar every time,
+  not reworded per candidate.
+- One `noul` question per candidate, e.g. named `spell_worthy`, asking "is this spell-worthy
+  per the stated bar".
+
+Write the input to a temp JSON file `{state, questions}` and run:
+```
+grim jev ask <file.json>
+```
+This returns a probability (0–1) in `answers.spell_worthy.noul`. Record it.
+
+**Advisory only — the skill's own judgment still rules.** A low Jev probability is not
+itself sufficient to skip, and a high one is not itself sufficient to forge. If your own
+reasoning and Jev's read disagree, say so explicitly in the Phase 5 report (Rule 7 —
+surface conflicts, don't average them) rather than silently picking one or splitting the
+difference.
+
 ## Phase 2 — Cross-reference
 
 For each candidate spell, `oracle_search` first:
@@ -39,6 +66,10 @@ For each candidate spell, `oracle_search` first:
 - If a skill exists but is stale: note it for update
 
 ## Phase 3 — Draft the spells
+
+Before drafting, confirm the candidate cleared the Phase 1 spell-worthy gate (obvious
+skip/forge, or a recorded Jev read plus your own reasoning). Don't draft a candidate that
+hasn't been gated.
 
 For each new spell, write a SKILL.md to `plugin/skills/<name>/SKILL.md`.
 
@@ -77,13 +108,19 @@ For each SKILL.md written:
 
 ```
 FORGED: <N> new spells
-  - /grimoire:<name>: <one-line>
+  - /grimoire:<name>: <one-line> (jev: <noul>, or "obvious forge — no gate run")
   - ...
 SKIPPED: <N> (already exist / not spell-worthy)
-  - <name>: <reason>
+  - <name>: <reason> (jev: <noul>, or "obvious skip — no gate run")
+  - if the skill's verdict and the Jev read disagreed, say so here explicitly
+    (Rule 7 — surface conflicts, don't average them), e.g.
+    "<name>: SKIPPED despite jev: 0.82 — reasoning: <why the gate's read didn't change the call>"
 Portability notes:
   - <anything the user should know about how spells resolve config>
 ```
+
+Every FORGED/SKIPPED line for a gated candidate carries its Jev probability next to the
+verdict — obvious skips/forges (no gate run) say so instead of a number.
 
 ## Rules
 
