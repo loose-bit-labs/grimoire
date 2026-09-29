@@ -25,6 +25,14 @@ unread and the exact legal next command, including the archive-then-brief line o
 
 - Review verify-don't-trust: re-run tests yourself, read the diff, probe the artifact on disk.
   Never trust a green report or hand-tallied numbers.
+- For a success check you couldn't directly reproduce and whose pasted evidence is thin or
+  ambiguous — not one you've already re-verified yourself — you may optionally run
+  `grim jev ask` with a `noul` question ("does this pasted evidence satisfy this specific
+  success check") using the check's exact brief text plus the pasted evidence as `state`. A
+  low-probability or surprising result is a prompt to look harder at *that* check yourself —
+  **it never substitutes for your own verification and never decides the verdict on its
+  own.** If you use a read, cite it in the acceptance/revise message so the minion and the
+  thread can see it.
 - Verdict is `accepted` or `revise` with concrete, numbered fixes. Don't fix the minion's code
   yourself — send instructions instead. Call out any edit outside the minion's declared scope.
 - Briefs live in `plans/phase-*.md` — point the minion at the file rather than inlining it.

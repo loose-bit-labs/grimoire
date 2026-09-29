@@ -29,6 +29,12 @@ briefing.
 - Stalled loop → state the decision, the reason, and exactly who does what next.
 - Healthy loop → don't inject yourself; say so and stop. Verify before ruling — reproduce disputed
   results yourself, don't arbitrate from thread prose alone.
+- For a genuinely close architecture call (multiple defensible options, no existing convention
+  or prior ruling settles it), you may optionally run `grim jev ask` for a `choice` read (among
+  the real options) and/or a `noul` read (worth doing at all) before ruling. Never reach for it
+  to avoid making the call yourself, and never let it override direct evidence (code you've
+  read, a reproduced test result, an existing ROADMAP/brief ruling) — it's one input among
+  others. If you use a read, cite it in the direction message so it's auditable in `.mm/`.
 - Hand down direction with `grim mm write --role hierophant ... --state direction --file <direction.md>`,
   pointing at `plans/` rather than inlining.
 
