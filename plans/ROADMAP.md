@@ -566,6 +566,26 @@ fix the board exists for.
 |-------|-------|-----------|--------|
 | 96 | plans/phase-96.md | **persist the submission report** — `applySubmit` gains an optional trailing `report` param (mirrors `applyHeartbeat`'s `wipRef` tri-state convention); the submit route passes `body.report` through; `grim bounty submit --file <path>` sends the file's **content**, not its path. `show`/`list` need no change (already return the full object). | ✅ **ACCEPTED (bounty `b-1790633081099-p9ii0`, 2026-09-29) — shipped `68f19b3`** — Track Bounty Board; second real hunt end-to-end: hunter-beta (commissioned session, isolated worktree, registered/claimed/heartbeated/submitted per the `/hunter` loop) → independently re-verified + reviewed by **mage** (new #0443 default: mage reviews board submissions); verify-don't-trust: diff is exactly the 3-line spec, all three success checks green and deterministic, footprint exactly the 6 briefed files, commit parented on master tip and ff-merged; one unreproducible full-suite flake (594th test, untouched file, first run only) flagged, not attributed |
 
+## Track Pact Tooling + Track Safe AI Workspace — Jev-triaged backlog picks (phases 97–98)
+
+Backlog was getting fat (5 unbriefed `needs-triage` candidates piling up); ran the shipped
+`grim jev ask` CLI (phase 93) over all 5 on value/effort/readiness (composite ranking) plus
+a headline Choice — see `concept_backlog_triage_jev_2026_09_29_5_candidates_safesandbox_decom`.
+The Choice picked the flagship safe-AI-workspace sandbox (0.59 confidence 0.49), but its own
+readiness score (0.06/2) says it's the LEAST scoped item in the set — building it as one
+phase would be exactly the speculative-abstraction Rule 2 warns against. Composite ranking
+(value − effort + readiness) surfaced the two genuinely ready quick wins instead; the
+sandbox got a second Jev pass decomposing it into its 4 named sub-pieces, which found
+exactly one concrete slice (`secretDeny`) and confirmed the other three are still too vague
+to brief. Two out of five original candidates (`swandiveThreads`, `swandiveResiduals`) are
+fLimfLaMs-repo-scoped — out of this session's grimoire-repo hierophant authority, flagged
+but not briefed here. `lessonsLoop` and the 3 remaining sandbox sub-pieces stay parked.
+
+| Phase | Brief | What lands | Status |
+|-------|-------|-----------|--------|
+| 97 | plans/phase-97.md | **grim-mm role-stamp collision guard (warn-only)** — `stampRole` checks `.role-*` mtime for a same-role collision, warns to stderr (both `read`/`write`), marks the outgoing message `contested: true` on a hit; no block, no TTL/lease. Design already decided by a prior Jev choice (warn-only 0.71 vs reject/lease/no-guard). | **seeded as bounty `b-1790729148010-9bz9x` (2026-09-29)** — Track Pact Tooling; repo grimoire, P2, size S |
+| 98 | plans/phase-98.md | **secret-read denial hook** — first concrete slice of the safe-AI-workspace sandbox: a `PreToolUse` hook (new `.claude/settings.json`) + guard script blocking `Read` on a short deny-list (`~/.ssh/**`, `~/.config/api-keys/**`, `~/.aws/**`, `.env`). Explicitly does NOT cover `Bash`-based reads of the same paths (a harder semantic gate, deferred with `fsJail`/`egressAllowlist`). No prior hooks convention exists in this repo — implementer confirms the exact hook contract against live docs before coding. | **seeded as bounty `b-1790729148126-l33il` (2026-09-29)** — Track Safe AI Workspace (new); repo grimoire, P1, size S |
+
 ## Acceptance bar (mage enforces per phase)
 
 - Success checks in the brief actually run and pass — verify, don't trust the report.
