@@ -473,6 +473,93 @@ describe('news verdict', () => {
   })
 })
 
+// stampRole role-collision guard (phase 97) — warn-only: a fresh same-role marker
+// from another session prints a stderr warning and flags the write `contested`;
+// a stale one (older than the window) is silent, since that's the whole point of
+// warn-only over reject-if-recent.
+describe('stampRole role-collision guard', () => {
+  const { stampRole, write, ROLE_COLLISION_WINDOW_MS } = require('../bin/grim-mm')
+
+  function captureStderr(fn) {
+    let cap = ''
+    const orig = console.error
+    console.error = s => { cap += s + '\n' }
+    try { return { result: fn(), stderr: cap } } finally { console.error = orig }
+  }
+
+  it('fresh same-role marker from another session: warns, does not block, returns true', () => {
+    const dir = mktmp()
+    fs.writeFileSync(path.join(dir, '.role-other-session'), 'mage\n', 'utf8')
+    try {
+      const { result, stderr } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
+      assert.strictEqual(result, true, 'collision should be detected')
+      assert.ok(/other-session/.test(stderr), `warning should name the other session: ${stderr}`)
+      // own stamp still written — warn-only never blocks
+      assert.ok(fs.existsSync(path.join(dir, '.role-my-session')))
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('stale same-role marker (older than the window): no warning, no collision', () => {
+    const dir = mktmp()
+    const stale = path.join(dir, '.role-old-session')
+    fs.writeFileSync(stale, 'mage\n', 'utf8')
+    const oldTime = new Date(Date.now() - ROLE_COLLISION_WINDOW_MS - 60000)
+    fs.utimesSync(stale, oldTime, oldTime)
+    try {
+      const { result, stderr } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
+      assert.strictEqual(result, false, 'a stale marker must not trip the guard')
+      assert.strictEqual(stderr, '', 'no warning for a stale marker')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('fresh marker for a DIFFERENT role: no collision', () => {
+    const dir = mktmp()
+    fs.writeFileSync(path.join(dir, '.role-other-session'), 'minion\n', 'utf8')
+    try {
+      const { result } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
+      assert.strictEqual(result, false)
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('no collision: own marker is excluded from the scan', () => {
+    const dir = mktmp()
+    fs.writeFileSync(path.join(dir, '.role-my-session'), 'mage\n', 'utf8')
+    try {
+      const { result } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
+      assert.strictEqual(result, false, 'a session must never collide with its own marker')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('no session id: no-op, returns false', () => {
+    const dir = mktmp()
+    try {
+      assert.strictEqual(stampRole(dir, 'mage', undefined), false)
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('write({ contested: true }) stamps the header; contested: false/omitted leaves it out', () => {
+    const dir = mktmp()
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      write({ dir, role: 'mage', state: 'report', phase: 1, body: 'x', force: false, json: false, contested: true })
+      const files = fs.readdirSync(dir)
+      const content = fs.readFileSync(path.join(dir, files[0]), 'utf8')
+      assert.ok(content.includes('contested: true'), 'contested write should carry the marker')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('write() with no collision: no contested marker (no regression on the normal case)', () => {
+    const dir = mktmp()
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      write({ dir, role: 'mage', state: 'report', phase: 1, body: 'x', force: false, json: false })
+      const files = fs.readdirSync(dir)
+      const content = fs.readFileSync(path.join(dir, files[0]), 'utf8')
+      assert.ok(!content.includes('contested'), 'uncontested write must not carry the marker')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 // --session defaults to CLAUDE_CODE_SESSION_ID so callers don't spell it every
 // time (token waste). stampRole writes .mm/.role-<session> — a clean probe for
 // which session id actually flowed through.

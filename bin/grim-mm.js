@@ -24,6 +24,7 @@
  *   phase: <N>
  *   state: <state>
  *   scope: <optional>
+ *   contested: <optional — set when this write raced a live role collision>
  *   ---
  *
  *   <body>
@@ -205,10 +206,42 @@ function ensureGitignore(cwd) {
   fs.writeFileSync(gi, `${next}${MM}/\n`, 'utf8')
 }
 
+// Warn-only role-collision guard (phase 97). Liveness can only be inferred from a
+// role marker's filesystem mtime, and a role may legitimately sit idle for hours —
+// so a hard reject/TTL/lease was rejected (Jev judgment 0.71 warn-only vs 0.14/0.11/
+// 0.04, see plans/phase-97.md). A few hours matches the 2026-09-17 incident's own
+// timeline.
+const ROLE_COLLISION_WINDOW_MS = 4 * 60 * 60 * 1000 // 4h
+
 // Drop the session→role marker the status-line HUD reads. No-op without a session id.
+// Also the collision check: if another session's `.role-*` marker already holds this
+// same role and was stamped within ROLE_COLLISION_WINDOW_MS, print a loud stderr
+// warning naming that session — but never block. Returns true when that collision
+// fired, so callers (the `write` verb) can flag the message as `contested`.
 function stampRole(dir, role, session) {
-  if (!session) return
-  fs.writeFileSync(path.join(dir, `.role-${session}`), `${role}\n`, 'utf8')
+  if (!session) return false
+  const mine = `.role-${session}`
+  let names = []
+  try { names = fs.readdirSync(dir) } catch {}
+  let collision = false
+  for (const n of names) {
+    if (!/^\.role-/.test(n) || n === mine) continue
+    let content, mtimeMs
+    try {
+      content = fs.readFileSync(path.join(dir, n), 'utf8').trim()
+      mtimeMs = fs.statSync(path.join(dir, n)).mtimeMs
+    } catch { continue }
+    if (content !== role) continue
+    const ageMs = Date.now() - mtimeMs
+    if (ageMs < ROLE_COLLISION_WINDOW_MS) {
+      const otherSession = n.slice('.role-'.length)
+      console.error(`[grim-mm] WARNING: role '${role}' is also held by session ${otherSession} ` +
+        `(stamped ${Math.round(ageMs / 60000)}m ago) — possible collision, not blocking`)
+      collision = true
+    }
+  }
+  fs.writeFileSync(path.join(dir, mine), `${role}\n`, 'utf8')
+  return collision
 }
 
 // Read the role a session previously stamped (see stampRole). Lets `news` figure
@@ -386,7 +419,7 @@ function read({ dir, role, all, json }) {
   if (!all) printFooter(nextMove)
 }
 
-function write({ dir, role, state, phase, body, force, json, scope, to }) {
+function write({ dir, role, state, phase, body, force, json, scope, to, contested }) {
   if (!STATES.includes(state)) {
     throw new Error(`invalid --state '${state}'. One of: ${STATES.join(', ')}`)
   }
@@ -427,6 +460,7 @@ function write({ dir, role, state, phase, body, force, json, scope, to }) {
   const id       = String(nextNum).padStart(PAD, '0')
   const toLine   = tos.join(',')
   const scopeLine = scope ? `scope: ${scope}` : ''
+  const contestedLine = contested ? `contested: true` : ''
   const content  = `---
 id: ${id}
 ts: ${ts}
@@ -434,7 +468,7 @@ from: ${role}
 to: ${toLine}
 phase: ${usePhase}
 state: ${state}
-${scopeLine ? scopeLine + '\n' : ''}---
+${scopeLine ? scopeLine + '\n' : ''}${contestedLine ? contestedLine + '\n' : ''}---
 
 ${body.trim()}\n`
 
@@ -883,7 +917,7 @@ function main() {
   if (!ROLES.includes(role)) {
     fail(`--role must be one of: ${ROLES.join(', ')}`)
   }
-  stampRole(dir, role, args.session)
+  const roleCollision = stampRole(dir, role, args.session)
 
   if (verb === 'read') {
     read({ dir, role, all: args.all, json: args.json })
@@ -898,7 +932,7 @@ function main() {
     if (body == null || !String(body).trim()) {
       fail('write needs a body — pass --body "…", --file <path>, or pipe it on stdin')
     }
-    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json, scope: args.scope, to: args.to })
+    write({ dir, role, state: (args.state || '').toLowerCase(), phase: args.phase, body: String(body), force: args.force, json: args.json, scope: args.scope, to: args.to, contested: roleCollision })
     return
   }
 
@@ -942,4 +976,4 @@ if (require.main === module) {
   try { main() } catch (e) { console.error(`grim mm: ${e.message}`); process.exit(1) }
 }
 
-module.exports = { readThread, parseName, parseHeader, status, strayEntries, archive, write, computeNextMove, next, news, readRoleMarker, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL }
+module.exports = { readThread, parseName, parseHeader, status, strayEntries, archive, write, computeNextMove, next, news, readRoleMarker, stampRole, briefRequiresPermission, nextQueuedPhase, resolveRecipients, assertRealIdentity, cmdCommit, isPlaceholderIdentity, NEXT_OWNER, STATES, TERMINAL, ROLE_COLLISION_WINDOW_MS }
