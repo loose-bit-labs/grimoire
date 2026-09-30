@@ -250,6 +250,110 @@ class PortalProxy {
   stop() { if (this.server) this.server.close() }
 }
 
+// ── Session names ─────────────────────────────────────────────────────────────
+// `claude --resume` takes a session UUID and nothing else, so the friendly name
+// you see in the status line ("nezumi") is unusable for resuming. Worse, that
+// name lives in ~/.claude/sessions/<pid>.json, a registry of LIVE sessions keyed
+// by pid — when the session exits its entry goes, and the name is gone with it.
+//
+// So: mirror every name we ever see into ~/.grimoire/session-names.json, and
+// resolve a non-UUID --resume/-r value through it before handing argv to claude.
+// The index is append-and-update only; a name that outlives its session keeps
+// working, and a name reused by a newer session wins (latest `nameSince`).
+class SessionNames {
+  constructor(env = process.env) {
+    this.live  = path.join(os.homedir(), '.claude', 'sessions')
+    this.index = env.GRIM_SESSION_INDEX
+      || path.join(env.GRIMOIRE_HOME || path.join(os.homedir(), '.grimoire'), 'session-names.json')
+  }
+
+  static isUuid(s) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s))
+  }
+
+  // Every live session the local registry knows about. Unreadable or half-written
+  // entries are skipped rather than fatal — this is a convenience path.
+  scanLive() {
+    const out = []
+    let files = []
+    try { files = fs.readdirSync(this.live).filter(f => f.endsWith('.json')) } catch { return out }
+    for (const f of files) {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(this.live, f), 'utf8'))
+        if (d?.name && d?.sessionId) {
+          out.push({ name: d.name, sessionId: d.sessionId, cwd: d.cwd || '', since: d.nameSince || d.updatedAt || 0 })
+        }
+      } catch { /* skip */ }
+    }
+    return out
+  }
+
+  read() {
+    try { return JSON.parse(fs.readFileSync(this.index, 'utf8')) } catch { return {} }
+  }
+
+  // Fold the live registry into the persistent index. Cheap enough to run on
+  // every portal launch, which is what keeps names alive past session exit.
+  refresh() {
+    const idx = this.read()
+    let dirty = false
+    for (const s of this.scanLive()) {
+      const cur = idx[s.name]
+      if (!cur || cur.sessionId !== s.sessionId || (s.since || 0) > (cur.since || 0)) {
+        idx[s.name] = { sessionId: s.sessionId, cwd: s.cwd, since: s.since, seen: Date.now() }
+        dirty = true
+      }
+    }
+    if (dirty) {
+      try {
+        fs.mkdirSync(path.dirname(this.index), { recursive: true })
+        fs.writeFileSync(this.index, JSON.stringify(idx, null, 2))
+      } catch { /* index is a convenience; never fail a launch over it */ }
+    }
+    return idx
+  }
+
+  // name → sessionId, live registry first (authoritative), then the index.
+  resolve(name) {
+    const hit = this.scanLive().find(s => s.name === name)
+    if (hit) return hit.sessionId
+    return this.refresh()[name]?.sessionId || null
+  }
+
+  known() {
+    const idx = this.refresh()
+    const liveNames = new Set(this.scanLive().map(s => s.name))
+    return Object.entries(idx)
+      .sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0))
+      .map(([name, v]) => ({ name, sessionId: v.sessionId, cwd: v.cwd, live: liveNames.has(name) }))
+  }
+
+  // Rewrite `--resume <name>` / `-r <name>` / `--resume=<name>` in place. A value
+  // that is already a UUID, or absent (bare --resume is claude's picker), is left
+  // alone. An unknown name is fatal here rather than in claude, where it surfaces
+  // as a confusing "no conversation found".
+  applyTo(args) {
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i]
+      let name = null, assign = false
+      if ((a === '--resume' || a === '-r') && args[i + 1] && !args[i + 1].startsWith('-')) name = args[i + 1]
+      else if (a.startsWith('--resume=')) { name = a.slice('--resume='.length); assign = true }
+      if (!name || SessionNames.isUuid(name)) continue
+      const id = this.resolve(name)
+      if (!id) {
+        const list = this.known()
+        throw new Error(`no session named '${name}'.`
+          + (list.length ? `\n   known: ${list.map(s => `${s.name}${s.live ? ' (live)' : ''}`).join(', ')}` : '')
+          + `\n   (names are recorded when a session runs; a session never seen by the portal is UUID-only)`)
+      }
+      if (assign) args[i] = `--resume=${id}`
+      else args[i + 1] = id
+      console.log(`   resume: ${name} → ${id}`)
+    }
+    return args
+  }
+}
+
 // ── The launcher ──────────────────────────────────────────────────────────────
 class Portal {
   constructor(env = process.env) {
@@ -261,11 +365,16 @@ class Portal {
     // A leading BARE token (not a --flag) is a positional host: `grim portal tbona`.
     // Everything after it passes through to claude.
     const posHost = (args[0] && !args[0].startsWith('-')) ? args.shift() : null
-    this.claudeArgs = args
+    // `--resume nezumi` → `--resume <uuid>`. claude only takes UUIDs; the name
+    // you see in the status line is ours to resolve. Also refreshes the name
+    // index from the live registry, so names survive their session's exit.
+    this.names = new SessionNames(env)
+    this.claudeArgs = this.names.applyTo(args)
     // `grim portal --help`/`-h` describes the PORTAL (its host arg + env knobs),
     // then hands off to claude's own help. Detected before upstream resolution so
     // help prints even with no host and no lbl-config.
     this.showHelp = args.includes('-h') || args.includes('--help')
+    this.listSessions = args.includes('--sessions')
     // Upstream resolution, most-explicit first:
     //   1. PORTAL_UPSTREAM — a full base URL, verbatim
     //   2. positional host / PORTAL_HOST — a bare host, built into
@@ -288,7 +397,7 @@ class Portal {
     this.settings    = path.join(os.homedir(), '.claude', 'the-local-llm-settings.json')
     this.marketplace = REPO                       // repo self-hosts as the marketplace
     this.dryRun      = !!env.PORTAL_DRYRUN
-    if (this.showHelp) return                     // nothing else to resolve for --help
+    if (this.showHelp || this.listSessions) return  // nothing else to resolve for --help/--sessions
     if (!this.upstream) {
       throw new Error(`no upstream resolved — pass a host (grim portal <host>), set PORTAL_UPSTREAM to a URL, or PORTAL_ENDPOINT to a known lbl-config endpoints/use key (tried '${this.endpointKey}')`)
     }
@@ -346,7 +455,17 @@ Usage:
   <host>   bare llama-server host, used directly (no lbl-config lookup):
              grim portal HOST            # → HOST on port 11311
            omit it and the upstream resolves from PORTAL_* / lbl-config.
-  Any other args (e.g. --resume, --continue) pass straight through to claude.
+  Any other args (e.g. --resume, --continue) pass straight through to claude —
+  except that --resume/-r accepts a session NAME, not just a UUID:
+
+             grim portal chonko -r nezumi
+
+           claude itself only takes UUIDs, and the name it shows in the status
+           line lives in a registry of LIVE sessions only (keyed by pid), so it
+           vanishes when that session exits. The portal mirrors every name it
+           sees into ~/.grimoire/session-names.json and resolves from there, so
+           the name keeps working afterwards. 'grim portal --sessions' lists
+           what it knows. A session the portal has never seen is UUID-only.
 
 Environment (all optional):
   PORTAL_HOST            bare llama-server host — same as the positional <host>
@@ -468,6 +587,13 @@ Below is claude's own --help; the flags there pass through the portal.`
   }
 
   async main() {
+    if (this.listSessions) {
+      const list = this.names.known()
+      if (!list.length) { console.log('no session names recorded yet (they are captured when a session runs).'); return }
+      const w = Math.max(...list.map(s => s.name.length))
+      for (const s of list) console.log(`${s.name.padEnd(w)}  ${s.sessionId}  ${s.live ? 'live ' : '     '} ${s.cwd}`)
+      return
+    }
     if (this.showHelp) {
       console.log(this.usage() + '\n')
       await new Promise(res => {

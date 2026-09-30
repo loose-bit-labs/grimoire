@@ -5,3 +5,8 @@ logs/
 .mm/
 tmp/
 /bin/node
+
+# Runtime state: ~/.grimoire is a symlink to this repo, so anything written
+# under it lands in the working tree. Keep it out of git.
+queue.ndjson
+session-names.json
