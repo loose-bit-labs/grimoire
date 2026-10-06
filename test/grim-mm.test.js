@@ -488,20 +488,39 @@ describe('stampRole role-collision guard', () => {
   }
 
   it('fresh same-role marker from another session: warns, does not block, returns true', () => {
+    // A real session's id is a UUID ($CLAUDE_CODE_SESSION_ID); the holder must be one
+    // for the guard to fire under the phase-99 UUID shape-check.
+    const holder = '11111111-2222-4333-8444-555555555555'
     const dir = mktmp()
-    fs.writeFileSync(path.join(dir, '.role-other-session'), 'mage\n', 'utf8')
+    fs.writeFileSync(path.join(dir, `.role-${holder}`), 'mage\n', 'utf8')
     try {
       const { result, stderr } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
       assert.strictEqual(result, true, 'collision should be detected')
-      assert.ok(/other-session/.test(stderr), `warning should name the other session: ${stderr}`)
+      assert.ok(stderr.includes(holder), `warning should name the other session: ${stderr}`)
       // own stamp still written — warn-only never blocks
+      assert.ok(fs.existsSync(path.join(dir, '.role-my-session')))
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('fresh same-role holder with a non-UUID name: no warning, returns false, own stamp written', () => {
+    // The 2026-10-01 incident: a manual-test debris stamp (.role-test-session) held a
+    // live role. Debris is never a live session, so the guard skips it.
+    const dir = mktmp()
+    fs.writeFileSync(path.join(dir, '.role-test-session'), 'hierophant\n', 'utf8')
+    try {
+      const { result, stderr } = captureStderr(() => stampRole(dir, 'hierophant', 'my-session'))
+      assert.strictEqual(result, false, 'a non-UUID holder is manual-test debris, not a live session')
+      assert.strictEqual(stderr, '', 'no warning for a non-UUID (debris) holder')
+      // own stamp still written — the guard skips debris, never blocks
       assert.ok(fs.existsSync(path.join(dir, '.role-my-session')))
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   })
 
   it('stale same-role marker (older than the window): no warning, no collision', () => {
     const dir = mktmp()
-    const stale = path.join(dir, '.role-old-session')
+    // The holder is a real (UUID) session; the guard must stay silent because it is
+    // STALE, not because the id is non-UUID.
+    const stale = path.join(dir, '.role-22222222-3333-4444-8555-666666666666')
     fs.writeFileSync(stale, 'mage\n', 'utf8')
     const oldTime = new Date(Date.now() - ROLE_COLLISION_WINDOW_MS - 60000)
     fs.utimesSync(stale, oldTime, oldTime)
@@ -514,7 +533,8 @@ describe('stampRole role-collision guard', () => {
 
   it('fresh marker for a DIFFERENT role: no collision', () => {
     const dir = mktmp()
-    fs.writeFileSync(path.join(dir, '.role-other-session'), 'minion\n', 'utf8')
+    // The holder is a real (UUID) session with a DIFFERENT role; no collision.
+    fs.writeFileSync(path.join(dir, '.role-33333333-4444-4555-8666-777777777777'), 'minion\n', 'utf8')
     try {
       const { result } = captureStderr(() => stampRole(dir, 'mage', 'my-session'))
       assert.strictEqual(result, false)
