@@ -218,6 +218,13 @@ const ROLE_COLLISION_WINDOW_MS = 4 * 60 * 60 * 1000 // 4h
 // same role and was stamped within ROLE_COLLISION_WINDOW_MS, print a loud stderr
 // warning naming that session — but never block. Returns true when that collision
 // fired, so callers (the `write` verb) can flag the message as `contested`.
+// Real session ids are env-derived UUIDs ($CLAUDE_CODE_SESSION_ID); the manual-test
+// debris stamps (.role-test, .role-test-session, .role-master, …) never are. A
+// non-UUID holder is not a live session and must not trip the warning (phase 99 —
+// the 2026-10-01 .role-test-session false positive). Lenient 8-4-4-4-12 hex shape,
+// case-insensitive.
+const SESSION_ID_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function stampRole(dir, role, session) {
   if (!session) return false
   const mine = `.role-${session}`
@@ -226,6 +233,9 @@ function stampRole(dir, role, session) {
   let collision = false
   for (const n of names) {
     if (!/^\.role-/.test(n) || n === mine) continue
+    const otherSession = n.slice('.role-'.length)
+    // Non-UUID holder = manual-test debris, not a live session → no collision warning.
+    if (!SESSION_ID_UUID_RE.test(otherSession)) continue
     let content, mtimeMs
     try {
       content = fs.readFileSync(path.join(dir, n), 'utf8').trim()
@@ -234,7 +244,6 @@ function stampRole(dir, role, session) {
     if (content !== role) continue
     const ageMs = Date.now() - mtimeMs
     if (ageMs < ROLE_COLLISION_WINDOW_MS) {
-      const otherSession = n.slice('.role-'.length)
       console.error(`[grim-mm] WARNING: role '${role}' is also held by session ${otherSession} ` +
         `(stamped ${Math.round(ageMs / 60000)}m ago) — possible collision, not blocking`)
       collision = true
