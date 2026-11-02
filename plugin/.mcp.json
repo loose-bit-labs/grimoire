@@ -1,6 +1,6 @@
 {
   "server": {
     "type": "http",
-    "url": "http://grimoire.local:3663/mcp"
+    "url": "http://grimoire:3663/mcp"
   }
 }

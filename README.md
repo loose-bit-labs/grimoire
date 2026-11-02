@@ -75,7 +75,7 @@ grim tome              Memory ops: recall/remember/relate/update  (The Tome)    
 grim cull              Generate portrait/image culling UI         (The Cull)          [local]
 grim config            Get/sync shared homelab config (lbl-config)                    [local + remote]
 grim mm                Read/write the .mm pact thread             (The Postbox)       [any cwd]
-grim serve             Start HTTP + MCP server                                        [run on grimoire.local]
+grim serve             Start HTTP + MCP server                                        [run on grimoire]
 ```
 
 **Local** commands require `GRIMOIRE_ROOT` set and the KB directory accessible.
@@ -85,16 +85,16 @@ grim serve             Start HTTP + MCP server                                  
 
 ## 🕸️ Cluster & Harness Integration
 
-Grimoire is designed to run on a central host (currently `grimoire.local`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
+Grimoire is designed to run on a central host (currently `grimoire`) while clients on various boxes in the network clone the engine and connect remotely. Each client maintains its own copy of the engine and skills, allowing you to tailor AI behavior per machine or project.
 
 - **Skills Hub**: Add or modify skills in `plugin/skills/` on any host. These are version-controlled and shared across the cluster.
 - **Harness Slots**: AI harnesses (Claude Code, Copilot, etc.) consume skills via symbolic links or configuration files. Create a slot in your harness config that points to `plugin/skills/<skill-name>/SKILL.md`.
 - **Per-Harness Config**: Keep harness-specific files (e.g., `.claude/settings.json`) in a dedicated directory in your home folder. Link or symlink these into your harness's expected locations as needed — keeps harness configs separate from the repo and portable.
-- **Remote Ontology**: Regardless of the client box, AI assistants connect to the central KB on `grimoire.local` via `GRIMOIRE_HOST` to search, track, and update the shared ontology. This ensures consistent context across all projects and tools.
+- **Remote Ontology**: Regardless of the client box, AI assistants connect to the central KB on `grimoire` via `GRIMOIRE_HOST` to search, track, and update the shared ontology. This ensures consistent context across all projects and tools.
 
 ---
 
-## 🚀 Quick start (on grimoire.local)
+## 🚀 Quick start (on grimoire)
 
 ```bash
 git clone <this-repo> grimoire
@@ -122,11 +122,11 @@ grim serve
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GRIMOIRE_ROOT` | — | Path to grimoire-kb directory (local mode) |
-| `GRIMOIRE_HOST` | — | Grimoire server URL, e.g. `http://grimoire.local:3663` (remote mode) |
-| `OLLAMA_HOST` | `http://grimoire.local:11434` | Ollama base URL |
+| `GRIMOIRE_HOST` | — | Grimoire server URL, e.g. `http://grimoire:3663` (remote mode) |
+| `OLLAMA_HOST` | `http://grimoire:11434` | Ollama base URL |
 | `GRIMOIRE_PORT` | `3663` | Port for `grim serve` |
-| `GRIMOIRE_NER_HOST` | `http://grimoire.local:3773` | NER service (GLiNER + Rebel) |
-| `GRIMOIRE_A1111_HOST` | `http://grimoire.local:7860` | AUTOMATIC1111 Stable Diffusion |
+| `GRIMOIRE_NER_HOST` | `http://grimoire:3773` | NER service (GLiNER + Rebel) |
+| `GRIMOIRE_A1111_HOST` | `http://grimoire:7860` | AUTOMATIC1111 Stable Diffusion |
 | `GRIMOIRE_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 
 ---
@@ -168,7 +168,7 @@ Grimoire ships with five personas — specialized AI behavior modes:
 | 7860 | AUTOMATIC1111 |
 | 11434 | Ollama |
 
-Open port **3663** on grimoire.local for LAN clients. See [docs/client-setup.md](docs/client-setup.md).
+Open port **3663** on grimoire for LAN clients. See [docs/client-setup.md](docs/client-setup.md).
 
 ---
 
@@ -263,10 +263,10 @@ See `plugin/skills/{minion,mage,hierophant}/SKILL.md` for the full protocol and 
 ## 🧭 New machine setup
 
 See [docs/client-setup.md](docs/client-setup.md) for full instructions including:
-- Hosts file configuration (`grimoire.local` resolution)
+- Hosts file configuration (`grimoire` resolution)
 - `.env` setup for remote mode
 - Claude Code MCP configuration
-- Firewall setup on grimoire.local
+- Firewall setup on grimoire
 
 ---
 

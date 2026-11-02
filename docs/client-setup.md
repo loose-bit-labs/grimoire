@@ -1,22 +1,22 @@
 # Setting Up a Grimoire Client
 
-This guide covers connecting a new machine on your LAN to the Grimoire server running on `grimoire.local`.
+This guide covers connecting a new machine on your LAN to the Grimoire server running on `grimoire`.
 
 ---
 
 ## Prerequisites
 
-- Grimoire server is running on `grimoire.local` (`grim serve` — see server setup)
-- Port **3663** is open on `grimoire.local`'s firewall (see below)
+- Grimoire server is running on `grimoire` (`grim serve` — see server setup)
+- Port **3663** is open on `grimoire`'s firewall (see below)
 - Node.js 18+ installed on the client
 
 ---
 
-## 1. Resolve `grimoire.local` on the client
+## 1. Resolve `grimoire` on the client
 
-Add `grimoire.local` to the client's hosts file so `http://grimoire.local:3663` resolves correctly.
+Add `grimoire` to the client's hosts file so `http://grimoire:3663` resolves correctly.
 
-Find the IP of `grimoire.local` first (run on `grimoire.local`):
+Find the IP of `grimoire` first (run on `grimoire`):
 ```bash
 ip addr show | grep 'inet ' | grep -v 127.0.0.1
 # e.g. <your-ip>
@@ -25,17 +25,17 @@ ip addr show | grep 'inet ' | grep -v 127.0.0.1
 Then on the client machine:
 ```bash
 # Linux / macOS
-sudo echo "<your-ip>  grimoire.local" >> /etc/hosts
+sudo echo "<your-ip>  grimoire" >> /etc/hosts
 
 # Windows (run as Administrator)
 # Add to C:\Windows\System32\drivers\etc\hosts:
-# <your-ip>  grimoire.local
+# <your-ip>  grimoire
 ```
 
 Verify:
 ```bash
-ping grimoire.local
-curl http://grimoire.local:3663/health
+ping grimoire
+curl http://grimoire:3663/health
 # → {"status":"ok","entities":7,"edges":5}
 ```
 
@@ -66,13 +66,13 @@ Edit `.env` — for a remote client, set `GRIMOIRE_HOST` and leave `GRIMOIRE_ROO
 
 ```bash
 # Remote mode — no local KB access
-GRIMOIRE_HOST=http://grimoire.local:3663
+GRIMOIRE_HOST=http://grimoire:3663
 
 # Leave GRIMOIRE_ROOT unset (or comment it out)
 # GRIMOIRE_ROOT=~/data/grimoire-kb
 
-# Ollama — point at grimoire.local to use its models remotely
-OLLAMA_HOST=http://grimoire.local:11434
+# Ollama — point at grimoire to use its models remotely
+OLLAMA_HOST=http://grimoire:11434
 ```
 
 ---
@@ -86,7 +86,7 @@ Add Grimoire as an MCP server in your Claude Code project config (`.mcp.json` in
   "mcpServers": {
     "grimoire": {
       "type": "http",
-      "url": "http://grimoire.local:3663/mcp"
+      "url": "http://grimoire:3663/mcp"
     }
   }
 }
@@ -113,9 +113,9 @@ grim oracle "grimoire"
 
 ---
 
-## Firewall: Opening Port 3663 on `grimoire.local`
+## Firewall: Opening Port 3663 on `grimoire`
 
-Run these on `grimoire.local`:
+Run these on `grimoire`:
 
 ### ufw (Ubuntu/Debian default)
 ```bash
@@ -139,9 +139,9 @@ sudo iptables -A INPUT -p tcp --dport 3663 -j ACCEPT
 
 ### Verify the port is open (from a client):
 ```bash
-nc -zv grimoire.local 3663
+nc -zv grimoire 3663
 # or
-curl -s http://grimoire.local:3663/health | python3 -m json.tool
+curl -s http://grimoire:3663/health | python3 -m json.tool
 ```
 
 ---
@@ -157,7 +157,7 @@ curl -s http://grimoire.local:3663/health | python3 -m json.tool
 
 ## Local vs Remote mode summary
 
-| Command | Local (grimoire.local) | Remote (client) |
+| Command | Local (grimoire) | Remote (client) |
 |---------|------------|-----------------|
 | `grim scribe` | ✓ | ✗ (needs direct KB access) |
 | `grim crawl` | ✓ | ✗ (needs direct KB access) |
@@ -169,4 +169,4 @@ curl -s http://grimoire.local:3663/health | python3 -m json.tool
 | `grim load` | ✓ | ✓ (via server) |
 | `grim save` | ✓ | ✓ (via server) |
 
-Write operations via server (tome remember, relate) are proxied through the server to the KB on `grimoire.local`.
+Write operations via server (tome remember, relate) are proxied through the server to the KB on `grimoire`.
