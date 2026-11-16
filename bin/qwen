@@ -1,0 +1,437 @@
+#!/usr/bin/env node
+'use strict'
+
+/**
+ * qwen — sovereign Qwen Code CLI on a local model.
+ *
+ * Points qwen-code at a local llama.cpp endpoint (OpenAI-compatible API)
+ * instead of Anthropic's cloud. This is the grimoire's path to AI sovereignty:
+ * no vendor lock-in, no API keys, no rate limits.
+ *
+ * Resolves the upstream from the same lbl-config that grim-portal uses, so
+ * both tools stay in sync when you move models between boxes.
+ *
+ * Positional: `qwen [<host>] [qwen args…]` — a leading bare token is the
+ * llama-server host (direct, no config lookup); everything after passes to qwen.
+ *
+ * Env (all optional):
+ *   QWEN_UPSTREAM        full llama-server base URL, verbatim (e.g. http://host:11311)
+ *   QWEN_HOST            bare llama-server host — direct, skips lbl-config
+ *   QWEN_PORT            port for the bare host              (default 11311)
+ *   QWEN_ENDPOINT        lbl-config endpoints/use key        (default 'coding')
+ *   QWEN_MODEL           override the resolved model id
+ *   QWEN_CTX_TOKENS      local model context window          (default 180081)
+ *   QWEN_SETTINGS        path to qwen settings.json          (default ~/.qwen/the-local-llm-settings.json)
+ *   QWEN_STUB            image replacement text (for strip filter)
+ *   QWEN_DRYRUN=1        resolve + self-test, don't run qwen
+ *   QWEN_GRIMOIRE        path to grimoire home (default: ~grimoire)
+ */
+
+const http  = require('node:http')
+const fs    = require('node:fs')
+const os    = require('node:os')
+const path  = require('node:path')
+const { spawn } = require('node:child_process')
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const REPO        = path.resolve(__dirname, '..')
+
+// Resolve the qwen-code CLI path. Priority:
+//   1. QWEN_CLI_DIR env var (absolute path to the qwen-code repo root)
+//   2. Search upward from the script location for a dist/cli.js
+//   3. Hardcoded relative fallback (works when both repos share a parent)
+function resolveQwenCli() {
+  if (process.env.QWEN_CLI_DIR) {
+    const p = path.join(process.env.QWEN_CLI_DIR, 'dist', 'cli.js')
+    if (fs.existsSync(p)) return p
+    console.error(`⚠ QWEN_CLI_DIR=${process.env.QWEN_CLI_DIR} → cli.js not found`)
+  }
+  // Search upward: look for dist/cli.js starting from script's parent
+  let dir = path.resolve(__dirname, '..')
+  for (let i = 0; i < 6; i++) {
+    const p = path.join(dir, 'dist', 'cli.js')
+    if (fs.existsSync(p)) return p
+    dir = path.join(dir, '..')
+  }
+  // Fallback: relative to grimoire repo
+  return path.join(REPO, '..', '..', '3rd', 'qwen-code', 'dist', 'cli.js')
+}
+
+const QWEN_CLI = resolveQwenCli()
+const GRIMOIRE_HOME = process.env.GRIMOIRE_HOME
+  || path.join(os.homedir(), '.grimoire')
+const LIB_ENV     = path.join(GRIMOIRE_HOME, 'lib', 'env.js')
+
+// Lazy-load lbl-config (same resolver as grim-portal.js)
+let _lblCache = null
+function _lbl() {
+  if (_lblCache) return _lblCache
+  try {
+    const mod = require(LIB_ENV)
+    _lblCache = mod.lblConfig()
+    return _lblCache
+  } catch {
+    _lblCache = {}
+    return _lblCache
+  }
+}
+function lblEndpoint(key) {
+  const c = _lbl()
+  return c.endpoints?.[key] ?? c.endpoints?.[c.use?.[key]] ?? null
+}
+
+function cleanLabel(name) {
+  return path.basename(String(name))
+    .replace(/-\d{5}-of-\d{5}/i, '')
+    .replace(/\.gguf$/i, '')
+}
+
+function httpGetJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, res => {
+      const c = []
+      res.on('data', d => c.push(d))
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(c).toString('utf8'))) }
+        catch (e) { reject(new Error(`bad JSON from ${url}: ${e.message}`)) }
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(5000, () => req.destroy(new Error(`timeout querying ${url}`)))
+  })
+}
+
+// ── Session names ────────────────────────────────────────────────────────────
+// Mirror grim-portal.js's session name resolver so --resume works with names
+// you know (e.g. "nezumi") instead of opaque UUIDs.
+
+const LIVE_DIR = path.join(os.homedir(), '.qwen', 'sessions')
+const INDEX_PATH = process.env.QWEN_SESSION_INDEX
+  || path.join(GRIMOIRE_HOME, 'qwen-session-names.json')
+
+class SessionNames {
+  static isUuid(s) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s))
+  }
+
+  scanLive() {
+    const out = []
+    let files = []
+    try { files = fs.readdirSync(LIVE_DIR).filter(f => f.endsWith('.json')) } catch { return out }
+    for (const f of files) {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(LIVE_DIR, f), 'utf8'))
+        if (d?.name && d?.sessionId) {
+          out.push({ name: d.name, sessionId: d.sessionId, cwd: d.cwd || '', since: d.nameSince || d.updatedAt || 0 })
+        }
+      } catch { /* skip */ }
+    }
+    return out
+  }
+
+  read() {
+    try { return JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8')) } catch { return {} }
+  }
+
+  refresh() {
+    const idx = this.read()
+    let dirty = false
+    for (const s of this.scanLive()) {
+      const cur = idx[s.name]
+      if (!cur || cur.sessionId !== s.sessionId || (s.since || 0) > (cur.since || 0)) {
+        idx[s.name] = { sessionId: s.sessionId, cwd: s.cwd, since: s.since, seen: Date.now() }
+        dirty = true
+      }
+    }
+    if (dirty) {
+      try {
+        fs.mkdirSync(path.dirname(INDEX_PATH), { recursive: true })
+        fs.writeFileSync(INDEX_PATH, JSON.stringify(idx, null, 2))
+      } catch { /* convenience; never fail */ }
+    }
+    return idx
+  }
+
+  resolve(name) {
+    const hit = this.scanLive().find(s => s.name === name)
+    if (hit) return hit.sessionId
+    return this.refresh()[name]?.sessionId || null
+  }
+
+  known() {
+    const idx = this.refresh()
+    const liveNames = new Set(this.scanLive().map(s => s.name))
+    return Object.entries(idx)
+      .sort((a, b) => (b[1].seen || 0) - (a[1].seen || 0))
+      .map(([name, v]) => ({ name, sessionId: v.sessionId, cwd: v.cwd, live: liveNames.has(name) }))
+  }
+
+  applyTo(args) {
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i]
+      let name = null, assign = false
+      // Handle both --resume and -s (qwen's session flag)
+      if ((a === '--resume' || a === '-s') && args[i + 1] && !args[i + 1].startsWith('-')) name = args[i + 1]
+      else if (a.startsWith('--resume=')) { name = a.slice('--resume='.length); assign = true }
+      else if (a.startsWith('-s=')) { name = a.slice('-s='.length); assign = true }
+      if (!name || SessionNames.isUuid(name)) continue
+      const id = this.resolve(name)
+      if (!id) {
+        const list = this.known()
+        throw new Error(`no session named '${name}'.`
+          + (list.length ? `\n   known: ${list.map(s => `${s.name}${s.live ? ' (live)' : ''}`).join(', ')}` : '')
+          + `\n   (names are recorded when a session runs)`)
+      }
+      if (assign) args[i] = `--resume=${id}`
+      else args[i + 1] = id
+      console.log(`   resume: ${name} → ${id}`)
+    }
+    return args
+  }
+}
+
+// ── The launcher ─────────────────────────────────────────────────────────────
+
+class QwenSovereign {
+  constructor(env = process.env) {
+    this.env = env
+    // Args after the 'qwen' binary. If invoked as `grim qwen …`, skip 'qwen'.
+    const args = process.argv.slice(2)
+    // A leading bare token is a positional host: `qwen tbona`.
+    const posHost = (args[0] && !args[0].startsWith('-')) ? args.shift() : null
+    this.names = new SessionNames()
+    this.qwenArgs = this.names.applyTo(args)
+
+    // Upstream resolution, most-explicit first:
+    const hostArg = posHost || env.QWEN_HOST
+    this.upstream = env.QWEN_UPSTREAM
+      || (hostArg && `http://${hostArg}:${env.QWEN_PORT || 11311}`)
+      || lblEndpoint(env.QWEN_ENDPOINT || 'coding')
+
+    // Model name
+    this.modelName = env.QWEN_MODEL || null
+
+    // Context window
+    this.ctxTokens = env.QWEN_CTX_TOKENS || '180081'
+
+    // Settings path
+    this.settingsPath = env.QWEN_SETTINGS
+      || path.join(os.homedir(), '.qwen', 'the-local-llm-settings.json')
+
+    // Grimoire home for skill linking
+    this.grimoireHome = GRIMOIRE_HOME
+
+    // Dry-run mode
+    this.dryRun = !!env.QWEN_DRYRUN
+
+    // Help detection
+    this.showHelp = args.includes('-h') || args.includes('--help')
+    this.listSessions = args.includes('--sessions')
+
+    if (this.showHelp || this.listSessions) return
+    if (!this.upstream) {
+      throw new Error(`no upstream resolved — pass a host (qwen <host>), set QWEN_UPSTREAM to a URL, or QWEN_ENDPOINT to a known lbl-config key (tried '${env.QWEN_ENDPOINT || 'coding'}')`)
+    }
+    this.host = new URL(this.upstream).hostname
+  }
+
+  banner(host) {
+    const INNER = 46
+    const wall = s => '|' + s.padEnd(INNER).slice(0, INNER) + '|'
+    const rule = '|' + '_'.repeat(INNER) + '|'
+    const art = [
+      '',
+      '       S O V E R E I G N   C O D E',
+      '',
+      "               .-''''''-.  ",
+      "             .'          '. ",
+      "            /   .------.   \\",
+      "            |  /        \\  | ",
+      "            | |  (  O  )  | | ",
+      "            | |   ____   | | ",
+      "            | |  |    |  | | ",
+      "            | |  |    |  | | ",
+      "            | |  | ____ | | | ",
+      "            | |  ||    || | | ",
+      "            |  \\ || === || /  | ",
+      "             \\  .'|    |'.  / ",
+      "              `'  '----'  '` ",
+      '',
+    ]
+    return [
+      '',
+      ' ' + '_'.repeat(INNER) + ' ',
+      ...art.map(wall),
+      rule,
+      wall(''),
+      wall(` Sovereign code connected to ${host}...`),
+      rule,
+      '',
+    ].join('\n')
+  }
+
+  usage() {
+    return `Qwen Sovereign — run Qwen Code on your own model.
+
+Usage:
+  qwen [<host>] [qwen args…]
+
+  <host>   bare llama-server host, used directly:
+             qwen HOST            # → HOST on port 11311
+           omit it and the upstream resolves from lbl-config (same as grim-portal).
+
+Environment (all optional):
+  QWEN_HOST            bare llama-server host — direct, skips lbl-config
+  QWEN_UPSTREAM        full llama-server base URL, verbatim
+  QWEN_PORT            port for the bare host                (default 11311)
+  QWEN_ENDPOINT        lbl-config endpoints/use key          (default 'coding')
+  QWEN_MODEL           override the resolved model id
+  QWEN_CTX_TOKENS      local model context window            (default 180081)
+  QWEN_SETTINGS        path to qwen settings.json
+  QWEN_DRYRUN=1        resolve + self-test, don't run qwen
+
+Session names: --resume/-s accepts a NAME (e.g. "nezumi"), not just a UUID.
+'qwen --sessions' lists known sessions.
+
+This wrapper points qwen-code at your local model (OpenAI-compatible API).
+All other args pass through to qwen.`
+  }
+
+  settingsJson() {
+    // Check if grimoire skills directory exists for linking
+    const skillsDir = path.join(this.grimoireHome, 'plugin', 'skills')
+    const hasSkills = fs.existsSync(skillsDir)
+
+    return {
+      enabledPlugins: {
+        'grimoire@qwen-plugins': hasSkills,
+      },
+      telemetry: { enabled: false },
+      // Point at the local model via OpenAI-compatible endpoint
+      // qwen-code stores model/provider config here
+      env: {
+        QWEN_TELEMETRY_ENABLED: '0',
+      },
+      // Context window to prevent early compression
+      model: {
+        maxTokens: Number(this.ctxTokens) || 180081,
+      },
+    }
+  }
+
+  writeSettings() {
+    fs.mkdirSync(path.dirname(this.settingsPath), { recursive: true })
+    fs.writeFileSync(this.settingsPath, JSON.stringify(this.settingsJson(), null, 2))
+  }
+
+  async resolveModel() {
+    if (this.modelName) return this.modelName
+    try {
+      const data = await httpGetJson(`${this.upstream}/v1/models`)
+      const raw = data?.data?.[0]?.id || data?.models?.[0]?.name
+      if (!raw) throw new Error('no model in response')
+      return cleanLabel(raw)
+    } catch (e) {
+      // Default to a sensible name if we can't resolve
+      return `local.${this.host}`
+    }
+  }
+
+  selfTest() {
+    return new Promise(resolve => {
+      const payload = JSON.stringify({ model: 'x', max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }] })
+      const req = http.request({
+        hostname: new URL(this.upstream).hostname,
+        port:     new URL(this.upstream).port,
+        method:   'POST',
+        path:     '/v1/chat/completions',
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
+      req.on('error', () => resolve('ERR'))
+      req.write(payload); req.end()
+    })
+  }
+
+  async main() {
+    if (this.listSessions) {
+      const list = this.names.known()
+      if (!list.length) { console.log('no session names recorded yet.'); return }
+      const w = Math.max(...list.map(s => s.name.length))
+      for (const s of list) console.log(`${s.name.padEnd(w)}  ${s.sessionId}  ${s.live ? 'live ' : '     '} ${s.cwd}`)
+      return
+    }
+    if (this.showHelp) {
+      console.log(this.usage() + '\n')
+      // Also show qwen's own help
+      const child = spawn('qwen', ['--help'], { stdio: 'inherit' })
+      await new Promise(res => child.on('close', res))
+      return
+    }
+
+    const model = await this.resolveModel()
+    this.writeSettings()
+
+    console.log(this.banner(this.host))
+    console.log(`   sovereign → ${this.upstream}`)
+    console.log(`   model: ${model}`)
+
+    if (this.dryRun) {
+      const code = await this.selfTest()
+      console.log(`   dry-run self-test: POST /v1/chat/completions → ${code}`)
+      console.log(`   settings: ${this.settingsPath}`)
+      console.log(`   would run: qwen --auth-type openai --openai-base-url ${this.upstream}/v1 --openai-api-key "" --model ${model} ${this.qwenArgs.join(' ')}`.trim())
+      return
+    }
+
+    // Build the child environment — point qwen-code at the local OpenAI-compatible endpoint
+    const childEnv = {
+      ...this.env,
+      OPENAI_BASE_URL: `${this.upstream}/v1`,
+      OPENAI_API_KEY: '',  // dummy key for local models
+      ANTHROPIC_BASE_URL: undefined,  // don't use Anthropic endpoint
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: this.ctxTokens,
+      CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxTokens,
+      QWEN_CODE_SUPPRESS_YOLO_WARNING: '1',  // suppress yolo warning in non-interactive mode
+    }
+
+    // Grimoire MCP config — provides the tools (load, scribe, oracle, etc.)
+    // that the grimoire skills depend on. The grimoire server is at :3663/mcp.
+    const grimoireHome = process.env.QWEN_GRIMOIRE || GRIMOIRE_HOME
+    const grimoireServer = this.env.QWEN_GRIMOIRE_SERVER
+      || lblEndpoint('grimoire') || 'http://aid:3663'
+    const mcpConfig = JSON.stringify({
+      mcpServers: {
+        'grimoire': {
+          httpUrl: `${grimoireServer}/mcp`,
+        },
+      },
+    })
+
+    const child = spawn('node', [
+      QWEN_CLI,
+      '--auth-type', 'openai',
+      '--openai-base-url', `${this.upstream}/v1`,
+      '--openai-api-key', 'local',
+      '--model', model,
+      '--mcp-config', mcpConfig,
+      ...this.qwenArgs,
+    ], {
+      stdio: 'inherit',
+      env: childEnv,
+    })
+
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig))
+    child.on('close', code => process.exit(code ?? 0))
+    child.on('error', e => { console.error(`💥 failed to launch qwen: ${e.message}`); process.exit(1) })
+  }
+}
+
+if (require.main === module) {
+  Promise.resolve().then(() => new QwenSovereign().main())
+    .catch(e => { console.error(`💥 sovereign: ${e.message}`); process.exit(1) })
+}
+
+module.exports = { QwenSovereign, SessionNames, lblEndpoint, cleanLabel }

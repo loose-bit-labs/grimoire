@@ -11,12 +11,15 @@
 #   4. Ensures the grimoire host is in /etc/hosts (reads aid from lbl-config if present)
 #   5. Activates git hooks (.githooks/pre-commit)
 #   6. Configures Claude Code: MCP server + plugin
-#   7. Symlinks grim CLI into ~/bin (no sudo, no global install)
-#   8. Creates ~/.grimoire dotlink
-#   9. Installs grim-boot-report userspace systemd service
-#  10. Registers hardware inventory in the KB (re-run anytime after upgrades)
-#  11. Installs & (re)starts the grim-rig-serve userspace telemetry service
-#  12. Smoke-tests the connection
+#   6b. Configures Qwen Code: installs CLI, links into ~/bin, grimoire skills + MCP
+#   7. Claude Code status line (grim dungeon HUD)
+#   8. Symlinks grim CLI into ~/bin (no sudo, no global install)
+#   9. Creates ~/.grimoire dotlink
+#  10. Installs grim-boot-report userspace systemd service
+#  11. Registers hardware inventory in the KB (re-run anytime after upgrades)
+#  12. Ensures pinned Node.js at ~/.grimoire/bin/node
+#  13. Installs & (re)starts the grim-rig-serve userspace telemetry service
+#  14. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -230,7 +233,151 @@ EOF
     || warn "plugin install failed — run manually: claude plugin install grimoire --scope user"
 }
 
-# ── 6b. Claude Code status line (grim dungeon HUD) ───────────────────────────
+# ── 6b. Qwen Code — sovereign local model CLI ───────────────────────────────
+
+_configure_qwen_code() {
+  step "Configuring Qwen Code..."
+
+  local qwen_cli="$ENGINE_ROOT/bin/qwen"
+  local qwen_cli_dist
+  qwen_cli_dist=$(node -e "
+    const path = require('path');
+    // Resolve from the qwen wrapper: bin/qwen → bin (dirname) → parent
+    const wrapper = '$qwen_cli';
+    let dir = path.dirname(wrapper);
+    for (let i = 0; i < 4; i++) {
+      const p = path.join(dir, 'dist', 'cli.js');
+      if (require('fs').existsSync(p)) { process.stdout.write(p); process.exit(0); }
+      dir = path.join(dir, '..');
+    }
+    process.stdout.write('');
+  " 2>/dev/null || true)
+
+  if [[ -z "$qwen_cli" || ! -f "$qwen_cli" ]]; then
+    warn "bin/qwen not found — skipping Qwen Code setup"
+    return
+  fi
+
+  # ── Ensure qwen-code is cloned and up-to-date ─────────────────────────────
+  # Canonical location: ~/src/3rd/qwen-code. Pull for updates if present,
+  # clone + build if missing.
+  local qwen_target="$HOME/src/3rd/qwen-code"
+  local qwen_repo="${QWEN_CLI_REPO:-https://github.com/anthropics/qwen-code.git}"
+
+  if [[ -f "$qwen_target/dist/cli.js" ]]; then
+    step "Updating qwen-code..."
+    cd "$qwen_target" && git pull --ff-only 2>/dev/null \
+      || warn "git pull failed — update manually: cd $qwen_target && git pull"
+    qwen_cli_dist="$qwen_target/dist/cli.js"
+    ok "qwen-code updated at $qwen_cli_dist"
+  elif [[ -d "$qwen_target/.git" ]]; then
+    step "Cloning qwen-code..."
+    git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
+      || fail "git clone failed — install qwen-code manually at $qwen_target"
+    cd "$qwen_target"
+    qwen_cli_dist="$qwen_target/dist/cli.js"
+    ok "qwen-code cloned at $qwen_cli_dist"
+  else
+    step "Cloning qwen-code..."
+    mkdir -p "$(dirname "$qwen_target")"
+    git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
+      || fail "git clone failed — install qwen-code manually at $qwen_target"
+    cd "$qwen_target"
+    qwen_cli_dist="$qwen_target/dist/cli.js"
+    ok "qwen-code cloned at $qwen_cli_dist"
+  fi
+
+  # ── Build if needed ──────────────────────────────────────────────────────
+  if [[ ! -f "$qwen_cli_dist" ]]; then
+    step "Building qwen-code..."
+    if command -v corepack &>/dev/null; then
+      corepack enable 2>/dev/null || true
+    fi
+    if command -v pnpm &>/dev/null; then
+      pnpm install --frozen-lockfile 2>/dev/null \
+        || npm install 2>/dev/null
+    else
+      npm install 2>/dev/null
+    fi
+    npm run build 2>/dev/null \
+      || warn "build failed — run manually: cd $qwen_target && npm run build"
+    if [[ -f "$qwen_cli_dist" ]]; then
+      ok "qwen-code built"
+    else
+      fail "qwen-code build failed — check $qwen_target/dist/"
+    fi
+  fi
+
+  # Symlink qwen CLI into ~/bin (mirrors grim link)
+  local bin_dir="$HOME/bin"
+  local link="$bin_dir/qwen"
+  mkdir -p "$bin_dir"
+
+  if [[ -L "$link" && "$(readlink "$link")" == "$(readlink "$qwen_cli" 2>/dev/null || echo "$qwen_cli")" ]]; then
+    ok "~/bin/qwen already linked"
+  else
+    if [[ -L "$link" || -e "$link" ]]; then
+      warn "~/bin/qwen already exists ($(readlink "$link" 2>/dev/null || echo 'not a symlink'))"
+      local confirm
+      read -r -p "  Overwrite it? [y/N] " confirm
+      [[ "${confirm,,}" == "y" ]] || { warn "skipped — leaving existing ~/bin/qwen in place"; return; }
+      rm "$link"
+    fi
+    ln -s "$qwen_cli" "$link" 2>/dev/null || ln -sf "$(readlink -f "$qwen_cli" 2>/dev/null || echo "$qwen_cli")" "$link"
+    ok "linked: ~/bin/qwen → $(readlink "$link")"
+  fi
+
+  # Symlink grimoire skills into ~/.qwen/skills/
+  local skills_src="$ENGINE_ROOT/plugin/grimoire/skills"
+  local skills_dst="$HOME/.qwen/skills"
+
+  if [[ ! -d "$skills_src" ]]; then
+    warn "grimoire skills not found at $skills_src — skipping skill symlink"
+    return
+  fi
+
+  mkdir -p "$skills_dst"
+
+  # Symlink each skill (idempotent — skip if already pointing to the right place)
+  local linked=0 skipped=0
+  for skill in "$skills_src"/*; do
+    [[ -d "$skill" ]] || continue
+    local name
+    name=$(basename "$skill")
+    local dest="$skills_dst/$name"
+
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$skill" ]]; then
+      continue  # already correct
+    elif [[ -L "$dest" || -e "$dest" ]]; then
+      warn "  skill $name: $dest already exists — skipping"
+      skipped=$((skipped + 1))
+      continue
+    fi
+    ln -s "$skill" "$dest" 2>/dev/null \
+      && linked=$((linked + 1)) \
+      || { warn "  skill $name: failed to link"; skipped=$((skipped + 1)); }
+  done
+
+  ok "grimoire skills linked: $linked new, $skipped skipped → $skills_dst"
+
+  # Ensure QWEN_CLI_DIR is in the shell profile (already set by _ensure_qwen_cli,
+  # but verify if qwen-code was pre-installed and not through our install path)
+  if [[ -n "$qwen_cli_dist" ]]; then
+    local qwen_dir
+    qwen_dir=$(cd "$qwen_cli_dist/.." 2>/dev/null && pwd)
+    local profile="$HOME/.bashrc"
+    if ! grep -q 'QWEN_CLI_DIR' "$profile" 2>/dev/null; then
+      cat >> "$profile" <<EOF
+
+# Qwen Code — path to the qwen-code repo (used by bin/qwen wrapper)
+export QWEN_CLI_DIR="$qwen_dir"
+EOF
+      ok "wrote QWEN_CLI_DIR=$qwen_dir to $profile"
+    fi
+  fi
+}
+
+# ── 6c. Claude Code status line (grim dungeon HUD) ───────────────────────────
 
 _install_statusline() {
   step "Installing Claude Code status line..."
@@ -655,6 +802,7 @@ _main() {
   _seed_bootstrap_and_hosts
   _activate_git_hooks
   _configure_claude_code
+  _configure_qwen_code
   _install_statusline
   _install_grim_link
   _create_dotlink
@@ -667,7 +815,8 @@ _main() {
 
   echo ""
   echo "░ Setup complete."
-  echo "  Restart Claude Code to activate the MCP tools, then: /load"
+  echo "  Claude Code: restart to activate MCP, then /load"
+  echo "  Qwen Code:   qwen --bare -p 'run /load' -y"
   echo ""
 }
 
