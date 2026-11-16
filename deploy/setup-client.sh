@@ -8,18 +8,19 @@
 #   1. Checks Node.js 18+
 #   2. npm install
 #   3. Writes minimal .env (GRIMOIRE_ROOT unset; host resolved via lbl-config.json)
-#   4. Ensures the grimoire host is in /etc/hosts (reads aid from lbl-config if present)
-#   5. Activates git hooks (.githooks/pre-commit)
-#   6. Configures Claude Code: MCP server + plugin
-#   6b. Configures Qwen Code: installs CLI, links into ~/bin, grimoire skills + MCP
-#   7. Claude Code status line (grim dungeon HUD)
-#   8. Symlinks grim CLI into ~/bin (no sudo, no global install)
-#   9. Creates ~/.grimoire dotlink
-#  10. Installs grim-boot-report userspace systemd service
-#  11. Registers hardware inventory in the KB (re-run anytime after upgrades)
-#  12. Ensures pinned Node.js at ~/.grimoire/bin/node
-#  13. Installs & (re)starts the grim-rig-serve userspace telemetry service
-#  14. Smoke-tests the connection
+#   4. Seeds lbl-config bootstrap + fleet host resolution via grim
+#   5. Configures local DNS (systemd-resolved 99-lbl.conf)
+#   6. Activates git hooks (.githooks/pre-commit)
+#   7. Configures Claude Code: MCP server + plugin
+#   7b. Configures Qwen Code: installs CLI, links into ~/bin, grimoire skills + MCP
+#   8. Claude Code status line (grim dungeon HUD)
+#   9. Symlinks grim CLI into ~/bin (no sudo, no global install)
+#  10. Creates ~/.grimoire dotlink
+#  11. Installs grim-boot-report userspace systemd service
+#  12. Registers hardware inventory in the KB (re-run anytime after upgrades)
+#  13. Ensures pinned Node.js at ~/.grimoire/bin/node
+#  14. Installs & (re)starts the grim-rig-serve userspace telemetry service
+#  15. Smoke-tests the connection
 
 set -euo pipefail
 
@@ -154,6 +155,44 @@ EOF
   else
     warn "intent resolution failed — check that aid resolves and grim serve is running"
     warn "  Bootstrap: lbl-config.json has endpoints.grimoire = $(_grimoire_host)"
+  fi
+}
+
+# ── 4.5. Local DNS — systemd-resolved config for home.lan ─────────────────────
+# Writes deploy/99-lbl.conf to /etc/systemd/resolved.conf.d/ so internal
+# hostnames (aid, superack, etc.) resolve via the homelab DNS stub on aid:5335.
+# Graceful if sudo is unavailable (warn, don't fail).
+
+_configure_dns() {
+  step "Configuring local DNS (systemd-resolved)..."
+
+  local conf_src="$ENGINE_ROOT/deploy/99-lbl.conf"
+  local conf_dst="/etc/systemd/resolved.conf.d/99-lbl.conf"
+
+  if [[ ! -f "$conf_src" ]]; then
+    warn "deploy/99-lbl.conf not found — skipping DNS configuration"
+    return
+  fi
+
+  # Skip if already identical
+  if [[ -f "$conf_dst" ]] && diff -q "$conf_src" "$conf_dst" &>/dev/null; then
+    ok "99-lbl.conf already in place"
+    return
+  fi
+
+  if [[ "$EUID" -eq 0 ]]; then
+    sudo mkdir -p /etc/systemd/resolved.conf.d
+    sudo cp "$conf_src" "$conf_dst"
+    sudo systemctl restart systemd-resolved
+    ok "99-lbl.conf installed (via sudo, root)"
+  elif sudo -n true 2>/dev/null; then
+    sudo mkdir -p /etc/systemd/resolved.conf.d
+    sudo cp "$conf_src" "$conf_dst"
+    sudo systemctl restart systemd-resolved
+    ok "99-lbl.conf installed (via sudo)"
+  else
+    warn "no sudo available — skipping DNS configuration"
+    warn "  Once sudo is available: sudo cp deploy/99-lbl.conf /etc/systemd/resolved.conf.d/ && sudo systemctl restart systemd-resolved"
   fi
 }
 
@@ -800,6 +839,7 @@ _main() {
   _npm_install
   _write_env
   _seed_bootstrap_and_hosts
+  _configure_dns
   _activate_git_hooks
   _configure_claude_code
   _configure_qwen_code
