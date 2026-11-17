@@ -349,7 +349,14 @@ _configure_qwen_code() {
     if ! command -v corepack &>/dev/null && command -v pnpm &>/dev/null; then
       local build_js="$qwen_target/scripts/build.js"
       if [[ -f "$build_js" ]] && grep -q 'corepack pnpm' "$build_js"; then
-        sed -i 's|corepack pnpm|pnpm|g' "$build_js"
+        # macOS sed -i needs a backup suffix; Linux sed -i doesn't
+        local sed_i=()
+        if sed --version 2>/dev/null | grep -q 'GNU'; then
+          sed_i=(-i)
+        else
+          sed_i=(-i '')
+        fi
+        sed "${sed_i[@]}" 's|corepack pnpm|pnpm|g' "$build_js"
         ok "patched build.js: corepack pnpm → pnpm"
       fi
     fi
