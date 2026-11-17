@@ -319,6 +319,8 @@ _configure_qwen_code() {
   else
     step "Cloning qwen-code..."
     mkdir -p "$(dirname "$qwen_target")"
+    # Remove stale/incomplete clone (no .git) so git clone can succeed
+    [[ -d "$qwen_target" ]] && rm -rf "$qwen_target"
     git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
       || fail "git clone failed — install qwen-code manually at $qwen_target"
     cd "$qwen_target"
