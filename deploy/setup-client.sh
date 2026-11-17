@@ -333,10 +333,10 @@ _configure_qwen_code() {
     fi
     if command -v pnpm &>/dev/null; then
       pnpm install --frozen-lockfile 2>/dev/null \
-        || npm install 2>/dev/null \
+        || npm install --legacy-peer-deps 2>/dev/null \
         || fail "pnpm + npm install both failed — check dependencies"
     else
-      npm install \
+      npm install --legacy-peer-deps \
         || fail "npm install failed — check node/npm version"
     fi
     npm run build 2>/dev/null \
