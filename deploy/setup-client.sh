@@ -24,6 +24,15 @@
 
 set -euo pipefail
 
+# Source nvm if available (makes corepack, pinned node, etc. accessible in PATH)
+if [[ -d "$HOME/.nvm" ]]; then
+  export NVM_DIR="$HOME/.nvm"
+  if [[ -f "$NVM_DIR/nvm.sh" ]]; then
+    # shellcheck source=/dev/null
+    . "$NVM_DIR/nvm.sh" 2>/dev/null || true
+  fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -329,7 +338,10 @@ _configure_qwen_code() {
   if [[ ! -f "$qwen_cli_dist" ]]; then
     step "Building qwen-code..."
     if command -v corepack &>/dev/null; then
-      corepack enable 2>/dev/null || true
+      corepack enable 2>/dev/null || corepack prepare pnpm --activate 2>/dev/null || true
+    fi
+    if ! command -v pnpm &>/dev/null; then
+      npm install -g pnpm 2>/dev/null || true
     fi
     if command -v pnpm &>/dev/null; then
       pnpm install --frozen-lockfile 2>/dev/null \
