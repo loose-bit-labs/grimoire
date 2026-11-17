@@ -343,15 +343,25 @@ _configure_qwen_code() {
     if ! command -v pnpm &>/dev/null; then
       npm install -g pnpm 2>/dev/null || true
     fi
+    # Patch build.js to use system pnpm if corepack isn't available
+    # (qwen-code's build calls 'corepack pnpm' which may not be in PATH
+    #  even when pnpm is installed globally)
+    if ! command -v corepack &>/dev/null && command -v pnpm &>/dev/null; then
+      local build_js="$qwen_target/scripts/build.js"
+      if [[ -f "$build_js" ]] && grep -q 'corepack pnpm' "$build_js"; then
+        sed -i 's|corepack pnpm|pnpm|g' "$build_js"
+        ok "patched build.js: corepack pnpm → pnpm"
+      fi
+    fi
     if command -v pnpm &>/dev/null; then
-      pnpm install --frozen-lockfile 2>/dev/null \
-        || npm install --legacy-peer-deps 2>/dev/null \
+      pnpm install --frozen-lockfile \
+        || npm install --legacy-peer-deps \
         || fail "pnpm + npm install both failed — check dependencies"
     else
       npm install --legacy-peer-deps \
         || fail "npm install failed — check node/npm version"
     fi
-    npm run build 2>/dev/null \
+    npm run build \
       || fail "qwen-code build failed — check $qwen_target/dist/"
     if [[ -f "$qwen_cli_dist" ]]; then
       ok "qwen-code built"
