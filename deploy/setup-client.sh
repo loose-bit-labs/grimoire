@@ -397,7 +397,7 @@ _configure_qwen_code() {
   fi
 
   # Symlink grimoire skills into ~/.qwen/skills/
-  local skills_src="$ENGINE_ROOT/plugin/grimoire/skills"
+  local skills_src="$ENGINE_ROOT/plugin/skills"
   local skills_dst="$HOME/.qwen/skills"
 
   if [[ ! -d "$skills_src" ]]; then
