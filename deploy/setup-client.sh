@@ -334,16 +334,17 @@ _configure_qwen_code() {
     fi
     if command -v pnpm &>/dev/null; then
       pnpm install --frozen-lockfile 2>/dev/null \
-        || npm install 2>/dev/null
+        || { npm install 2>/dev/null || fail "pnpm + npm install failed — check dependencies"; }
     else
-      npm install 2>/dev/null
+      npm install 2>/dev/null \
+        || fail "npm install failed — check node/npm version"
     fi
     npm run build 2>/dev/null \
-      || warn "build failed — run manually: cd $qwen_target && npm run build"
+      || fail "qwen-code build failed — check $qwen_target/dist/"
     if [[ -f "$qwen_cli_dist" ]]; then
       ok "qwen-code built"
     else
-      fail "qwen-code build failed — check $qwen_target/dist/"
+      fail "qwen-code build produced no dist/cli.js"
     fi
   fi
 
