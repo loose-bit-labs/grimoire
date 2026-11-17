@@ -301,7 +301,7 @@ _configure_qwen_code() {
   # Canonical location: ~/src/3rd/qwen-code. Pull for updates if present,
   # clone + build if missing.
   local qwen_target="$HOME/src/3rd/qwen-code"
-  local qwen_repo="${QWEN_CLI_REPO:-https://github.com/anthropics/qwen-code.git}"
+  local qwen_repo="${QWEN_CLI_REPO:-git@github.com:anthropics/qwen-code.git}"
 
   if [[ -f "$qwen_target/dist/cli.js" ]]; then
     step "Updating qwen-code..."
