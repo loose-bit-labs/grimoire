@@ -310,19 +310,16 @@ _configure_qwen_code() {
     qwen_cli_dist="$qwen_target/dist/cli.js"
     ok "qwen-code updated at $qwen_cli_dist"
   elif [[ -d "$qwen_target/.git" ]]; then
-    step "Cloning qwen-code..."
-    git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
-      || fail "git clone failed — install qwen-code manually at $qwen_target"
-    cd "$qwen_target"
+    step "Updating qwen-code (incomplete clone detected)..."
+    cd "$qwen_target" && git pull --ff-only 2>/dev/null \
+      || fail "git pull failed — check the repo at $qwen_target manually"
     qwen_cli_dist="$qwen_target/dist/cli.js"
-    ok "qwen-code cloned at $qwen_cli_dist"
+    ok "qwen-code updated at $qwen_cli_dist"
   else
     step "Cloning qwen-code..."
     mkdir -p "$(dirname "$qwen_target")"
-    # Remove stale/incomplete clone (no .git) so git clone can succeed
-    [[ -d "$qwen_target" ]] && rm -rf "$qwen_target"
     git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
-      || fail "git clone failed — install qwen-code manually at $qwen_target"
+      || fail "git clone failed — check SSH key / network"
     cd "$qwen_target"
     qwen_cli_dist="$qwen_target/dist/cli.js"
     ok "qwen-code cloned at $qwen_cli_dist"
