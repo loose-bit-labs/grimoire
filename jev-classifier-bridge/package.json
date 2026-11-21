@@ -1,0 +1,12 @@
+{
+  "name": "jev-classifier-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HTTP bridge translating OpenAI Chat Completions wire format to Jev TypeSafe Choice primitive for qwen-code Auto Mode classifier",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
