@@ -8,6 +8,11 @@
  * instead of Anthropic's cloud. This is the grimoire's path to AI sovereignty:
  * no vendor lock-in, no API keys, no rate limits.
  *
+ * An in-process reverse proxy sits between qwen-code and the upstream, running
+ * a filter pipeline over every content block before forwarding. The default
+ * filter strips `image` blocks so a text-only model doesn't choke on media.
+ * Filters are async — one can call a local service instead of dropping.
+ *
  * Resolves the upstream from the same lbl-config that grim-portal uses, so
  * both tools stay in sync when you move models between boxes.
  *
@@ -21,8 +26,11 @@
  *   QWEN_ENDPOINT        lbl-config endpoints/use key        (default 'coding')
  *   QWEN_MODEL           override the resolved model id
  *   QWEN_CTX_TOKENS      local model context window          (default 180081)
- *   QWEN_SETTINGS        path to qwen settings.json          (default ~/.qwen/the-local-llm-settings.json)
- *   QWEN_STUB            image replacement text (for strip filter)
+ *   QWEN_SETTINGS        path to qwen settings.json
+ *   QWEN_STUB            image replacement text (strip filter)
+ *   QWEN_FILTERS         comma-separated filter pipeline     (default 'strip')
+ *   QWEN_PORT            proxy listen port       (default 0 → ephemeral, so
+ *                           multiple qwen sessions coexist; pin it only if you must)
  *   QWEN_DRYRUN=1        resolve + self-test, don't run qwen
  *   QWEN_GRIMOIRE        path to grimoire home (default: ~grimoire)
  */
@@ -100,6 +108,145 @@ function httpGetJson(url) {
     req.on('error', reject)
     req.setTimeout(5000, () => req.destroy(new Error(`timeout querying ${url}`)))
   })
+}
+
+// ── Content filters ─────────────────────────────────────────────────────────
+// A filter transforms ONE content block on its way to the model. It declares a
+// `name`, a `matches(block)` predicate, and an async `apply(block)` that
+// returns a replacement block, an array of blocks (expand), or null (drop).
+
+// Default: neutralise `image` blocks into a text stub.
+class StripImageFilter {
+  constructor({ stub } = {}) {
+    this.name = 'strip'
+    this.stub = stub || '[image omitted — text-only model]'
+  }
+  matches(b) { return b && b.type === 'image' }
+  async apply() { return { type: 'text', text: this.stub } }
+}
+
+// name → factory. Register new media handlers here.
+const FILTER_REGISTRY = {
+  strip: ctx => new StripImageFilter({ stub: ctx.stub }),
+}
+
+// ── The proxy ───────────────────────────────────────────────────────────────
+// Reverse-proxies to the real llama-server. Runs the filter pipeline over every
+// content block before forwarding; the response — including SSE streams — is
+// piped back raw. Non-/v1/chat/completions is a transparent passthrough.
+
+class QwenProxy {
+  constructor({ port, upstream, filters, stub } = {}) {
+    this.port     = port == null ? 0 : Number(port)   // 0 → OS picks ephemeral
+    this.upstream = new URL(upstream || 'http://localhost:11311')
+    this.filters  = filters && filters.length ? filters : [new StripImageFilter({ stub })]
+    this.handled  = 0
+    this.server   = null
+  }
+
+  // Walk and filter content blocks. Handles both string content and array of
+  // content parts (OpenAI format). Recurses into tool_result content arrays.
+  async transform(body) {
+    let n = 0
+    const walk = async blocks => {
+      if (!Array.isArray(blocks)) return blocks
+      const out = []
+      for (let cur of blocks) {
+        if (cur && cur.type === 'tool_result' && Array.isArray(cur.content)) {
+          cur = { ...cur, content: await walk(cur.content) }
+        }
+        const f = this.filters.find(f => f.matches(cur))
+        if (!f) { out.push(cur); continue }
+        const r = await f.apply(cur); n++
+        if (r == null) continue
+        if (Array.isArray(r)) out.push(...r); else out.push(r)
+      }
+      return out
+    }
+    if (Array.isArray(body.messages)) {
+      for (const m of body.messages) {
+        if (Array.isArray(m.content)) m.content = await walk(m.content)
+      }
+    }
+    this.handled += n
+    return n
+  }
+
+  handleCompletions(req, res) {
+    const chunks = []
+    req.on('data', c => chunks.push(c))
+    req.on('end', async () => {
+      let raw = Buffer.concat(chunks), n = 0
+      try {
+        const body = JSON.parse(raw.toString('utf8'))
+        n = await this.transform(body)
+        if (n) raw = Buffer.from(JSON.stringify(body))
+      } catch (e) {
+        console.error(`⚠ /v1/chat/completions body not JSON, passing raw: ${e.message}`)
+      }
+      if (n) console.log(`🧹 filtered ${n} block(s) this turn (total ${this.handled})`)
+      this.forward(req, res, raw)
+    })
+    req.on('error', e => this.fail(res, e))
+  }
+
+  passthrough(req, res) {
+    const chunks = []
+    req.on('data', c => chunks.push(c))
+    req.on('end', () => this.forward(req, res, Buffer.concat(chunks)))
+    req.on('error', e => this.fail(res, e))
+  }
+
+  forward(req, res, bodyBuf) {
+    const headers = { ...req.headers, host: this.upstream.host }
+    if (bodyBuf.length) headers['content-length'] = Buffer.byteLength(bodyBuf)
+    else delete headers['content-length']
+    const up = http.request({
+      protocol: this.upstream.protocol,
+      hostname: this.upstream.hostname,
+      port:     this.upstream.port,
+      method:   req.method,
+      path:     req.url,
+      headers,
+    }, upRes => { res.writeHead(upRes.statusCode, upRes.headers); upRes.pipe(res) })
+    up.on('error', e => this.fail(res, e))
+    if (bodyBuf.length) up.write(bodyBuf)
+    up.end()
+  }
+
+  fail(res, err) {
+    console.error(`💥 upstream error: ${err.message}`)
+    if (res.headersSent) return res.destroy()
+    res.writeHead(502, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { type: 'qwen_upstream_error', message: err.message } }))
+  }
+
+  start(cb) {
+    this.server = http.createServer((req, res) => {
+      if (req.method === 'POST' && req.url.startsWith('/v1/chat/completions'))
+        return this.handleCompletions(req, res)
+      return this.passthrough(req, res)
+    })
+    const tryListen = port => {
+      const onError = err => {
+        if (err.code === 'EADDRINUSE' && port !== 0) {
+          console.error(`⚠ proxy port ${port} in use — falling back to ephemeral`)
+          return tryListen(0)
+        }
+        cb && cb(err)
+      }
+      this.server.once('error', onError)
+      this.server.listen(port, '127.0.0.1', () => {
+        this.server.removeListener('error', onError)
+        this.port = this.server.address().port
+        cb && cb()
+      })
+    }
+    tryListen(this.port)
+    return this.server
+  }
+
+  stop() { if (this.server) this.server.close() }
 }
 
 // ── Session names ────────────────────────────────────────────────────────────
@@ -222,6 +369,11 @@ class QwenSovereign {
     // Grimoire home for skill linking
     this.grimoireHome = GRIMOIRE_HOME
 
+    // Proxy config
+    this.proxyPort = Number(env.QWEN_PORT || 0)  // 0 → ephemeral
+    this.stub      = env.QWEN_STUB || '[image omitted — text-only model]'
+    this.filters   = (env.QWEN_FILTERS || 'strip').split(',').map(s => s.trim()).filter(Boolean)
+
     // Dry-run mode
     this.dryRun = !!env.QWEN_DRYRUN
 
@@ -289,13 +441,25 @@ Environment (all optional):
   QWEN_MODEL           override the resolved model id
   QWEN_CTX_TOKENS      local model context window            (default 180081)
   QWEN_SETTINGS        path to qwen settings.json
+  QWEN_STUB            image replacement text (strip filter)
+  QWEN_FILTERS         comma-separated filter pipeline       (default 'strip')
   QWEN_DRYRUN=1        resolve + self-test, don't run qwen
 
+Filters run on the wire so a text-only model never receives an image block.
 Session names: --resume/-s accepts a NAME (e.g. "nezumi"), not just a UUID.
 'qwen --sessions' lists known sessions.
 
-This wrapper points qwen-code at your local model (OpenAI-compatible API).
 All other args pass through to qwen.`
+  }
+
+  // Build the filter pipeline from QWEN_FILTERS (comma-separated, default 'strip').
+  buildFilters() {
+    const ctx = { stub: this.stub }
+    return this.filters.map(name => {
+      const make = FILTER_REGISTRY[name]
+      if (!make) throw new Error(`unknown QWEN_FILTER '${name}' — known: ${Object.keys(FILTER_REGISTRY).join(', ')}`)
+      return make(ctx)
+    })
   }
 
   settingsJson() {
@@ -308,12 +472,9 @@ All other args pass through to qwen.`
         'grimoire@qwen-plugins': hasSkills,
       },
       telemetry: { enabled: false },
-      // Point at the local model via OpenAI-compatible endpoint
-      // qwen-code stores model/provider config here
       env: {
         QWEN_TELEMETRY_ENABLED: '0',
       },
-      // Context window to prevent early compression
       model: {
         maxTokens: Number(this.ctxTokens) || 180081,
       },
@@ -333,25 +494,8 @@ All other args pass through to qwen.`
       if (!raw) throw new Error('no model in response')
       return cleanLabel(raw)
     } catch (e) {
-      // Default to a sensible name if we can't resolve
       return `local.${this.host}`
     }
-  }
-
-  selfTest() {
-    return new Promise(resolve => {
-      const payload = JSON.stringify({ model: 'x', max_tokens: 1,
-        messages: [{ role: 'user', content: 'ping' }] })
-      const req = http.request({
-        hostname: new URL(this.upstream).hostname,
-        port:     new URL(this.upstream).port,
-        method:   'POST',
-        path:     '/v1/chat/completions',
-        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
-      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
-      req.on('error', () => resolve('ERR'))
-      req.write(payload); req.end()
-    })
   }
 
   async main() {
@@ -364,7 +508,6 @@ All other args pass through to qwen.`
     }
     if (this.showHelp) {
       console.log(this.usage() + '\n')
-      // Also show qwen's own help
       const child = spawn('qwen', ['--help'], { stdio: 'inherit' })
       await new Promise(res => child.on('close', res))
       return
@@ -377,28 +520,27 @@ All other args pass through to qwen.`
     console.log(`   sovereign → ${this.upstream}`)
     console.log(`   model: ${model}`)
 
+    // Start proxy on ephemeral port
+    this.proxy = new QwenProxy({
+      port: this.proxyPort,
+      upstream: this.upstream,
+      filters: this.buildFilters(),
+      stub: this.stub,
+    })
+
+    await new Promise((res, rej) => this.proxy.start(err => err ? rej(err) : res()))
+    this.proxyPort = this.proxy.port  // the port actually bound
+    console.log(`   proxy :${this.proxyPort} → ${this.upstream}  (filters: ${this.proxy.filters.map(f => f.name).join(' → ')})`)
+
     if (this.dryRun) {
-      const code = await this.selfTest()
-      console.log(`   dry-run self-test: POST /v1/chat/completions → ${code}`)
+      const code = await this.proxySelfTest()
+      console.log(`   dry-run self-test: proxy → ${code}`)
       console.log(`   settings: ${this.settingsPath}`)
-      console.log(`   would run: qwen --auth-type openai --openai-base-url ${this.upstream}/v1 --openai-api-key "" --model ${model} ${this.qwenArgs.join(' ')}`.trim())
+      this.proxy.stop()
       return
     }
 
-    // Build the child environment — point qwen-code at the local OpenAI-compatible endpoint
-    const childEnv = {
-      ...this.env,
-      OPENAI_BASE_URL: `${this.upstream}/v1`,
-      OPENAI_API_KEY: '',  // dummy key for local models
-      ANTHROPIC_BASE_URL: undefined,  // don't use Anthropic endpoint
-      ANTHROPIC_API_KEY: undefined,
-      CLAUDE_CODE_MAX_CONTEXT_TOKENS: this.ctxTokens,
-      CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxTokens,
-      QWEN_CODE_SUPPRESS_YOLO_WARNING: '1',  // suppress yolo warning in non-interactive mode
-    }
-
-    // Grimoire MCP config — provides the tools (load, scribe, oracle, etc.)
-    // that the grimoire skills depend on. The grimoire server is at :3663/mcp.
+    // Grimoire MCP config
     const grimoireHome = process.env.QWEN_GRIMOIRE || GRIMOIRE_HOME
     const grimoireServer = this.env.QWEN_GRIMOIRE_SERVER
       || lblEndpoint('grimoire') || 'http://aid:3663'
@@ -410,10 +552,22 @@ All other args pass through to qwen.`
       },
     })
 
+    // Build child environment — point qwen-code at the proxy, not the upstream
+    const childEnv = {
+      ...this.env,
+      OPENAI_BASE_URL: `http://127.0.0.1:${this.proxyPort}/v1`,
+      OPENAI_API_KEY: '',  // dummy key for local models
+      ANTHROPIC_BASE_URL: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: this.ctxTokens,
+      CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxTokens,
+      QWEN_CODE_SUPPRESS_YOLO_WARNING: '1',
+    }
+
     const child = spawn('node', [
       QWEN_CLI,
       '--auth-type', 'openai',
-      '--openai-base-url', `${this.upstream}/v1`,
+      '--openai-base-url', `http://127.0.0.1:${this.proxyPort}/v1`,
       '--openai-api-key', 'local',
       '--model', model,
       '--mcp-config', mcpConfig,
@@ -423,9 +577,25 @@ All other args pass through to qwen.`
       env: childEnv,
     })
 
-    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig))
-    child.on('close', code => process.exit(code ?? 0))
-    child.on('error', e => { console.error(`💥 failed to launch qwen: ${e.message}`); process.exit(1) })
+    const cleanup = () => this.proxy.stop()
+
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { child.kill(sig); cleanup() })
+    child.on('close', code => { cleanup(); process.exit(code ?? 0) })
+    child.on('error', e => { console.error(`💥 failed to launch qwen: ${e.message}`); cleanup(); process.exit(1) })
+  }
+
+  // Fire one request through the proxy to prove the whole path is live.
+  proxySelfTest() {
+    return new Promise(resolve => {
+      const payload = JSON.stringify({ model: 'x', max_tokens: 1,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }] })
+      const req = http.request({
+        hostname: '127.0.0.1', port: this.proxyPort, method: 'POST', path: '/v1/chat/completions',
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
+      }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
+      req.on('error', () => resolve('ERR'))
+      req.write(payload); req.end()
+    })
   }
 }
 
@@ -434,4 +604,4 @@ if (require.main === module) {
     .catch(e => { console.error(`💥 sovereign: ${e.message}`); process.exit(1) })
 }
 
-module.exports = { QwenSovereign, SessionNames, lblEndpoint, cleanLabel }
+module.exports = { QwenSovereign, QwenProxy, SessionNames, StripImageFilter, FILTER_REGISTRY, lblEndpoint, cleanLabel }
