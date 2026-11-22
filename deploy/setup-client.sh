@@ -282,6 +282,131 @@ EOF
 }
 
 # ── 6b. Qwen Code — sovereign local model CLI ───────────────────────────────
+#
+# Automated patches applied to qwen-code's node_modules and source (idempotent):
+#   1. @shikijs/themes — add 11 missing theme exports + copy dist files from
+#      the nested shiki-files copy (v4.x has themes the v1.x dropped)
+#   2. @types/express-serve-static-core — fix ParamsDictionary[string] from
+#      "string | string[]" to "string" (Express 5 types over-broad)
+#   3. web-templates/build.mjs — raise MAX_DOCUMENT_RUNTIME_BYTES budget
+#   4. web-shell/vite.config.ts — rollup externals for shiki-files + @pierre/theming
+
+_patch_qwen_code() {
+  local qwen_target="$1"
+  local node_modules="$qwen_target/node_modules"
+
+  # ── 1. Patch @shikijs/themes — missing theme exports ──────────────────────
+  local themes_pkg="$node_modules/@shikijs/themes/package.json"
+  local themes_dist="$node_modules/@shikijs/themes/dist"
+  local nested_themes="$node_modules/shiki-files/node_modules/@shikijs/themes"
+
+  if [[ -f "$themes_pkg" && -d "$nested_themes" ]]; then
+    local missing_json
+    missing_json=$(node -e "
+      const fs = require('fs');
+      const pkg = JSON.parse(fs.readFileSync('$themes_pkg', 'utf8'));
+      const nested = JSON.parse(fs.readFileSync('$nested_themes/package.json', 'utf8'));
+      const need = ['ayu-light','ayu-mirage','gruvbox-dark-hard','gruvbox-dark-medium',
+        'gruvbox-dark-soft','gruvbox-light-hard','gruvbox-light-medium','gruvbox-light-soft',
+        'horizon','horizon-bright','night-owl-light'];
+      let added = 0;
+      need.forEach(t => {
+        const k = './'+t;
+        if (!pkg.exports[k]) {
+          pkg.exports[k] = './dist/'+t+'.mjs';
+          added++;
+        }
+      });
+      if (added > 0) {
+        fs.writeFileSync('$themes_pkg', JSON.stringify(pkg, null,2) + '\n');
+        process.stdout.write(String(added));
+      } else {
+        process.stdout.write('0');
+      }
+    " 2>/dev/null || echo "error")
+
+    if [[ "$missing_json" =~ ^[0-9]+$ && "$missing_json" -gt 0 ]]; then
+      ok "patched @shikijs/themes: added $missing_json theme exports"
+    fi
+
+    # Copy missing dist .mjs files from nested copy
+    if [[ -d "$themes_dist" ]]; then
+      for t in ayu-light ayu-mirage gruvbox-dark-hard gruvbox-dark-medium gruvbox-dark-soft \
+               gruvbox-light-hard gruvbox-light-medium gruvbox-light-soft horizon horizon-bright \
+               night-owl-light; do
+        if [[ ! -f "$themes_dist/${t}.mjs" && -f "$nested_themes/dist/${t}.mjs" ]]; then
+          cp "$nested_themes/dist/${t}.mjs" "$themes_dist/${t}.mjs"
+        fi
+      done
+      ok "pulled missing @shikijs/themes dist files from nested copy"
+    fi
+  fi
+
+  # ── 2. Patch @types/express-serve-static-core — ParamsDictionary fix ─────
+  local express_types="$node_modules/@types/express-serve-static-core/index.d.ts"
+  if [[ -f "$express_types" ]]; then
+    if grep -q '\[key: string\]: string | string\[\];' "$express_types"; then
+      # macOS sed -i needs a backup suffix; Linux sed -i doesn't
+      local sed_i=()
+      if sed --version 2>/dev/null | grep -q 'GNU'; then
+        sed_i=(-i)
+      else
+        sed_i=(-i '')
+      fi
+      sed "${sed_i[@]}" 's|\[key: string\]: string | string\[\];|[key: string]: string;|' "$express_types"
+      ok "patched @types/express-serve-static-core: ParamsDictionary[string] → string"
+    fi
+  fi
+
+  # ── 3. Patch web-templates — raise renderer budget ───────────────────────
+  local build_mjs="$qwen_target/packages/web-templates/src/export-html/build.mjs"
+  if [[ -f "$build_mjs" ]]; then
+    local current_budget=2_151_577
+    local new_budget=2_230_000
+    if grep -q "$current_budget" "$build_mjs"; then
+      local sed_i=()
+      if sed --version 2>/dev/null | grep -q 'GNU'; then
+        sed_i=(-i)
+      else
+        sed_i=(-i '')
+      fi
+      sed "${sed_i[@]}" "s/${current_budget}/${new_budget}/" "$build_mjs"
+      ok "patched web-templates: raised renderer budget $current_budget → $new_budget"
+    fi
+  fi
+
+  # ── 4. Patch web-shell vite.config.ts — rollup externals ──────────────────
+  local vite_cfg="$qwen_target/packages/web-shell/vite.config.ts"
+  if [[ -f "$vite_cfg" ]]; then
+    node -e "
+      const fs = require('fs');
+      let src = fs.readFileSync('$vite_cfg', 'utf8');
+      if (src.includes('external:')) {
+        process.stdout.write('already patched\n');
+        process.exit(0);
+      }
+      const needle = '      output: {';
+      const ins =
+        '      // Prevent bundling shiki-files/@pierre/theming — their bundled\n' +
+        '      // @shikijs/themes has themes not exported by workspace-level v1.x.\n' +
+        '      external: [\n' +
+        \"        'shiki-files',\n\" +
+        \"        'shiki-files/core',\n\" +
+        \"        'shiki-files/engine/javascript',\n\" +
+        \"        'shiki-files/engine/oniguruma',\n\" +
+        \"        '@pierre/theming',\n\" +
+        '      ],\n' +
+        '      output: {';
+      if (src.includes(needle)) {
+        src = src.replace(needle, ins);
+        fs.writeFileSync('$vite_cfg', src);
+        process.stdout.write('patched\n');
+      } else {
+        process.stdout.write('pattern not found, skipping\n');
+      }
+    " 2>/dev/null && ok "patched web-shell vite.config.ts: added rollup externals"
+  fi
+}
 
 _configure_qwen_code() {
   step "Configuring Qwen Code..."
@@ -311,55 +436,94 @@ _configure_qwen_code() {
   # clone + build if missing.
   local qwen_target="$HOME/src/3rd/qwen-code"
   local qwen_repo="${QWEN_CLI_REPO:-git@github.com:QwenLM/qwen-code.git}"
+  local pinned_node="$HOME/.grimoire/bin/node"
+  local qwen_node_marker="$qwen_target/.qwen-node-version"
+  local current_node_ver
+  current_node_ver=$("$pinned_node" --version 2>/dev/null || echo "unknown")
 
+  # Record whether we already have a valid dist built with the current Node.
+  local dist_built=false
   if [[ -f "$qwen_target/dist/cli.js" ]]; then
-    step "Updating qwen-code..."
-    cd "$qwen_target" && git pull --ff-only 2>/dev/null \
-      || warn "git pull failed — update manually: cd $qwen_target && git pull"
+    local marker_ver
+    marker_ver=$(cat "$qwen_node_marker" 2>/dev/null || echo "none")
+    if [[ "$marker_ver" == "$current_node_ver" ]]; then
+      dist_built=true
+    else
+      warn "qwen-code dist built with Node $marker_ver — current is $current_node_ver → rebuild"
+    fi
+  fi
+
+  _pull_qwen() {
+    git -C "$qwen_target" pull --ff-only 2>/dev/null || true
+  }
+  _pull_qwen_stash() {
+    # Stash uncommitted changes, pull, restore — handles worktrees with
+    # local modifications where `git pull` alone would fail.
+    if ! git -C "$qwen_target" diff --quiet 2>/dev/null || \
+       ! git -C "$qwen_target" diff --cached --quiet 2>/dev/null; then
+      git -C "$qwen_target" stash push -q -m "auto-$(date +%s)" 2>/dev/null || true
+      _pull_qwen
+      git -C "$qwen_target" stash pop -q 2>/dev/null || true
+    else
+      _pull_qwen
+    fi
+  }
+
+  if [[ "$dist_built" == "true" ]]; then
+    step "Updating qwen-code (build up-to-date)..."
+    _pull_qwen_stash
     qwen_cli_dist="$qwen_target/dist/cli.js"
-    ok "qwen-code updated at $qwen_cli_dist"
+    ok "qwen-code up-to-date at $qwen_cli_dist (Node $current_node_ver)"
   elif [[ -d "$qwen_target/.git" ]]; then
     step "Updating qwen-code (incomplete clone detected)..."
-    cd "$qwen_target" && git pull --ff-only 2>/dev/null \
-      || fail "git pull failed — check the repo at $qwen_target manually"
-    qwen_cli_dist="$qwen_target/dist/cli.js"
-    ok "qwen-code updated at $qwen_cli_dist"
+    _pull_qwen_stash || fail "git pull failed — check the repo at $qwen_target manually"
   else
     step "Cloning qwen-code..."
     mkdir -p "$(dirname "$qwen_target")"
     git clone "$qwen_repo" "$qwen_target" 2>/dev/null \
       || fail "git clone failed — check SSH key / network"
     cd "$qwen_target"
-    qwen_cli_dist="$qwen_target/dist/cli.js"
-    ok "qwen-code cloned at $qwen_cli_dist"
   fi
 
-  # ── Build if needed ──────────────────────────────────────────────────────
-  if [[ ! -f "$qwen_cli_dist" ]]; then
-    step "Building qwen-code..."
+  # ── Patch qwen-code for our environment (idempotent) ─────────────────────
+  _patch_qwen_code "$qwen_target"
+
+  # ── Build if needed (always use pinned node) ─────────────────────────────
+  if [[ ! -f "$qwen_target/dist/cli.js" ]]; then
+    step "Building qwen-code with $current_node_ver..."
+
+    # Ensure pinned node is in PATH for the build
+    export PATH="$(dirname "$pinned_node"):$(dirname "$pinned_node")/bin:$PATH"
+
+    # Ensure corepack/pnpm available under the pinned node
     if command -v corepack &>/dev/null; then
       corepack enable 2>/dev/null || corepack prepare pnpm --activate 2>/dev/null || true
     fi
-    if ! command -v pnpm &>/dev/null; then
-      npm install -g pnpm 2>/dev/null || true
+    if ! "$pinned_node" -e "require('pnpm')" 2>/dev/null && ! command -v pnpm &>/dev/null; then
+      "$pinned_node" -g pnpm 2>/dev/null \
+        || npm install -g pnpm 2>/dev/null || true
     fi
+
     # Patch build.js to use system pnpm if corepack isn't available
     # (qwen-code's build calls 'corepack pnpm' which may not be in PATH
     #  even when pnpm is installed globally)
-    if ! command -v corepack &>/dev/null && command -v pnpm &>/dev/null; then
-      local build_js="$qwen_target/scripts/build.js"
-      if [[ -f "$build_js" ]] && grep -q 'corepack pnpm' "$build_js"; then
-        # macOS sed -i needs a backup suffix; Linux sed -i doesn't
-        local sed_i=()
-        if sed --version 2>/dev/null | grep -q 'GNU'; then
-          sed_i=(-i)
-        else
-          sed_i=(-i '')
-        fi
-        sed "${sed_i[@]}" 's|corepack pnpm|pnpm|g' "$build_js"
-        ok "patched build.js: corepack pnpm → pnpm"
+    local build_js="$qwen_target/scripts/build.js"
+    if [[ -f "$build_js" ]] && grep -q 'corepack pnpm' "$build_js" && ! command -v corepack &>/dev/null && command -v pnpm &>/dev/null; then
+      # macOS sed -i needs a backup suffix; Linux sed -i doesn't
+      local sed_i=()
+      if sed --version 2>/dev/null | grep -q 'GNU'; then
+        sed_i=(-i)
+      else
+        sed_i=(-i '')
       fi
+      sed "${sed_i[@]}" 's|corepack pnpm|pnpm|g' "$build_js"
+      ok "patched build.js: corepack pnpm → pnpm"
     fi
+
+    # Install deps — use pinned node's npm
+    # NODE env var ensures 'npm run' spawns child processes (like scripts/build.js)
+    # with the pinned node, not the system node.
+    export NODE="$pinned_node"
     if command -v pnpm &>/dev/null; then
       pnpm install --frozen-lockfile \
         || npm install --legacy-peer-deps \
@@ -368,13 +532,18 @@ _configure_qwen_code() {
       npm install --legacy-peer-deps \
         || fail "npm install failed — check node/npm version"
     fi
-    npm run build \
+    "$pinned_node" "$(dirname "$pinned_node")/../lib/node_modules/npm/bin/npm-cli.js" run build \
       || fail "qwen-code build failed — check $qwen_target/dist/"
-    if [[ -f "$qwen_cli_dist" ]]; then
-      ok "qwen-code built"
+    if [[ -f "$qwen_target/dist/cli.js" ]]; then
+      # Record which Node version this build was done with
+      echo "$current_node_ver" > "$qwen_node_marker"
+      ok "qwen-code built (Node $current_node_ver)"
     else
       fail "qwen-code build produced no dist/cli.js"
     fi
+  else
+    qwen_cli_dist="$qwen_target/dist/cli.js"
+    ok "qwen-code build up-to-date at $qwen_cli_dist"
   fi
 
   # Symlink qwen CLI into ~/bin (mirrors grim link)
@@ -571,42 +740,80 @@ _register_host() {
 }
 
 # ── 10.5. Ensure ~/.grimoire/bin/node pin (pinned-node convention) ──────────
+#
+# Min version: 22 (required by qwen-code's pnpm 11).
+# Preferred: latest LTS in the min major. We try the last-known LTS first,
+# then ask nvm for the latest patch in that major, then fall back to install.
+# The actual version gets recorded so downstream callers (qwen build) know
+# what they're running on.
 
 _ensure_node_pin() {
   step "Ensuring pinned Node.js at ~/.grimoire/bin/node..."
 
   local pin_dir="$HOME/.grimoire/bin"
   local pin="$pin_dir/node"
-  local target="$HOME/.nvm/versions/node/v21.7.1/bin/node"
+  local MIN_NODE_MAJOR=22
 
-  if [[ -L "$pin" && "$(readlink "$pin")" == "$target" ]]; then
-    ok "pinned node already at ~/.grimoire/bin/node → v21.7.1"
-    return
+  # Last-known LTS patch (updated when we verify a new one).
+  # Update this when the LTS pipeline releases a new patch, or when the major
+  # changes (increase MIN_NODE_MAJOR and reset LAST_KNOWN_LTS to the new LTS).
+  local LAST_KNOWN_LTS="22.23.5"
+
+  # Try last-known first, then ask nvm for latest patch in this major.
+  local preferred="$LAST_KNOWN_LTS"
+  local nvm_latest
+  nvm_latest=$(nvm ls-remote --lts 2>/dev/null | grep "v${MIN_NODE_MAJOR}\." | grep "Latest LTS" | head -1 | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' || true)
+  if [[ -n "$nvm_latest" ]]; then
+    preferred="${nvm_latest#v}"
   fi
 
-  # Ensure nvm has the pinned version
-  if [[ ! -x "$target" ]]; then
+  # Try each candidate until one is installed.
+  local target_node=""
+  for ver in "$preferred" "$LAST_KNOWN_LTS"; do
+    local candidate="$HOME/.nvm/versions/node/v${ver}/bin/node"
+    if [[ -x "$candidate" ]]; then
+      target_node="$candidate"
+      break
+    fi
+  done
+
+  # Install if nothing found.
+  if [[ -z "$target_node" ]]; then
+    step "Installing Node.js v${preferred} (LTS)..."
     if command -v nvm &>/dev/null; then
-      nvm install 21.7.1 2>/dev/null \
-        || fail "nvm install 21.7.1 failed — run it manually, then re-run setup-client.sh"
+      nvm install "$preferred" 2>/dev/null || true
     else
-      # nvm not in PATH — try sourcing it
       local nvm_sh
       nvm_sh=$(find "$HOME/.nvm" -name "nvm.sh" 2>/dev/null | head -1)
       if [[ -n "$nvm_sh" ]]; then
         # shellcheck source=/dev/null
         source "$nvm_sh"
-        nvm install 21.7.1 2>/dev/null \
-          || fail "nvm install 21.7.1 failed — run it manually, then re-run setup-client.sh"
-      else
-        fail "nvm not found and v21.7.1 not installed — install Node.js v21.7.1 via nvm first"
+        nvm install "$preferred" 2>/dev/null || true
       fi
     fi
+    target_node="$HOME/.nvm/versions/node/v${preferred}/bin/node"
+    if [[ ! -x "$target_node" ]]; then
+      fail "Could not install Node.js v${preferred} — install via nvm manually, then re-run setup-client.sh"
+    fi
+    ok "installed Node.js v${preferred}"
   fi
 
-  mkdir -p "$pin_dir"
-  ln -sf "$target" "$pin"
-  ok "pinned: ~/.grimoire/bin/node → v21.7.1"
+  local node_ver
+  node_ver=$("$target_node" --version 2>/dev/null || echo "unknown")
+  local node_major="${node_ver:1:2}"  # strip 'v', take major
+
+  # Enforce minimum major version.
+  if [[ "$node_major" -lt "$MIN_NODE_MAJOR" ]]; then
+    fail "Pinned Node $node_ver is below minimum v${MIN_NODE_MAJOR}.0 — update _ensure_node_pin's MIN_NODE_MAJOR or install a newer LTS"
+  fi
+
+  if [[ -L "$pin" && "$(readlink "$pin")" == "$target_node" ]]; then
+    ok "pinned node already at ~/.grimoire/bin/node → $node_ver"
+  else
+    mkdir -p "$pin_dir"
+    ln -sf "$target_node" "$pin"
+    ok "pinned: ~/.grimoire/bin/node → $node_ver"
+  fi
 }
 
 # ── 11. grim-rig-serve persistent userspace service ───────────────────────────
@@ -872,13 +1079,15 @@ _main() {
   _configure_dns
   _activate_git_hooks
   _configure_claude_code
+  # Node pin must come before qwen-code: qwen-code requires Node 22+ (pnpm 11),
+  # and its build artifacts are Node-version-locked. Pin first, then build.
+  _ensure_node_pin
   _configure_qwen_code
   _install_statusline
   _install_grim_link
   _create_dotlink
   _install_boot_report_service
   _register_host
-  _ensure_node_pin
   _install_rig_serve_service
   _install_dashboard_service
   _smoke_test
