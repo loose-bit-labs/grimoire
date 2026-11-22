@@ -22,8 +22,32 @@ function log(level, obj) {
   const levels = { debug: 0, info: 1, warn: 2, error: 3 }
   if ((levels[level] ?? 1) < (levels[logLevel] ?? 1)) return
 
-  const record = Object.assign({ level, ts: new Date().toISOString() }, obj)
+  const record = Object.assign({ level, ts: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }) }, obj)
   process.stdout.write(JSON.stringify(record) + '\n')
+}
+
+function clientHost(req) {
+  return req.headers['x-forwarded-for']
+    ? req.headers['x-forwarded-for'].split(',')[0].trim()
+    : (req.socket.remoteAddress || 'unknown')
+}
+
+function commandSnippet(body) {
+  try {
+    const parsed = JSON.parse(body)
+    const messages = Array.isArray(parsed?.messages) ? parsed.messages : []
+    // Find the last user message content
+    const userMsg = messages.slice().reverse().find(m => m.role === 'user')
+    if (!userMsg) return null
+    const raw = typeof userMsg.content === 'string'
+      ? userMsg.content
+      : Array.isArray(userMsg.content)
+        ? userMsg.content.filter(p => p.type === 'text').map(p => p.text).join('\n')
+        : ''
+    return raw.slice(0, 80) || null
+  } catch {
+    return null
+  }
 }
 
 // ─── Request handler ─────────────────────────────────────────────────────────
@@ -46,7 +70,7 @@ async function handleRequest(req, res) {
     req.on('error', reject)
   })
 
-  log('debug', { bodyLen: body.length, bodyPreview: body.slice(0, 100) })
+  log('debug', { bodyLen: body.length, bodyPreview: body.slice(0, 100), command: commandSnippet(body), clientHost: clientHost(req) })
 
   let openaiRequest
   try {
@@ -90,6 +114,8 @@ async function handleRequest(req, res) {
   log('info', {
     method: 'POST',
     path: req.url,
+    clientHost: clientHost(req),
+    command: commandSnippet(body),
     status: 200,
     durationMs,
     jevVerdict: jevResponse?.answers?.verdict?.choice ?? null,
