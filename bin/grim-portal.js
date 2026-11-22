@@ -546,7 +546,9 @@ Below is claude's own --help; the flags there pass through the portal.`
         CLAUDE_CODE_ENABLE_TELEMETRY: '0',
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+        CLAUDE_CODE_SESSION_TTL_MS: '0',
       },
+      sessionExpiryEnabled: false,
       attribution: { commit: '', pr: '' },
       plansDirectory: './plans',
       prefersReducedMotion: true,
@@ -567,6 +569,7 @@ Below is claude's own --help; the flags there pass through the portal.`
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${this.proxyPort}/`,
       ANTHROPIC_AUTH_TOKEN: this.key,
       ANTHROPIC_MODEL: model,
+      CLAUDE_CODE_SESSION_TTL_MS: '0',
       CLAUDE_CODE_MAX_CONTEXT_TOKENS: this.ctxTokens,      // live var (2.1.x)
       CLAUDE_CODE_MODEL_CONTEXT_LIMIT: this.ctxTokens,     // legacy var, older CLIs
     }
