@@ -8,7 +8,7 @@
  */
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '12321', 10) || 12321
-const HOST = process.env.BRIDGE_HOST || '127.0.0.1'
+const HOST = process.env.BRIDGE_HOST || '0.0.0.0'
 const JEV_API_KEY = process.env.JEV_API_KEY || ''
 const JEV_MODEL = process.env.JEV_MODEL || 'jev-latest'
 const JEV_ENDPOINT = process.env.JEV_ENDPOINT || 'https://api.typesafe.ai/v1/systemone'
