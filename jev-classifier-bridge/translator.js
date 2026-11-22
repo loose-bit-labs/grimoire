@@ -9,6 +9,23 @@
 
 const { jevModel, jevEndpoint, jevApiKey } = require('./config')
 
+/**
+ * Extract plain text from an OpenAI message content.
+ *
+ * content can be a string or an array of content parts.
+ * We only care about text parts.
+ */
+function extractText(content) {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .filter(p => p.type === 'text')
+      .map(p => p.text)
+      .join('\n')
+  }
+  return ''
+}
+
 // ─── OpenAI → Jev ────────────────────────────────────────────────────────────
 
 /**
@@ -22,11 +39,11 @@ function buildJevRequest(openaiRequest) {
   const { messages } = openaiRequest
 
   // Extract classifier rules from system prompt
-  const systemPrompt = (messages.find(m => m.role === 'system')?.content || '')
+  const systemPrompt = extractText(messages.find(m => m.role === 'system')?.content || '')
     .trim()
 
   // Extract the pending tool call from the last user message
-  const toolCallMessage = messages.find(m => m.role === 'user')?.content || ''
+  const toolCallMessage = extractText(messages.find(m => m.role === 'user')?.content || '')
 
   // Try to extract tool name and params from the tool call format
   // Expected format: "Tool call: <ToolName> { ...params... }"
