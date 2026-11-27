@@ -18,10 +18,11 @@
  */
 
 const fs   = require('fs')
+const os   = require('os')
 const path = require('path')
 
-const DEFAULT_SERVE_ROOT = '/home/vgvm/public_html/wantan'
-const DEFAULT_SERVE_URL  = 'http://aid/~vgvm/wantan'
+const DEFAULT_SERVE_ROOT = process.env.GRIM_CULL_SERVE_ROOT || path.join(os.homedir(), 'public_html', 'wanthan')
+const DEFAULT_SERVE_URL  = process.env.GRIM_CULL_SERVE_URL || 'http://localhost/~user/wantan'
 
 class CullGen {
   constructor({ dir, multi = false, serveRoot, serveUrl }) {

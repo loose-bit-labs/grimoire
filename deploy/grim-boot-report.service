@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStartPre=/bin/sleep 15
-ExecStart=/home/vgvm/.grimoire/deploy/grim-boot-report.sh
+ExecStart=%h/.grimoire/deploy/grim-boot-report.sh
 RemainAfterExit=no
 
 [Install]

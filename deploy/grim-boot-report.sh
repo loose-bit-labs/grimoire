@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 GRIMOIRE_HOST="${GRIMOIRE_HOST:-$(_grimoire_host)}"
-LOG_DIR="/home/vgvm/.grimoire/logs"
+LOG_DIR="${HOME}/.grimoire/logs"
 LOG_FILE="${LOG_DIR}/boot-report.log"
 
 _build_payload() {
