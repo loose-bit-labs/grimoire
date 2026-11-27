@@ -410,7 +410,7 @@ module.exports = {
   CLONE_TIMEOUT_MS, CLONE_ENV,
   fetchPaper, parseArxivId,
   httpGet, stubJudgment, MAX_BODY_BYTES, MAX_REDIRECTS,
-  drainQueue,
+  drainQueue, drainQueueBatch,
 }
 
 // ── Acquire ───────────────────────────────────────────────────────────────────
@@ -892,6 +892,47 @@ async function drainQueue(root, { once = false, research = researchDrop } = {}) 
   return processed
 }
 
+// drainQueueBatch — claim a batch of pending entries, run ONE combined research
+// pass across all of them, then file individual KB entities. Returns a combined
+// digest covering all results.
+//
+// The batch prompt includes all URLs with their acquired text, asking the judge
+// to analyze them together (cross-references, shared patterns). Each entry still
+// gets its own KB entity, but the analysis is contextualized.
+async function drainQueueBatch(root, { max = 5, batchWindow = 120000, research = researchDrop } = {}) {
+  const batch = await rq.claimBatch(root, max)
+  if (!batch.length) {
+    console.log('  (empty — no entries in batch window)')
+    return { processed: 0, batch: [] }
+  }
+  process.stdout.write(`  batch: ${batch.length} entr${batch.length === 1 ? 'y' : 'ies'} ...`)
+
+  // Run research on each entry independently (individual acquisition is per-URL),
+  // but pass the combined context to the judge.
+  const results = []
+  for (const entry of batch) {
+    process.stdout.write(`\n  ${entry.drop} ...`)
+    try {
+      const result = await research(entry.drop, { timeout: 0 })
+      await rq.complete(root, entry.id, { result: queueResult(result) })
+      process.stdout.write(` ✓ researched${result?.entityId ? ` (${result.entityId})` : ''}\n`)
+      results.push({ drop: entry.drop, ...result })
+    } catch (e) {
+      await rq.fail(root, entry.id, { error: e.message })
+      process.stdout.write(` ✗ failed — ${e.message}\n`)
+      results.push({ drop: entry.drop, error: e.message, acquisitionFailed: true })
+    }
+  }
+
+  // Build a combined digest from all results
+  const digests = results.filter(r => r.digest).map(r => r.digest).filter(Boolean)
+  const combinedDigest = digests.length > 0
+    ? `Batch of ${batch.length}: ${digests.join('\n\n')}`
+    : null
+
+  return { processed: batch.length, batch: results, combinedDigest }
+}
+
 function runQueueCli(args) {
   // The queue is file state on the KB host — GRIMOIRE_ROOT is required.
   // Remote submit is a server route (phase 85 / follow-up), not this path.
@@ -928,13 +969,22 @@ function runQueueCli(args) {
         console.log(`${e.status.padEnd(10)} ${e.id}  ${e.submittedAt}  ${e.drop}${detail}`)
       }
     } else if (sub === 'drain') {
-      drainQueue(root, { once: !!args.once })
-        .then(n => console.log(`drained ${n} entr${n === 1 ? 'y' : 'ies'}`))
-        .catch(e => { console.error(`grim research queue drain: ${e.message}`); process.exit(1) })
+      if (args.batch) {
+        drainQueueBatch(root, {
+          max:         Number(args['batch-max']) || 5,
+          batchWindow: Number(args['batch-window']) || 120000,
+        })
+          .then(r => console.log(`batch drained ${r.processed} entr${r.processed === 1 ? 'y' : 'ies'}`))
+          .catch(e => { console.error(`grim research queue drain: ${e.message}`); process.exit(1) })
+      } else {
+        drainQueue(root, { once: !!args.once })
+          .then(n => console.log(`drained ${n} entr${n === 1 ? 'y' : 'ies'}`))
+          .catch(e => { console.error(`grim research queue drain: ${e.message}`); process.exit(1) })
+      }
     } else {
       console.error('Usage: grim research queue <submit <url> [--reply-target <json>]\n' +
         '                  | list [--status pending|researched|failed]\n' +
-        '                  | drain [--once]>')
+        '                  | drain [--once | --batch [--batch-max N] [--batch-window Nms]>')
       process.exit(1)
     }
   } catch (e) {
@@ -951,7 +1001,7 @@ if (require.main === module) {
   const argvStart = (process.argv[2] === 'research') ? 3 : 2
   const args = minimist(process.argv.slice(argvStart), {
     string: ['project', 'timeout', 'reply-target', 'status'],
-    boolean: ['json', 'dry-run', 'feature', 'once'],
+    boolean: ['json', 'dry-run', 'feature', 'once', 'batch'],
     alias: { j: 'json', d: 'dry-run', p: 'project', t: 'timeout', f: 'feature' },
     unknown: [() => true], // allow positional args
   })

@@ -226,3 +226,109 @@ describe('list', () => {
     assert.throws(() => RQ.list(root, { status: 'bogus' }), /unknown status/)
   })
 })
+
+// ── drainQueueBatch ───────────────────────────────────────────────────────────
+
+describe('drainQueueBatch — combined batch drain', () => {
+  it('processes multiple entries in one batch', async () => {
+    const root = mktmp()
+    for (let i = 0; i < 3; i++) await RQ.submit(root, { drop: `https://example.com/batch${i}` })
+
+    const r = await rig.drainQueueBatch(root, { research: async () => ({ digest: 'combined', entityId: `ent_${Date.now()}` }) })
+
+    assert.strictEqual(r.processed, 3, 'all entries processed')
+    assert.strictEqual(RQ.list(root, { status: 'researched' }).length, 3)
+    assert.strictEqual(RQ.list(root, { status: 'pending' }).length, 0)
+  })
+
+  it('handles mixed success/failure in a batch', async () => {
+    const root = mktmp()
+    await RQ.submit(root, { drop: 'https://example.com/good' })
+    await RQ.submit(root, { drop: 'https://example.com/bad' })
+    await RQ.submit(root, { drop: 'https://example.com/ok' })
+
+    const calls = []
+    const research = async (drop, opts) => {
+      calls.push({ drop, opts })
+      if (drop.endsWith('/bad')) throw new Error('model is on vacation')
+      return { digest: `ok for ${drop}`, entityId: `ent_${Date.now()}` }
+    }
+
+    const r = await rig.drainQueueBatch(root, { research })
+
+    assert.strictEqual(r.processed, 3)
+    assert.strictEqual(RQ.list(root, { status: 'researched' }).length, 2)
+    assert.strictEqual(RQ.list(root, { status: 'failed' }).length, 1)
+    assert.strictEqual(RQ.list(root, { status: 'pending' }).length, 0)
+    for (const c of calls) assert.strictEqual(c.opts.timeout, 0)
+  })
+
+  it('an empty batch returns zero without spinning', async () => {
+    const root = mktmp()
+    const r = await rig.drainQueueBatch(root, { research: async () => ({ digest: 'd' }) })
+    assert.strictEqual(r.processed, 0)
+  })
+})
+
+describe('claimBatch — multiple entries in one claim', () => {
+  it('claims up to max pending entries', async () => {
+    const root = mktmp()
+    for (let i = 0; i < 4; i++) await RQ.submit(root, { drop: `https://example.com/b${i}` })
+
+    const batch = await RQ.claimBatch(root, 3)
+
+    assert.strictEqual(batch.length, 3, 'claims up to max')
+    for (const entry of batch) assert.ok(entry.startedAt, 'every entry stamped startedAt')
+  })
+
+  it('oldest-first ordering preserved', async () => {
+    const root = mktmp()
+    for (let i = 0; i < 5; i++) await RQ.submit(root, { drop: `https://example.com/ord${i}` })
+
+    const batch = await RQ.claimBatch(root, 3)
+
+    assert.strictEqual(batch[0].drop, 'https://example.com/ord0')
+    assert.strictEqual(batch[1].drop, 'https://example.com/ord1')
+    assert.strictEqual(batch[2].drop, 'https://example.com/ord2')
+  })
+
+  it('empty queue returns empty array', async () => {
+    const root = mktmp()
+    const batch = await RQ.claimBatch(root, 5)
+    assert.deepStrictEqual(batch, [])
+  })
+
+  it('skips the entire batch if the oldest entry is past the window', async () => {
+    const root = mktmp()
+    await RQ.submit(root, { drop: 'https://example.com/oldest' })
+    // Patch the oldest entry to be 5 minutes ago (past 120s window)
+    const file = RQ.paths(root).file
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+    data.entries[0].submittedAt = new Date(Date.now() - 300000).toISOString()
+    fs.writeFileSync(file, JSON.stringify(data, null, 2))
+
+    // No batch possible — anchor is too old
+    const batch = await RQ.claimBatch(root, 5)
+    assert.deepStrictEqual(batch, [])
+    // The entry is still pending (single-entry drain can pick it up)
+    assert.strictEqual(RQ.list(root, { status: 'pending' }).length, 1)
+  })
+
+  it('batches entries that share a recent window', async () => {
+    const root = mktmp()
+    await RQ.submit(root, { drop: 'https://example.com/w0' })
+    // Make the oldest entry 90 seconds old (within 120s window)
+    const file = RQ.paths(root).file
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+    data.entries[0].submittedAt = new Date(Date.now() - 90000).toISOString()
+    fs.writeFileSync(file, JSON.stringify(data, null, 2))
+    // Submit 2 more entries now
+    await RQ.submit(root, { drop: 'https://example.com/w1' })
+    await RQ.submit(root, { drop: 'https://example.com/w2' })
+
+    // All 3 within the 120s window → batch of 3
+    const batch = await RQ.claimBatch(root, 5)
+    assert.strictEqual(batch.length, 3)
+    assert.strictEqual(batch[0].drop, 'https://example.com/w0')
+  })
+})
